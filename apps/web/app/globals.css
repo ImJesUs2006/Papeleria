@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-deep: #0a0a0a;
+  --neon-green: #00ff88;
+  --neon-cyan: #00d4ff;
+  --neon-magenta: #ff0080;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--bg-deep);
+  color: #f3f4f6;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Scrollbars oscuros ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #111111;
+}
+::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* ---------- Focus ring neón ---------- */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--neon-green);
+  outline-offset: 2px;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 2px;
+}
+
+/* ---------- Utilities reutilizables ---------- */
+@layer components {
+  .btn-primary {
+    @apply bg-neon-green text-surface-900 font-bold rounded-xl py-3 px-6 shadow-neon transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
+  }
+
+  .btn-cyan {
+    @apply bg-neon-cyan text-surface-900 font-bold rounded-xl py-3 px-6 shadow-neon-cyan transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
+  }
+
+  .btn-magenta {
+    @apply bg-neon-magenta text-white font-bold rounded-xl py-3 px-6 shadow-neon-magenta transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply bg-surface-700 text-gray-200 font-medium rounded-xl py-2.5 px-5 transition-all hover:bg-surface-600 active:scale-[0.97] border border-surface-500;
+  }
+
+  .input-dark {
+    @apply w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all;
+  }
+
+  .card-dark {
+    @apply bg-surface-800 border border-surface-600 rounded-2xl;
+  }
+}
+
+@layer utilities {
+  .text-glow-green {
+    text-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+  }
+  .text-glow-cyan {
+    text-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
+  }
+  .text-glow-magenta {
+    text-shadow: 0 0 12px rgba(255, 0, 128, 0.6);
+  }
+}
+
+/* ---------- Impresión térmica de etiquetas ---------- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-label-area,
+  .print-label-area * {
+    visibility: visible;
+  }
+  .print-label-area {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #ffffff !important;
+    padding: 10px;
+    z-index: 9999;
+  }
+}

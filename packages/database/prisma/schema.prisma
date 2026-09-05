@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Rol {
+  ADMINISTRADORA
+  CAJERA
+}
+
+enum EstadoVenta {
+  ACTIVA
+  COMPLETADA
+  CANCELADA
+  REEMBOLSADA
+}
+
+enum EstadoSesionCaja {
+  ABIERTA
+  CERRADA
+}
+
+enum TipoImpresion {
+  BLANCO_NEGRO
+  COLOR
+  PLOTTER
+}
+
+enum ModuloSistema {
+  PUNTO_VENTA
+  INVENTARIO
+  CAJA
+  REPORTES
+  CONFIGURACION
+  BITACORA
+  CARGA_MASIVA
+}
+
+// ============================================================
+// TABLAS
+// ============================================================
+
+model Usuario {
+  idPersona     String   @id @default(uuid())
+  nombre        String
+  username      String   @unique
+  passwordHash  String
+  rol           Rol      @default(CAJERA)
+  activa        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ventas              Venta[]
+  sesionesCaja        SesionCaja[]
+  bitacoraLogs        BitacoraLog[]
+  pedidosProveedor    PedidoProveedor[]
+
+  @@map("usuarios")
+}
+
+model Producto {
+  codigoItem       String      @id
+  descripcion      String
+  precioUnitario   Decimal     @db.Decimal(10, 2)
+  stockActual      Int         @default(0)
+  stockMinimo      Int         @default(5)
+  ubicacionEstante String?
+  tipoImpresion    TipoImpresion?
+  proveedor        String?
+  codigoBarras     String?     @unique
+  activo           Boolean     @default(true)
+  fechaCreacion    DateTime    @default(now())
+  fechaActualizacion DateTime  @updatedAt
+
+  lineasDetalle    LineaDetalleVenta[]
+  itemsPedido      ItemPedidoProveedor[]
+
+  @@map("productos")
+}
+
+model Proveedor {
+  idProveedor  String   @id @default(uuid())
+  nombre       String
+  telefono     String?
+  email        String?
+  direccion    String?
+  contacto     String?
+  limiteCredito Decimal? @db.Decimal(10, 2)
+  saldoCredito  Decimal? @default(0) @db.Decimal(10, 2)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  pedidos PedidoProveedor[]
+
+  @@map("proveedores")
+}
+
+model PedidoProveedor {
+  idPedido       String   @id @default(uuid())
+  idProveedor    String
+  fechaPedido    DateTime @default(now())
+  fechaEntrega   DateTime?
+  totalEstimado  Decimal  @db.Decimal(10, 2)
+  estado         String   @default("PENDIENTE")
+  notas          String?
+  createdBy      String
+
+  proveedor  Proveedor @relation(fields: [idProveedor], references: [idProveedor])
+  usuario    Usuario   @relation(fields: [createdBy], references: [idPersona])
+  items      ItemPedidoProveedor[]
+
+  @@map("pedidos_proveedor")
+}
+
+model ItemPedidoProveedor {
+  idItemPedido  String  @id @default(uuid())
+  idPedido      String
+  codigoItem    String
+  cantidad      Int
+  precioCotizado Decimal @db.Decimal(10, 2)
+
+  pedido     PedidoProveedor @relation(fields: [idPedido], references: [idPedido])
+  producto   Producto        @relation(fields: [codigoItem], references: [codigoItem])
+
+  @@map("items_pedido_proveedor")
+}
+
+model Venta {
+  folioVenta   String      @id
+  fechaHora    DateTime    @default(now())
+  subtotal     Decimal     @db.Decimal(10, 2)
+  iva          Decimal     @db.Decimal(10, 2)
+  totalNeto    Decimal     @db.Decimal(10, 2)
+  idUsuario    String
+  idCaja       String?
+  estado       EstadoVenta @default(ACTIVA)
+  metodoPago   String      @default("EFECTIVO")
+  createdAt    DateTime    @default(now())
+
+  usuario       Usuario              @relation(fields: [idUsuario], references: [idPersona])
+  sesionCaja    SesionCaja?          @relation(fields: [idCaja], references: [idCaja])
+  lineasDetalle LineaDetalleVenta[]
+
+  @@map("ventas")
+}
+
+model LineaDetalleVenta {
+  idLinea        String  @id @default(uuid())
+  folioVenta     String
+  codigoItem     String
+  cantidad       Int
+  precioMomento  Decimal @db.Decimal(10, 2)
+  descuentoLinea Decimal @default(0) @db.Decimal(10, 2)
+  subtotalLinea  Decimal @db.Decimal(10, 2)
+
+  venta   Venta    @relation(fields: [folioVenta], references: [folioVenta])
+  producto Producto @relation(fields: [codigoItem], references: [codigoItem])
+
+  @@map("lineas_detalle_venta")
+}
+
+model SesionCaja {
+  idCaja              String           @id @default(uuid())
+  idUsuario           String
+  fondoInicial        Decimal          @db.Decimal(10, 2)
+  totalVentasEfectivo Decimal          @default(0) @db.Decimal(10, 2)
+  totalVentasDigital  Decimal          @default(0) @db.Decimal(10, 2)
+  totalRecargas       Decimal          @default(0) @db.Decimal(10, 2)
+  horaApertura        DateTime         @default(now())
+  horaCierre          DateTime?
+  estado              EstadoSesionCaja @default(ABIERTA)
+  notasCierre         String?
+
+  usuario  Usuario  @relation(fields: [idUsuario], references: [idPersona])
+  ventas   Venta[]
+
+  @@map("sesiones_caja")
+}
+
+model BitacoraLog {
+  idLog         String        @id @default(uuid())
+  fechaHora     DateTime      @default(now())
+  idUsuario     String?
+  accion        String
+  moduloSistema ModuloSistema
+  jsonPayload   Json?
+  detallesError String?
+  ipOrigen      String?
+
+  usuario Usuario? @relation(fields: [idUsuario], references: [idPersona])
+
+  @@index([fechaHora])
+  @@index([moduloSistema])
+  @@index([idUsuario])
+  @@map("bitacora_logs")
+}

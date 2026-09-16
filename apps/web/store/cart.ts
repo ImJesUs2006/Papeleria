@@ -12,14 +12,14 @@ export interface CartItem {
 interface CartState {
   items: CartItem[];
   metodoPago: "EFECTIVO" | "TARJETA" | "DIGITAL";
-  tipoVenta: "PAPeleria" | "RECARGA";
+  tipoVenta: "PAPELERIA" | "RECARGA";
 
   addItem: (item: Omit<CartItem, "subtotalLinea">) => void;
   removeItem: (codigoItem: string) => void;
   updateQuantity: (codigoItem: string, cantidad: number) => void;
   clearCart: () => void;
   setMetodoPago: (metodo: "EFECTIVO" | "TARJETA" | "DIGITAL") => void;
-  setTipoVenta: (tipo: "PAPeleria" | "RECARGA") => void;
+  setTipoVenta: (tipo: "PAPELERIA" | "RECARGA") => void;
 
   getSubtotal: () => number;
   getIVA: () => number;
@@ -32,7 +32,7 @@ const IVA_RATE = 0.16;
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   metodoPago: "EFECTIVO",
-  tipoVenta: "PAPeleria",
+  tipoVenta: "PAPELERIA",
 
   addItem: (item) =>
     set((state) => {

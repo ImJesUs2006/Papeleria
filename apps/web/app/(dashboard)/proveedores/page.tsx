@@ -14,6 +14,8 @@ import {
   Loader2,
   X,
   ShieldCheck,
+  HandCoins,
+  History,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
@@ -29,6 +31,23 @@ interface Proveedor {
   saldoCredito: number;
   activo: boolean;
 }
+
+interface PagoProveedor {
+  idPago: string;
+  fechaHora: string;
+  monto: number;
+  metodoPago: string;
+  referencia: string | null;
+  notas: string | null;
+  usuario: string;
+}
+
+const METODOS_ABONO = [
+  { value: "EFECTIVO", label: "Efectivo" },
+  { value: "TRANSFERENCIA", label: "Transferencia" },
+  { value: "TARJETA_TERMINAL", label: "Tarjeta (terminal)" },
+  { value: "CHEQUE", label: "Cheque" },
+];
 
 const VACIO = {
   nombre: "",
@@ -47,6 +66,14 @@ export default function ProveedoresPage() {
   const [form, setForm] = useState({ ...VACIO });
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+
+  // Abonos
+  const [abono, setAbono] = useState<Proveedor | null>(null);
+  const [abonoForm, setAbonoForm] = useState({ monto: "", metodoPago: "EFECTIVO", referencia: "" });
+  const [abonando, setAbonando] = useState(false);
+  const [abonoError, setAbonoError] = useState("");
+  const [historial, setHistorial] = useState<PagoProveedor[]>([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -116,6 +143,62 @@ export default function ProveedoresPage() {
       body: JSON.stringify({ activo: !p.activo }),
     });
     cargar();
+  };
+
+  const abrirAbono = async (p: Proveedor) => {
+    setAbono(p);
+    setAbonoForm({ monto: "", metodoPago: "EFECTIVO", referencia: "" });
+    setAbonoError("");
+    setHistorial([]);
+    setLoadingHistorial(true);
+    try {
+      const res = await fetch(`/api/proveedores/${p.idProveedor}/pagos`);
+      if (res.ok) setHistorial((await res.json()).data ?? []);
+    } finally {
+      setLoadingHistorial(false);
+    }
+  };
+
+  const registrarAbono = async () => {
+    if (!abono) return;
+    const monto = Number(abonoForm.monto);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setAbonoError("Ingresa un monto válido");
+      return;
+    }
+    setAbonando(true);
+    setAbonoError("");
+    try {
+      const res = await fetch(`/api/proveedores/${abono.idProveedor}/pagos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          monto,
+          metodoPago: abonoForm.metodoPago,
+          referencia: abonoForm.referencia,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAbonoError(data.error || "Error al registrar el abono");
+        return;
+      }
+      setAbonoForm({ monto: "", metodoPago: abonoForm.metodoPago, referencia: "" });
+      setAbono((a) => (a ? { ...a, saldoCredito: data.saldoNuevo } : a));
+      await Promise.all([cargar(), abrirHistorial(abono.idProveedor)]);
+    } finally {
+      setAbonando(false);
+    }
+  };
+
+  const abrirHistorial = async (idProveedor: string) => {
+    setLoadingHistorial(true);
+    try {
+      const res = await fetch(`/api/proveedores/${idProveedor}/pagos`);
+      if (res.ok) setHistorial((await res.json()).data ?? []);
+    } finally {
+      setLoadingHistorial(false);
+    }
   };
 
   return (
@@ -233,6 +316,19 @@ export default function ProveedoresPage() {
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-2">
                           <button
+                            onClick={() => abrirAbono(p)}
+                            disabled={p.saldoCredito <= 0}
+                            title={p.saldoCredito <= 0 ? "Sin saldo pendiente" : "Registrar abono"}
+                            className={cn(
+                              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors",
+                              p.saldoCredito > 0
+                                ? "bg-surface-700 hover:bg-neon-green/10 text-muted hover:text-neon-green"
+                                : "bg-surface-700/50 text-muted/40 cursor-not-allowed"
+                            )}
+                          >
+                            <HandCoins className="h-4 w-4" />
+                          </button>
+                          <button
                             onClick={() => abrirEditar(p)}
                             className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-cyan/10 flex items-center justify-center text-muted hover:text-neon-cyan transition-colors"
                           >
@@ -327,6 +423,144 @@ export default function ProveedoresPage() {
                       {modal.modo === "crear" ? "Crear proveedor" : "Guardar cambios"}
                     </motion.button>
                   </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal de abonos */}
+        <AnimatePresence>
+          {abono && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+              onClick={() => setAbono(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-surface-800 border border-surface-600 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+              >
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-neon-green/10 flex items-center justify-center">
+                      <HandCoins className="h-5 w-5 text-neon-green" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-100 text-lg">Abonar a proveedor</h3>
+                      <p className="text-[11px] text-muted">{abono.nombre}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setAbono(null)} className="h-9 w-9 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-muted hover:text-gray-100">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between bg-surface-900/50 rounded-xl px-4 py-3 mb-4">
+                  <span className="text-xs text-muted">Saldo pendiente</span>
+                  <span className={cn("text-lg font-black", abono.saldoCredito > 0 ? "text-neon-yellow" : "text-neon-green")}>
+                    ${abono.saldoCredito.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="text-xs text-muted mb-1 block">Monto del abono ($)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={abonoForm.monto}
+                      onChange={(e) => setAbonoForm({ ...abonoForm, monto: e.target.value })}
+                      className="input-dark"
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="text-xs text-muted mb-1 block">Método de pago</span>
+                      <select
+                        value={abonoForm.metodoPago}
+                        onChange={(e) => setAbonoForm({ ...abonoForm, metodoPago: e.target.value })}
+                        className="input-dark"
+                      >
+                        {METODOS_ABONO.map((m) => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-muted mb-1 block">Referencia</span>
+                      <input
+                        value={abonoForm.referencia}
+                        onChange={(e) => setAbonoForm({ ...abonoForm, referencia: e.target.value })}
+                        className="input-dark"
+                        placeholder="Opcional"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAbonoForm({ ...abonoForm, monto: String(abono.saldoCredito) })}
+                      className="text-[11px] text-neon-cyan hover:underline"
+                    >
+                      Liquidar saldo completo
+                    </button>
+                  </div>
+
+                  {abonoError && (
+                    <div className="text-xs text-neon-red bg-neon-red/10 border border-neon-red/40 rounded-lg px-3 py-2">
+                      {abonoError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => setAbono(null)} className="btn-ghost flex-1">Cerrar</button>
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={registrarAbono}
+                      disabled={abonando}
+                      className="btn-primary flex-1 flex items-center justify-center gap-2"
+                    >
+                      {abonando && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Registrar abono
+                    </motion.button>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <History className="h-4 w-4 text-muted" />
+                    <span className="text-xs font-bold text-gray-100">Historial de abonos</span>
+                  </div>
+                  {loadingHistorial ? (
+                    <div className="flex items-center justify-center py-6 text-muted gap-2 text-xs">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Cargando...
+                    </div>
+                  ) : historial.length === 0 ? (
+                    <p className="text-xs text-muted py-3">Sin abonos registrados</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                      {historial.map((p) => (
+                        <div key={p.idPago} className="flex items-center justify-between bg-surface-900/40 rounded-lg px-3 py-2 text-xs">
+                          <div>
+                            <span className="text-gray-100 font-bold">${p.monto.toFixed(2)}</span>
+                            <span className="text-muted ml-2">{p.metodoPago}</span>
+                            {p.referencia && <span className="text-muted ml-2">· {p.referencia}</span>}
+                            <span className="block text-[10px] text-muted">
+                              {new Date(p.fechaHora).toLocaleString("es-MX")} · {p.usuario}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             </motion.div>

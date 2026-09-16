@@ -6,13 +6,14 @@ const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA"];
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  const { id } = await params;
 
   let body: any;
   try {
@@ -43,7 +44,7 @@ export async function PATCH(
 
   try {
     const existente = await prisma.pedidoProveedor.findUnique({
-      where: { idPedido: params.id },
+      where: { idPedido: id },
       include: { proveedor: { select: { nombre: true } } },
     });
     if (!existente) {
@@ -52,7 +53,7 @@ export async function PATCH(
 
     const actualizado = await prisma.$transaction(async (tx) => {
       const pedido = await tx.pedidoProveedor.update({
-        where: { idPedido: params.id },
+        where: { idPedido: id },
         data,
       });
       await tx.bitacoraLog.create({
@@ -60,7 +61,7 @@ export async function PATCH(
           idUsuario: user.idPersona,
           accion: `Pedido a ${existente.proveedor.nombre} actualizado: estado ${pedido.estado}`,
           moduloSistema: "INVENTARIO",
-          jsonPayload: { idPedido: params.id, cambios: Object.keys(data) },
+          jsonPayload: { idPedido: id, cambios: Object.keys(data) },
         },
       });
       return pedido;

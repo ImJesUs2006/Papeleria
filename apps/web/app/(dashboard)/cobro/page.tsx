@@ -21,6 +21,27 @@ export default function CobroPage() {
   const [codigoError, setCodigoError] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [sugeridos, setSugeridos] = useState<ProductoRapido[]>([]);
+  const [imagenes, setImagenes] = useState<Record<string, string>>({});
+
+  const cargarImagenes = async (productos: ProductoRapido[]) => {
+    await Promise.all(
+      productos.map(async (p) => {
+        try {
+          const res = await fetch(`/api/productos/${encodeURIComponent(p.codigoItem)}`);
+          if (!res.ok) return;
+          const detalle = await res.json();
+          if (detalle.imagenBase64) {
+            setImagenes((prev) => ({
+              ...prev,
+              [p.codigoItem]: `data:${detalle.imagenMime};base64,${detalle.imagenBase64}`,
+            }));
+          }
+        } catch {
+          /* sin imagen: se ignora */
+        }
+      })
+    );
+  };
 
   const manejarScan = async (codigo: string) => {
     setCodigoError(null);
@@ -48,6 +69,7 @@ export default function CobroPage() {
         cantidad: 1,
       });
       setSugeridos(match.slice(0, 3));
+      cargarImagenes(match.slice(0, 3));
     } catch {
       setCodigoError("No se pudo conectar con el servidor");
     } finally {
@@ -127,6 +149,14 @@ export default function CobroPage() {
                   }
                   className="bg-surface-700 border border-surface-500 rounded-xl p-4 text-left hover:border-neon-cyan/50 transition-colors min-h-[88px] flex flex-col justify-between"
                 >
+                  {imagenes[p.codigoItem] && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imagenes[p.codigoItem]}
+                      alt={p.descripcion}
+                      className="h-20 w-full object-cover rounded-lg mb-2"
+                    />
+                  )}
                   <span className="text-sm font-medium text-gray-100 line-clamp-2 leading-snug">
                     {p.descripcion}
                   </span>

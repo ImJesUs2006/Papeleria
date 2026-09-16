@@ -9,12 +9,19 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "typecheck": "npm run typecheck -w @papeleria/web",
+    "test": "npm run test -w @papeleria/web",
+    "e2e": "npm run e2e -w @papeleria/web",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "db:generate": "turbo db:generate",
     "db:push": "turbo db:push",
     "db:seed": "turbo db:seed",
     "db:studio": "turbo db:studio"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "turbo": "^2.0.0",
     "typescript": "^5.5.0"
   },

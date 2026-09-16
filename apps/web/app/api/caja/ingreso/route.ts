@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
+import { requireAuth } from "@/lib/auth";
 
 export async function POST(request: Request) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const user = auth.user;
+
   try {
     const body = await request.json();
     const { tipo, monto } = body;
@@ -19,6 +26,7 @@ export async function POST(request: Request) {
 
     const sesionOpen = await prisma.sesionCaja.findFirst({
       where: { estado: "ABIERTA" },
+      orderBy: { horaApertura: "desc" },
     });
 
     if (!sesionOpen) {

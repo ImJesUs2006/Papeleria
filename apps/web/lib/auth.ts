@@ -5,7 +5,7 @@ export type { AuthPayload } from "@/lib/jwt";
 export { signToken } from "@/lib/jwt";
 
 export async function getSession(): Promise<AuthPayload | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const token = cookieStore.get("papeleria_token")?.value;
   if (!token) return null;
   return verifyToken(token);
@@ -33,12 +33,14 @@ const PERMISSIONS: Record<string, string[]> = {
     "caja.abrir", "caja.cerrar", "cobro.realizar",
     "inventario.ver", "inventario.editar", "inventario.carga_masiva",
     "proveedores.ver", "pedidos.ver",
+    "devoluciones.ver", "devoluciones.registrar",
     "reportes.ver", "reportes.exportar",
     "configuracion.usuarios", "configuracion.roles",
     "bitacora.ver",
   ],
   CAJERA: [
     "caja.abrir", "caja.cerrar", "cobro.realizar",
+    "devoluciones.ver", "devoluciones.registrar",
   ],
 };
 

@@ -1,0 +1,2 @@
+# Normalizar saltos de línea en todo el repo (evita warnings en Windows)
+* text=auto eol=lf

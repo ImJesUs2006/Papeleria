@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScanLine, AlertTriangle, Keyboard, RefreshCw } from "lucide-react";
 import { useScannerDetection } from "@/hooks/use-scanner";
+import { useHotkeys } from "@/hooks/use-hotkeys";
 import { ManualSearchModal } from "@/components/pos/manual-search-modal";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,16 @@ export function BarcodeScanner({
 
   const { inputRef, isScannerInput, scannerHealth, isFocused, focusInput } =
     useScannerDetection(onScan, handleScanFail);
+
+  // Atajos globales: enfocar el lector o abrir búsqueda manual.
+  useHotkeys(
+    {
+      "ctrl+k": () => setManualOpen(true),
+      "ctrl+b": () => focusInput(),
+      F2: () => setManualOpen(true),
+    },
+    { enabled: !manualOpen }
+  );
 
   return (
     <div className={cn("relative", className)}>

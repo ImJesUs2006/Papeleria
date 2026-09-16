@@ -23,15 +23,23 @@ enum EstadoVenta {
   REEMBOLSADA
 }
 
-enum EstadoSesionCaja {
-  ABIERTA
-  CERRADA
-}
-
 enum TipoImpresion {
   BLANCO_NEGRO
   COLOR
   PLOTTER
+}
+
+enum TipoNegocio {
+  PAPELERIA_RETAIL
+  ABARROTES
+  SERVICIOS
+  MIXTO
+}
+
+enum EstadoSesionCaja {
+  ABIERTA
+  EN_CIERRE
+  CERRADA
 }
 
 enum ModuloSistema {
@@ -42,6 +50,14 @@ enum ModuloSistema {
   CONFIGURACION
   BITACORA
   CARGA_MASIVA
+  SYNC
+  SETUP
+  SEGURIDAD
+}
+
+enum TipoDevolucion {
+  DEVOLUCION
+  NOTA_CREDITO
 }
 
 // ============================================================
@@ -57,11 +73,17 @@ model Usuario {
   activa        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  ultimoLoginAt DateTime?
+  passwordCambiadaEn DateTime?
 
   ventas              Venta[]
   sesionesCaja        SesionCaja[]
   bitacoraLogs        BitacoraLog[]
   pedidosProveedor    PedidoProveedor[]
+  configActualizada   ConfiguracionNegocio[]
+  cierresIniciados    SesionCaja[]          @relation("CierreIniciadoPor")
+  devoluciones        Devolucion[]
+  pagosProveedor      PagoProveedor[]
 
   @@map("usuarios")
 }
@@ -70,6 +92,7 @@ model Producto {
   codigoItem       String      @id
   descripcion      String
   precioUnitario   Decimal     @db.Decimal(10, 2)
+  precioCompra     Decimal?    @db.Decimal(10, 2)
   stockActual      Int         @default(0)
   stockMinimo      Int         @default(5)
   ubicacionEstante String?
@@ -79,9 +102,12 @@ model Producto {
   activo           Boolean     @default(true)
   fechaCreacion    DateTime    @default(now())
   fechaActualizacion DateTime  @updatedAt
+  imagenMime       String?
+  imagenBase64     String?     @db.Text
 
   lineasDetalle    LineaDetalleVenta[]
   itemsPedido      ItemPedidoProveedor[]
+  devolucionLineas DevolucionLinea[]
 
   @@map("productos")
 }
@@ -99,6 +125,7 @@ model Proveedor {
   createdAt    DateTime @default(now())
 
   pedidos PedidoProveedor[]
+  pagos   PagoProveedor[]
 
   @@map("proveedores")
 }
@@ -134,20 +161,26 @@ model ItemPedidoProveedor {
 }
 
 model Venta {
-  folioVenta   String      @id
-  fechaHora    DateTime    @default(now())
-  subtotal     Decimal     @db.Decimal(10, 2)
-  iva          Decimal     @db.Decimal(10, 2)
-  totalNeto    Decimal     @db.Decimal(10, 2)
-  idUsuario    String
-  idCaja       String?
-  estado       EstadoVenta @default(ACTIVA)
-  metodoPago   String      @default("EFECTIVO")
-  createdAt    DateTime    @default(now())
+  folioVenta      String   @id
+  fechaHora       DateTime @default(now())
+  subtotal        Decimal  @db.Decimal(10, 2)
+  iva             Decimal  @db.Decimal(10, 2)
+  totalNeto       Decimal  @db.Decimal(10, 2)
+  idUsuario       String
+  idCaja          String?
+  estado          EstadoVenta @default(ACTIVA)
+  metodoPago      String   @default("EFECTIVO")
+  createdAt       DateTime @default(now())
+  // ---- Offline-first (idempotencia + traza de origen) ----
+  idLocal         String?  @unique
+  origen          String   @default("ONLINE")
+  dispositivoId   String?
+  fechaHoraCliente DateTime?
 
   usuario       Usuario              @relation(fields: [idUsuario], references: [idPersona])
   sesionCaja    SesionCaja?          @relation(fields: [idCaja], references: [idCaja])
   lineasDetalle LineaDetalleVenta[]
+  devoluciones  Devolucion[]
 
   @@map("ventas")
 }
@@ -174,15 +207,48 @@ model SesionCaja {
   totalVentasEfectivo Decimal          @default(0) @db.Decimal(10, 2)
   totalVentasDigital  Decimal          @default(0) @db.Decimal(10, 2)
   totalRecargas       Decimal          @default(0) @db.Decimal(10, 2)
+  totalEgresos        Decimal          @default(0) @db.Decimal(10, 2)
   horaApertura        DateTime         @default(now())
   horaCierre          DateTime?
   estado              EstadoSesionCaja @default(ABIERTA)
   notasCierre         String?
+  // ---- Corte ciego (máquina de estados anti-evasión) ----
+  cierreToken         String?
+  cierreInicioEn      DateTime?
+  cierreIniciadoPor   String?
+  efectivoContado     Decimal?         @db.Decimal(10, 2)
+  vouchersContado     Decimal?         @db.Decimal(10, 2)
+  recargasContado     Decimal?         @db.Decimal(10, 2)
+  faltanteTotal       Decimal?         @db.Decimal(10, 2)
+  descuadre           Boolean          @default(false)
 
-  usuario  Usuario  @relation(fields: [idUsuario], references: [idPersona])
-  ventas   Venta[]
+  usuario        Usuario                        @relation(fields: [idUsuario], references: [idPersona])
+  cierreIniciado Usuario?                       @relation("CierreIniciadoPor", fields: [cierreIniciadoPor], references: [idPersona])
+  ventas         Venta[]
+  devoluciones   Devolucion[]
 
   @@map("sesiones_caja")
+}
+
+model ConfiguracionNegocio {
+  id             Int         @id @default(1)
+  nombreNegocio  String      @default("Mi Negocio")
+  tipoNegocio    TipoNegocio @default(PAPELERIA_RETAIL)
+  moneda         String      @default("MXN")
+  ivaRate        Decimal     @default(16) @db.Decimal(5, 2)
+  // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
+  featureFlags   Json        @default("{}")
+  // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
+  metodosPago    Json        @default("[]")
+  politicaStockOffline String @default("PERMITIR_NEGATIVO")
+  configVersion  Int         @default(1)
+  setupPendiente Boolean     @default(true)
+  updatedById    String?
+  updatedAt      DateTime    @updatedAt
+
+  updatedBy Usuario? @relation(fields: [updatedById], references: [idPersona])
+
+  @@map("configuracion_negocio")
 }
 
 model BitacoraLog {
@@ -201,4 +267,60 @@ model BitacoraLog {
   @@index([moduloSistema])
   @@index([idUsuario])
   @@map("bitacora_logs")
+}
+
+model Devolucion {
+  idDevolucion    String         @id @default(uuid())
+  folioDevolucion String         @unique
+  folioVenta      String
+  fechaHora       DateTime       @default(now())
+  tipo            TipoDevolucion @default(DEVOLUCION)
+  motivo          String?
+  subtotal        Decimal        @db.Decimal(10, 2)
+  iva             Decimal        @db.Decimal(10, 2)
+  totalNeto       Decimal        @db.Decimal(10, 2)
+  metodoReembolso String         @default("EFECTIVO")
+  idUsuario       String
+  idCaja          String?
+  createdAt       DateTime       @default(now())
+
+  venta      Venta             @relation(fields: [folioVenta], references: [folioVenta])
+  usuario    Usuario           @relation(fields: [idUsuario], references: [idPersona])
+  sesionCaja SesionCaja?       @relation(fields: [idCaja], references: [idCaja])
+  lineas     DevolucionLinea[]
+
+  @@index([folioVenta])
+  @@map("devoluciones")
+}
+
+model DevolucionLinea {
+  idLineaDevolucion String  @id @default(uuid())
+  idDevolucion      String
+  codigoItem        String
+  cantidad          Int
+  precioMomento     Decimal @db.Decimal(10, 2)
+  subtotalLinea     Decimal @db.Decimal(10, 2)
+
+  devolucion Devolucion @relation(fields: [idDevolucion], references: [idDevolucion])
+  producto   Producto   @relation(fields: [codigoItem], references: [codigoItem])
+
+  @@map("devolucion_lineas")
+}
+
+model PagoProveedor {
+  idPago      String   @id @default(uuid())
+  idProveedor String
+  fechaHora   DateTime @default(now())
+  monto       Decimal  @db.Decimal(10, 2)
+  metodoPago  String   @default("EFECTIVO")
+  referencia  String?
+  notas       String?
+  idUsuario   String
+  createdAt   DateTime @default(now())
+
+  proveedor Proveedor @relation(fields: [idProveedor], references: [idProveedor])
+  usuario   Usuario   @relation(fields: [idUsuario], references: [idPersona])
+
+  @@index([idProveedor])
+  @@map("pagos_proveedor")
 }

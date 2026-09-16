@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { Prisma } from "@prisma/client";
+import { requireAuth } from "@/lib/auth";
+import {
+  validateProductoInput,
+  sanitizeText,
+  IMAGEN_MIMES_PERMITIDOS,
+  IMAGEN_BASE64_MAX,
+} from "@/lib/validate-product";
 
 const ALLOWED_SORT = [
   "descripcion",
@@ -126,6 +133,7 @@ export async function GET(request: Request) {
         codigoItem: p.codigoItem,
         descripcion: p.descripcion,
         precioUnitario: Number(p.precioUnitario),
+        precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
         stockActual: p.stockActual,
         stockMinimo: p.stockMinimo,
         ubicacionEstante: p.ubicacionEstante,
@@ -144,6 +152,142 @@ export async function GET(request: Request) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Error al buscar productos" },
+      { status: 500 }
+    );
+  }
+}
+
+// Alta manual de un producto (solo administradora).
+export async function POST(request: Request) {
+  const auth = await requireAuth(["ADMINISTRADORA"])();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const user = auth.user;
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
+
+  const validacion = validateProductoInput(body);
+  if (!validacion.success) {
+    return NextResponse.json({ error: validacion.error }, { status: 400 });
+  }
+  const data = validacion.data;
+
+  // Normaliza la imagen (acepta data URL o base64 crudo).
+  let imagenMime: string | null = null;
+  let imagenBase64: string | null = null;
+  if (data.imagenBase64) {
+    let base64: string = data.imagenBase64;
+    let mime: string | null = data.imagenMime ?? null;
+    const match = base64.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      mime = match[1];
+      base64 = match[2];
+    }
+    if (!mime || !(IMAGEN_MIMES_PERMITIDOS as readonly string[]).includes(mime)) {
+      return NextResponse.json(
+        { error: "Formato de imagen no permitido (png, jpg, webp)" },
+        { status: 400 }
+      );
+    }
+    if (base64.length > IMAGEN_BASE64_MAX) {
+      return NextResponse.json(
+        { error: "Imagen demasiado grande (máx ~2 MB)" },
+        { status: 413 }
+      );
+    }
+    imagenMime = mime;
+    imagenBase64 = base64;
+  }
+
+  try {
+    const existente = await prisma.producto.findUnique({
+      where: { codigoItem: data.codigoItem },
+    });
+    if (existente) {
+      return NextResponse.json(
+        { error: `Ya existe un producto con el código ${data.codigoItem}` },
+        { status: 409 }
+      );
+    }
+
+    if (data.codigoBarras) {
+      const dupBarras = await prisma.producto.findUnique({
+        where: { codigoBarras: data.codigoBarras },
+      });
+      if (dupBarras) {
+        return NextResponse.json(
+          { error: "Ese código de barras ya está asignado a otro producto" },
+          { status: 409 }
+        );
+      }
+    }
+
+    const creado = await prisma.$transaction(async (tx) => {
+      const producto = await tx.producto.create({
+        data: {
+          codigoItem: data.codigoItem,
+          descripcion: sanitizeText(data.descripcion),
+          precioUnitario: new Prisma.Decimal(data.precioUnitario),
+          precioCompra:
+            data.precioCompra != null ? new Prisma.Decimal(data.precioCompra) : null,
+          stockActual: data.stockActual,
+          stockMinimo: data.stockMinimo,
+          codigoBarras: data.codigoBarras || null,
+          ubicacionEstante: data.ubicacionEstante || null,
+          proveedor: data.proveedor || null,
+          tipoImpresion: data.tipoImpresion ?? null,
+          imagenMime,
+          imagenBase64,
+        },
+      });
+
+      await tx.bitacoraLog.create({
+        data: {
+          idUsuario: user.idPersona,
+          accion: `Alta de producto ${producto.codigoItem}`,
+          moduloSistema: "INVENTARIO",
+          jsonPayload: {
+            codigoItem: producto.codigoItem,
+            descripcion: producto.descripcion,
+            precioUnitario: Number(producto.precioUnitario),
+            stockActual: producto.stockActual,
+          },
+        },
+      });
+
+      return producto;
+    });
+
+    return NextResponse.json(
+      {
+        codigoItem: creado.codigoItem,
+        descripcion: creado.descripcion,
+        precioUnitario: Number(creado.precioUnitario),
+        precioCompra: creado.precioCompra != null ? Number(creado.precioCompra) : null,
+        stockActual: creado.stockActual,
+        stockMinimo: creado.stockMinimo,
+        ubicacionEstante: creado.ubicacionEstante,
+        proveedor: creado.proveedor,
+        tipoImpresion: creado.tipoImpresion,
+        codigoBarras: creado.codigoBarras,
+      },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return NextResponse.json(
+        { error: "El código o código de barras ya existen" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      { error: "Error al crear producto" },
       { status: 500 }
     );
   }

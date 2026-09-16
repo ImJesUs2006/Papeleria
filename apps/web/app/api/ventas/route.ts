@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { executeSale, SaleError } from "@/lib/sales";
+import { getBusinessConfig } from "@/lib/feature-flags";
+
+const MAPA_METODO: Record<string, string> = {
+  EFECTIVO: "EFECTIVO",
+  TARJETA: "TARJETA_TERMINAL",
+  TARJETA_TERMINAL: "TARJETA_TERMINAL",
+  DIGITAL: "TRANSFERENCIA",
+  TRANSFERENCIA: "TRANSFERENCIA",
+};
 
 export async function POST(request: Request) {
   const auth = await requireAuth()();
@@ -17,10 +26,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
+  // Feature flag: métodos de pago habilitados por el negocio (Marca Blanca).
+  const config = await getBusinessConfig();
+  const requerido = MAPA_METODO[body.metodoPago as string];
+  if (!requerido || !config.metodosPago.includes(requerido as any)) {
+    return NextResponse.json(
+      { error: `El método de pago ${body.metodoPago} no está habilitado para este negocio` },
+      { status: 403 }
+    );
+  }
+
   try {
     // Caja abierta (si existe) para asignar el ingreso financiero.
     const sesion = await prisma.sesionCaja.findFirst({
       where: { estado: "ABIERTA" },
+      orderBy: { horaApertura: "desc" },
     });
 
     const resultado = await prisma.$transaction((tx) =>

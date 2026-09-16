@@ -11,6 +11,9 @@ const MODULOS_VALIDOS = [
   "CONFIGURACION",
   "BITACORA",
   "CARGA_MASIVA",
+  "SYNC",
+  "SETUP",
+  "SEGURIDAD",
 ];
 
 function parseFecha(valor: string): Date {
@@ -79,7 +82,7 @@ export async function GET(request: Request) {
         log.ipOrigen ?? "",
       ]);
 
-      const buffer = buildExcelBuffer(headers, data, "Bitacora");
+      const buffer = await buildExcelBuffer(headers, data, "Bitacora");
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type":

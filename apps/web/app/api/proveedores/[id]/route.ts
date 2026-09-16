@@ -4,13 +4,14 @@ import { requireAuth } from "@/lib/auth";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  const { id } = await params;
 
   let body: any;
   try {
@@ -35,7 +36,7 @@ export async function PATCH(
 
   try {
     const existente = await prisma.proveedor.findUnique({
-      where: { idProveedor: params.id },
+      where: { idProveedor: id },
     });
     if (!existente) {
       return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 });
@@ -43,7 +44,7 @@ export async function PATCH(
 
     const actualizado = await prisma.$transaction(async (tx) => {
       const proveedor = await tx.proveedor.update({
-        where: { idProveedor: params.id },
+        where: { idProveedor: id },
         data,
       });
       await tx.bitacoraLog.create({
@@ -51,7 +52,7 @@ export async function PATCH(
           idUsuario: user.idPersona,
           accion: `Proveedor actualizado: ${proveedor.nombre}`,
           moduloSistema: "CONFIGURACION",
-          jsonPayload: { idProveedor: params.id, cambios: Object.keys(data) },
+          jsonPayload: { idProveedor: id, cambios: Object.keys(data) },
         },
       });
       return proveedor;
@@ -68,17 +69,18 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  const { id } = await params;
 
   try {
     const existente = await prisma.proveedor.findUnique({
-      where: { idProveedor: params.id },
+      where: { idProveedor: id },
     });
     if (!existente) {
       return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 });
@@ -87,7 +89,7 @@ export async function DELETE(
     // Baja lógica para no romper FK de pedidos históricos.
     await prisma.$transaction(async (tx) => {
       await tx.proveedor.update({
-        where: { idProveedor: params.id },
+        where: { idProveedor: id },
         data: { activo: false },
       });
       await tx.bitacoraLog.create({
@@ -95,7 +97,7 @@ export async function DELETE(
           idUsuario: user.idPersona,
           accion: `Proveedor desactivado: ${existente.nombre}`,
           moduloSistema: "CONFIGURACION",
-          jsonPayload: { idProveedor: params.id },
+          jsonPayload: { idProveedor: id },
         },
       });
     });

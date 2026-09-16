@@ -13,16 +13,27 @@ import {
   Truck,
   Users,
   LogOut,
+  RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
+import { useConfigStore } from "@/store/config";
+import { ShortcutsHelp } from "./shortcuts-help";
+import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+const NAV_ITEMS: Array<{
+  label: string;
+  href: string;
+  icon: typeof BarChart3;
+  permission: string;
+  flag?: keyof FeatureFlags;
+}> = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: BarChart3,
     permission: "dashboard.ver",
+    flag: "dashboard",
   },
   {
     label: "Cobro",
@@ -37,22 +48,31 @@ const NAV_ITEMS = [
     permission: "caja.abrir",
   },
   {
+    label: "Devoluciones",
+    href: "/devoluciones",
+    icon: RotateCcw,
+    permission: "devoluciones.ver",
+  },
+  {
     label: "Inventario",
     href: "/inventario",
     icon: Package,
     permission: "inventario.ver",
+    flag: "inventario",
   },
   {
     label: "Proveedores",
     href: "/proveedores",
     icon: Users,
     permission: "proveedores.ver",
+    flag: "proveedores",
   },
   {
     label: "Pedidos",
     href: "/pedidos",
     icon: Truck,
     permission: "pedidos.ver",
+    flag: "proveedores",
   },
   {
     label: "Reportes",
@@ -65,6 +85,7 @@ const NAV_ITEMS = [
     href: "/bitacora",
     icon: ScrollText,
     permission: "bitacora.ver",
+    flag: "bitacora",
   },
   {
     label: "Configuración",
@@ -77,10 +98,16 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const { nombre, rol, hasPermission, logout } = useAuthStore();
+  const { trust, isFeatureEnabled } = useConfigStore();
 
-  const visibleItems = NAV_ITEMS.filter((item) =>
-    hasPermission(item.permission)
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!hasPermission(item.permission)) return false;
+    if (!item.flag) return true;
+    // Mientras la config no se ha hidratado no ocultamos nada (evita parpadeo);
+    // ya verificada/desconfiada, el flag manda.
+    if (trust === "PENDIENTE") return true;
+    return isFeatureEnabled(item.flag);
+  });
 
   return (
     <aside className="w-64 h-screen bg-surface-800 border-r border-surface-600 flex flex-col">
@@ -141,6 +168,7 @@ export function Sidebar() {
             </p>
           </div>
         </div>
+        <ShortcutsHelp />
         <button
           onClick={logout}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted hover:text-neon-red hover:bg-surface-700 transition-all"

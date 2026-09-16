@@ -19,9 +19,15 @@ import {
   ChevronRight,
   Barcode,
   PencilLine,
+  Plus,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { QuickEdit } from "@/components/inventario/quick-edit";
+import {
+  ProductFormModal,
+  type ProductFormData,
+} from "@/components/inventario/product-form";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { useLabelModal } from "@/components/inventario/label-modal";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +35,7 @@ interface Product {
   codigoItem: string;
   descripcion: string;
   precioUnitario: number;
+  precioCompra?: number | null;
   stockActual: number;
   stockMinimo: number;
   ubicacionEstante: string | null;
@@ -65,6 +72,10 @@ export default function InventarioPage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<"buscar" | "cargar" | "editar">("buscar");
   const { setEtiqueta, node: labelNode } = useLabelModal();
+
+  // Alta/edición manual de productos
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ProductFormData | null>(null);
 
   // Inventory browsing state
   const [products, setProducts] = useState<Product[]>([]);
@@ -163,7 +174,7 @@ export default function InventarioPage() {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file && (file.name.endsWith(".xlsx") || file.name.endsWith(".xls") || file.name.endsWith(".csv"))) {
+    if (file && (file.name.endsWith(".xlsx") || file.name.endsWith(".csv"))) {
       setUploadedFile(file);
       processFile(file);
     }
@@ -197,9 +208,17 @@ export default function InventarioPage() {
   return (
     <DashboardLayout>
       <div className="p-6 max-w-6xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-          <h2 className="text-2xl font-black text-gray-100 mb-1">Inventario</h2>
-          <p className="text-sm text-muted">Carga masiva de productos, búsqueda avanzada y gestión de stock</p>
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-gray-100 mb-1">Inventario</h2>
+            <p className="text-sm text-muted">Carga masiva de productos, búsqueda avanzada y gestión de stock</p>
+          </div>
+          <button
+            onClick={() => { setEditing(null); setFormOpen(true); }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-neon-green text-surface-900 font-bold text-sm shadow-neon shrink-0"
+          >
+            <Plus className="h-4 w-4" /> Nuevo producto
+          </button>
         </motion.div>
 
         {/* Tabs */}
@@ -408,20 +427,29 @@ export default function InventarioPage() {
                       <td className="px-4 py-3 text-sm text-muted">{p.ubicacionEstante || "—"}</td>
                       <td className="px-4 py-3 text-sm text-muted">{p.proveedor || "—"}</td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() =>
-                            setEtiqueta({
-                              codigoItem: p.codigoItem,
-                              descripcion: p.descripcion,
-                              precioUnitario: p.precioUnitario,
-                              codigoBarras: p.codigoBarras,
-                            })
-                          }
-                          className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-cyan/10 flex items-center justify-center text-muted hover:text-neon-cyan ml-auto transition-colors"
-                          title="Generar etiqueta QR/barras"
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => { setEditing(p); setFormOpen(true); }}
+                            className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-green/10 flex items-center justify-center text-muted hover:text-neon-green transition-colors"
+                            title="Editar producto"
+                          >
+                            <PencilLine className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              setEtiqueta({
+                                codigoItem: p.codigoItem,
+                                descripcion: p.descripcion,
+                                precioUnitario: p.precioUnitario,
+                                codigoBarras: p.codigoBarras,
+                              })
+                            }
+                            className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-cyan/10 flex items-center justify-center text-muted hover:text-neon-cyan transition-colors"
+                            title="Generar etiqueta QR/barras"
+                          >
+                            <Barcode className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -475,7 +503,7 @@ export default function InventarioPage() {
                 isDragging ? "border-neon-green bg-neon-green/5 shadow-neon" : "border-surface-500 bg-surface-800 hover:border-surface-400"
               )}
             >
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              <input type="file" accept=".xlsx,.csv" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
               <motion.div animate={isDragging ? { scale: 1.05, y: -5 } : { scale: 1, y: 0 }} transition={{ type: "spring", damping: 15 }}>
                 {isUploading ? (
                   <div className="flex flex-col items-center">
@@ -492,7 +520,7 @@ export default function InventarioPage() {
                   <div className="flex flex-col items-center">
                     <Upload className="h-14 w-14 text-muted mb-3" />
                     <p className="text-lg font-bold text-gray-100 mb-1">Arrastra tu archivo Excel aquí</p>
-                    <p className="text-sm text-muted">o haz clic para seleccionar &middot; .xlsx, .xls, .csv</p>
+                    <p className="text-sm text-muted">o haz clic para seleccionar &middot; .xlsx, .csv</p>
                   </div>
                 )}
               </motion.div>
@@ -546,6 +574,13 @@ export default function InventarioPage() {
         )}
 
         {labelNode}
+
+        <ProductFormModal
+          open={formOpen}
+          onClose={() => setFormOpen(false)}
+          onSaved={() => fetchProducts()}
+          producto={editing}
+        />
       </div>
     </DashboardLayout>
   );

@@ -4,11 +4,12 @@ import { requireAuth } from "@/lib/auth";
 
 export async function GET(
   request: Request,
-  { params }: { params: { codigo: string } }
+  { params }: { params: Promise<{ codigo: string }> }
 ) {
   try {
+    const { codigo } = await params;
     const producto = await prisma.producto.findUnique({
-      where: { codigoItem: params.codigo },
+      where: { codigoItem: codigo },
     });
 
     if (!producto) {
@@ -22,9 +23,15 @@ export async function GET(
       codigoItem: producto.codigoItem,
       descripcion: producto.descripcion,
       precioUnitario: Number(producto.precioUnitario),
+      precioCompra: producto.precioCompra != null ? Number(producto.precioCompra) : null,
       stockActual: producto.stockActual,
+      stockMinimo: producto.stockMinimo,
+      ubicacionEstante: producto.ubicacionEstante,
+      proveedor: producto.proveedor,
       tipoImpresion: producto.tipoImpresion,
       codigoBarras: producto.codigoBarras,
+      imagenMime: producto.imagenMime,
+      imagenBase64: producto.imagenBase64,
     });
   } catch (error) {
     return NextResponse.json(
@@ -37,13 +44,14 @@ export async function GET(
 // Edición rápida (hoja de cálculo web) - solo administradora
 export async function PATCH(
   request: Request,
-  { params }: { params: { codigo: string } }
+  { params }: { params: Promise<{ codigo: string }> }
 ) {
   const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  const { codigo } = await params;
 
   let body: any;
   try {
@@ -54,7 +62,7 @@ export async function PATCH(
 
   try {
     const existente = await prisma.producto.findUnique({
-      where: { codigoItem: params.codigo },
+      where: { codigoItem: codigo },
     });
     if (!existente) {
       return NextResponse.json(
@@ -84,6 +92,53 @@ export async function PATCH(
         );
       }
       data.precioUnitario = Math.round(precio * 100) / 100;
+    }
+
+    if (body.precioCompra !== undefined) {
+      if (body.precioCompra === null || body.precioCompra === "") {
+        data.precioCompra = null;
+      } else {
+        const compra = Number(body.precioCompra);
+        if (!Number.isFinite(compra) || compra < 0) {
+          return NextResponse.json(
+            { error: "Precio de compra inválido" },
+            { status: 400 }
+          );
+        }
+        data.precioCompra = Math.round(compra * 100) / 100;
+      }
+    }
+
+    // El precio de venta nunca puede quedar por debajo del de compra.
+    const ventaFinal =
+      data.precioUnitario !== undefined
+        ? data.precioUnitario
+        : Number(existente.precioUnitario);
+    const compraFinal =
+      data.precioCompra !== undefined
+        ? data.precioCompra
+        : existente.precioCompra != null
+          ? Number(existente.precioCompra)
+          : null;
+    if (compraFinal != null && ventaFinal < compraFinal) {
+      return NextResponse.json(
+        { error: "El precio de venta no puede ser menor al de compra" },
+        { status: 400 }
+      );
+    }
+
+    if (body.tipoImpresion !== undefined) {
+      const TIPOS = ["BLANCO_NEGRO", "COLOR", "PLOTTER"];
+      if (body.tipoImpresion === null || body.tipoImpresion === "") {
+        data.tipoImpresion = null;
+      } else if (TIPOS.includes(body.tipoImpresion)) {
+        data.tipoImpresion = body.tipoImpresion;
+      } else {
+        return NextResponse.json(
+          { error: "Tipo de impresión inválido" },
+          { status: 400 }
+        );
+      }
     }
 
     if (body.stockActual !== undefined) {
@@ -118,9 +173,42 @@ export async function PATCH(
       data.codigoBarras = body.codigoBarras || null;
     }
 
+    // Imagen del producto: data URL o base64 crudo. Límite ~1.5 MB.
+    if (body.imagenBase64 !== undefined) {
+      if (body.imagenBase64 === null || body.imagenBase64 === "") {
+        data.imagenBase64 = null;
+        data.imagenMime = null;
+      } else {
+        const MIMES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+        let mime = typeof body.imagenMime === "string" ? body.imagenMime : "";
+        let base64 = String(body.imagenBase64);
+
+        // Acepta data URL: data:image/png;base64,.....
+        const match = base64.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          mime = match[1];
+          base64 = match[2];
+        }
+        if (!MIMES.includes(mime)) {
+          return NextResponse.json(
+            { error: "Formato de imagen no permitido (png, jpg, webp)" },
+            { status: 400 }
+          );
+        }
+        if (base64.length > 2_000_000) {
+          return NextResponse.json(
+            { error: "Imagen demasiado grande (máx ~1.5 MB)" },
+            { status: 413 }
+          );
+        }
+        data.imagenMime = mime;
+        data.imagenBase64 = base64;
+      }
+    }
+
     const actualizado = await prisma.$transaction(async (tx) => {
       const producto = await tx.producto.update({
-        where: { codigoItem: params.codigo },
+        where: { codigoItem: codigo },
         data,
       });
 
@@ -134,14 +222,17 @@ export async function PATCH(
       if (data.stockActual !== undefined && data.stockActual !== existente.stockActual) {
         cambios.push(`Stock ${existente.stockActual} → ${data.stockActual}`);
       }
+      if (data.imagenBase64 !== undefined) {
+        cambios.push(data.imagenBase64 ? "Imagen actualizada" : "Imagen eliminada");
+      }
 
       if (cambios.length > 0) {
         await tx.bitacoraLog.create({
           data: {
             idUsuario: user.idPersona,
-            accion: `Actualización de producto ${params.codigo}: ${cambios.join(", ")}`,
+            accion: `Actualización de producto ${codigo}: ${cambios.join(", ")}`,
             moduloSistema: "INVENTARIO",
-            jsonPayload: { codigoItem: params.codigo, cambios },
+            jsonPayload: { codigoItem: codigo, cambios },
           },
         });
       }

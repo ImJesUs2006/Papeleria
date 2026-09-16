@@ -92,7 +92,7 @@ describe("calcularArqueo (matemática exacta)", () => {
 
 describe("POST /api/caja/cerrar", () => {
 
-  it("valida que el arqueo exacto se refleje en la respuesta", async () => {
+  it("valida que el arqueo exacto se refleje en la respuesta (corte ciego)", async () => {
     const tx = {
       sesionCaja: { update: vi.fn(async (args: any) => args.data) },
       bitacoraLog: { create: vi.fn(async () => ({})) },
@@ -101,7 +101,8 @@ describe("POST /api/caja/cerrar", () => {
       sesionCaja: {
         findFirst: vi.fn(async () => ({
           idCaja: "CAJA-1",
-          estado: "ABIERTA",
+          estado: "EN_CIERRE",
+          cierreToken: "token-test",
           fondoInicial: 500,
           totalVentasEfectivo: 1000,
           totalVentasDigital: 200,
@@ -117,15 +118,21 @@ describe("POST /api/caja/cerrar", () => {
       new Request("http://localhost/api/caja/cerrar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ efectivoDeclarado: 1500, digitalDeclarado: 200, recargasDeclarado: 50 }),
+        body: JSON.stringify({
+          cierreToken: "token-test",
+          efectivoContado: 1500,
+          vouchersContado: 200,
+          recargasContado: 50,
+        }),
       })
     );
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.descuadre).toBe(false);
+    expect(body.arqueo.descuadre).toBe(false);
     expect(body.arqueo.totalEsperado).toBe(1750);
     expect(body.arqueo.faltanteEfectivo).toBe(0);
+    expect(body.cierre.estado).toBe("CERRADA");
 
     // La sesión se cierra marcando el estado
     expect(tx.sesionCaja.update).toHaveBeenCalledWith({
@@ -135,7 +142,7 @@ describe("POST /api/caja/cerrar", () => {
     expect(tx.bitacoraLog.create).toHaveBeenCalled();
   });
 
-  it("rechaza una caja sin montos declarados válidos", async () => {
+  it("exige token de cierre vigente", async () => {
     vi.doMock("@papeleria/database", () => ({
       prisma: { sesionCaja: { findFirst: vi.fn() } },
     }));
@@ -145,7 +152,7 @@ describe("POST /api/caja/cerrar", () => {
       new Request("http://localhost/api/caja/cerrar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ efectivoDeclarado: -5 }),
+        body: JSON.stringify({ efectivoContado: -5 }),
       })
     );
 

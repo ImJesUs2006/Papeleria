@@ -9,6 +9,8 @@ export interface ArqueoInput {
   totalVentasEfectivo: number;
   totalVentasDigital: number;
   totalRecargas: number;
+  /** Salidas de efectivo de la caja (reembolsos, abonos a proveedores). */
+  totalEgresos?: number;
   efectivoDeclarado: number;
   digitalDeclarado: number;
   recargasDeclarado: number;
@@ -36,12 +38,13 @@ const EPSILON = 0.01;
 /**
  * Arqueo de caja: cruza los montos físicos declarados por la cajera
  * contra los calculados por el sistema a partir de la sesión.
- * - El efectivo esperado = fondoInicial + ventas en efectivo de papelería.
+ * - El efectivo esperado = fondoInicial + ventas en efectivo − egresos de efectivo.
  * - El digital esperado = ventas con tarjeta/digital.
  * - Las recargas esperadas = total de recargas telefónicas.
  */
 export function calcularArqueo(input: ArqueoInput): ArqueoResult {
-  const esperadoEfectivo = round2(input.fondoInicial + input.totalVentasEfectivo);
+  const egresos = input.totalEgresos ?? 0;
+  const esperadoEfectivo = round2(input.fondoInicial + input.totalVentasEfectivo - egresos);
   const esperadoDigital = round2(input.totalVentasDigital);
   const esperadoRecargas = round2(input.totalRecargas);
 

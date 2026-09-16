@@ -39,18 +39,30 @@ export async function POST(request: Request) {
       rol: user.rol,
     });
 
-    await prisma.bitacoraLog.create({
-      data: {
-        idUsuario: user.idPersona,
-        accion: "Login exitoso",
-        moduloSistema: "PUNTO_VENTA",
-      },
+    await prisma.$transaction([
+      prisma.usuario.update({
+        where: { idPersona: user.idPersona },
+        data: { ultimoLoginAt: new Date() },
+      }),
+      prisma.bitacoraLog.create({
+        data: {
+          idUsuario: user.idPersona,
+          accion: "Login exitoso",
+          moduloSistema: "PUNTO_VENTA",
+        },
+      }),
+    ]);
+
+    const config = await prisma.configuracionNegocio.findUnique({
+      where: { id: 1 },
+      select: { setupPendiente: true },
     });
 
     const response = NextResponse.json({
       idPersona: user.idPersona,
       nombre: user.nombre,
       rol: user.rol,
+      setupPendiente: config?.setupPendiente ?? true,
     });
 
     response.cookies.set("papeleria_token", token, {

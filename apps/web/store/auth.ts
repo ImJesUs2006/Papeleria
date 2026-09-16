@@ -17,19 +17,30 @@ interface AuthState {
 
 const PERMISSIONS: Record<Rol, string[]> = {
   ADMINISTRADORA: [
+    "dashboard.ver",
     "caja.abrir",
     "caja.cerrar",
     "cobro.realizar",
     "inventario.ver",
     "inventario.editar",
     "inventario.carga_masiva",
+    "proveedores.ver",
+    "pedidos.ver",
+    "devoluciones.ver",
+    "devoluciones.registrar",
     "reportes.ver",
     "reportes.exportar",
     "configuracion.usuarios",
     "configuracion.roles",
     "bitacora.ver",
   ],
-  CAJERA: ["caja.abrir", "caja.cerrar", "cobro.realizar"],
+  CAJERA: [
+    "caja.abrir",
+    "caja.cerrar",
+    "cobro.realizar",
+    "devoluciones.ver",
+    "devoluciones.registrar",
+  ],
 };
 
 export const useAuthStore = create<AuthState>()(

@@ -14,8 +14,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
+  WifiOff,
 } from "lucide-react";
 import { useCartStore, CartItem } from "@/store/cart";
+import { useAuthStore } from "@/store/auth";
+import { registrarVentaClient } from "@/lib/sales-client";
+import { useHotkeys } from "@/hooks/use-hotkeys";
 import { cn } from "@/lib/utils";
 
 function CartItemRow({ item, index }: { item: CartItem; index: number }) {
@@ -73,6 +77,7 @@ interface VentaResult {
   folioVenta: string;
   totalNeto: number;
   cambio: number | null;
+  offline: boolean;
 }
 
 export function CartPanel() {
@@ -87,6 +92,7 @@ export function CartPanel() {
     tipoVenta,
     clearCart,
   } = useCartStore();
+  const { idPersona, nombre } = useAuthStore();
 
   const [estado, setEstado] = useState<"idle" | "cobrando" | "error">("idle");
   const [mensajeError, setMensajeError] = useState("");
@@ -110,34 +116,31 @@ export function CartPanel() {
     setEstado("cobrando");
     setMensajeError("");
     try {
-      const res = await fetch("/api/ventas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((i) => ({
-            codigoItem: i.codigoItem,
-            cantidad: i.cantidad,
-          })),
-          metodoPago,
-          tipoVenta: tipoVenta === "RECARGA" ? "RECARGA" : "PAPELERIA",
-          montoRecibido: esEfectivo && montoRecibido ? Number(montoRecibido) : null,
-        }),
+      const data = await registrarVentaClient(items, {
+        metodoPago,
+        tipoVenta: tipoVenta === "RECARGA" ? "RECARGA" : "PAPELERIA",
+        montoRecibido: esEfectivo && montoRecibido ? Number(montoRecibido) : null,
+        idUsuario: idPersona ?? "",
+        nombreUsuario: nombre ?? "",
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setEstado("error");
-        setMensajeError(data.error || "Error al procesar la venta");
-        return;
-      }
       setResultado(data);
       clearCart();
       setMontoRecibido("");
       setEstado("idle");
-    } catch {
+    } catch (e: any) {
       setEstado("error");
-      setMensajeError("No se pudo conectar con el servidor");
+      setMensajeError(e?.message || "No se pudo conectar con el servidor");
     }
   };
+
+  // Atajos: Ctrl+P cobra, Enter en efectivo cobra, Esc cierra el comprobante.
+  useHotkeys(
+    {
+      "ctrl+p": () => cobrar(),
+      Escape: () => setResultado(null),
+    },
+    { enabled: !!resultado || items.length > 0, allowInInputs: true }
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -316,8 +319,18 @@ export function CartPanel() {
               >
                 <CheckCircle2 className="h-9 w-9 text-neon-green" />
               </motion.div>
-              <h3 className="text-xl font-black text-gray-100 mb-1">¡Venta registrada!</h3>
+              <h3 className="text-xl font-black text-gray-100 mb-1">
+                {resultado.offline ? "¡Venta guardada offline!" : "¡Venta registrada!"}
+              </h3>
               <p className="text-sm text-muted mb-4">Folio: {resultado.folioVenta}</p>
+              {resultado.offline && (
+                <div className="flex items-center gap-2 bg-neon-yellow/10 border border-neon-yellow/40 rounded-xl px-3 py-2 mb-4 text-left">
+                  <WifiOff className="h-4 w-4 text-neon-yellow shrink-0" />
+                  <p className="text-[11px] text-gray-200">
+                    Sin conexión: la venta se sincronizará automáticamente al recuperar la red.
+                  </p>
+                </div>
+              )}
               <p className="text-3xl font-black text-neon-green text-glow-green mb-1">
                 ${resultado.totalNeto.toFixed(2)}
               </p>

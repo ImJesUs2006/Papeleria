@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Package,
   ShoppingCart,
@@ -11,8 +11,15 @@ import {
   BarChart3,
   Trophy,
   CreditCard,
+  Eye,
+  X,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import {
+  ReportsPreviewTable,
+  PreviewSkeleton,
+  type PreviewData,
+} from "@/components/reports/preview-table";
 import { cn } from "@/lib/utils";
 
 interface ReportDef {
@@ -115,29 +122,54 @@ export default function ReportesPage() {
   const [dateTo, setDateTo] = useState("");
   const [cajaId, setCajaId] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
-  const handleGenerate = async (report: ReportDef) => {
+  const buildParams = (report: ReportDef): URLSearchParams | null => {
+    const params = new URLSearchParams({ tipo: report.id });
+    if (report.needsDateRange) {
+      if (dateFrom) params.set("desde", dateFrom);
+      if (dateTo) params.set("hasta", dateTo);
+    }
+    if (report.needsCajaId) {
+      if (!cajaId.trim()) {
+        alert("Ingresa el ID de la sesión de caja");
+        return null;
+      }
+      params.set("idCaja", cajaId.trim());
+    }
+    return params;
+  };
+
+  const handlePreview = async (report: ReportDef) => {
+    const params = buildParams(report);
+    if (!params) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setSelectedType(report.id);
+    try {
+      const res = await fetch(`/api/reportes/data?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al generar vista previa");
+      setPreviewData(data);
+      setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    } catch (e: any) {
+      setPreviewError(e.message);
+      setPreviewData(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleExport = async (report: ReportDef) => {
+    const params = buildParams(report);
+    if (!params) return;
     setIsGenerating(true);
     setSelectedType(report.id);
 
     try {
-      const params = new URLSearchParams({ tipo: report.id });
-
-      if (report.needsDateRange) {
-        if (dateFrom) params.set("desde", dateFrom);
-        if (dateTo) params.set("hasta", dateTo);
-      }
-
-      if (report.needsCajaId) {
-        if (!cajaId.trim()) {
-          alert("Ingresa el ID de la sesión de caja");
-          setIsGenerating(false);
-          setSelectedType(null);
-          return;
-        }
-        params.set("idCaja", cajaId.trim());
-      }
-
       const res = await fetch(`/api/reportes?${params.toString()}`);
 
       if (!res.ok) {
@@ -244,33 +276,90 @@ export default function ReportesPage() {
                   </div>
                 )}
 
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => handleGenerate(report)}
-                  disabled={isGenerating}
-                  className={cn(
-                    "w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all",
-                    isGenerating && isActive
-                      ? "bg-surface-600 text-muted"
-                      : cn(report.bgClass, report.textClass, report.hoverBgClass)
-                  )}
-                >
-                  {isGenerating && isActive ? (
-                    <>
+                <div className="grid grid-cols-2 gap-2">
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => handlePreview(report)}
+                    disabled={previewLoading && isActive}
+                    className={cn(
+                      "w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all",
+                      previewLoading && isActive
+                        ? "bg-surface-600 text-muted"
+                        : "bg-surface-700 text-gray-200 hover:bg-surface-600 border border-surface-500"
+                    )}
+                  >
+                    {previewLoading && isActive ? (
                       <div className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Generando...
-                    </>
-                  ) : (
-                    <>
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                    Vista previa
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => handleExport(report)}
+                    disabled={isGenerating}
+                    className={cn(
+                      "w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all",
+                      isGenerating && isActive
+                        ? "bg-surface-600 text-muted"
+                        : cn(report.bgClass, report.textClass, report.hoverBgClass)
+                    )}
+                  >
+                    {isGenerating && isActive ? (
+                      <div className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
                       <Download className="h-3.5 w-3.5" />
-                      Descargar Excel
-                    </>
-                  )}
-                </motion.button>
+                    )}
+                    Excel
+                  </motion.button>
+                </div>
               </motion.div>
             );
           })}
+        </div>
+
+        {/* Vista previa interactiva */}
+        <div ref={previewRef} className="mt-8">
+          <AnimatePresence mode="wait">
+            {previewLoading ? (
+              <PreviewSkeleton key="skeleton" />
+            ) : previewError ? (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-3 bg-neon-red/10 border border-neon-red/40 rounded-2xl px-5 py-4 text-sm text-gray-100"
+              >
+                <AlertTriangle className="h-5 w-5 text-neon-red shrink-0" />
+                <span className="flex-1">{previewError}</span>
+                <button
+                  onClick={() => setPreviewError(null)}
+                  className="h-7 w-7 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-muted hover:text-gray-100 transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </motion.div>
+            ) : previewData ? (
+              <motion.div
+                key="table"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <ReportsPreviewTable data={previewData} />
+              </motion.div>
+            ) : (
+              <div
+                key="hint"
+                className="flex flex-col items-center justify-center py-12 rounded-2xl border border-dashed border-surface-600 text-muted text-sm"
+              >
+                <Eye className="h-8 w-8 mb-2 opacity-30" />
+                Usa &quot;Vista previa&quot; para explorar los datos antes de exportar
+              </div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </DashboardLayout>

@@ -31,7 +31,10 @@ function crearTxMock(producto: any) {
     },
     venta: { create: vi.fn(async () => ({ folioVenta: "F-TEST" })) },
     lineaDetalleVenta: { create: vi.fn(async () => ({})) },
-    sesionCaja: { update: vi.fn(async () => ({})) },
+    sesionCaja: {
+      findUnique: vi.fn(async () => ({ estado: "ABIERTA" })),
+      update: vi.fn(async () => ({})),
+    },
     bitacoraLog: { create: vi.fn(async () => ({})) },
   };
 }
@@ -44,6 +47,7 @@ describe("POST /api/ventas", () => {
   it("devuelve 400 si se intenta vender más stock del disponible", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 1 }));
     const prisma = {
+      configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => null) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
     };
@@ -72,6 +76,7 @@ describe("POST /api/ventas", () => {
   it("registra la venta, descuenta stock y asigna ingreso a la caja", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 5 }));
     const prisma = {
+      configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
     };
@@ -127,6 +132,7 @@ describe("POST /api/ventas", () => {
   it("asigna la venta de recarga al flujo de recargas", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 5 }));
     const prisma = {
+      configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
     };

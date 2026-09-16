@@ -1,43 +1,53 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
+import { requireAuth } from "@/lib/auth";
+
+// ============================================================
+// POST /api/caja/abrir  (autenticado; usa el usuario real del JWT)
+// ============================================================
 
 export async function POST(request: Request) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const user = auth.user;
+
+  let body: any;
   try {
-    const { fondoInicial } = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
 
-    if (typeof fondoInicial !== "number" || fondoInicial < 0) {
-      return NextResponse.json(
-        { error: "Fondo inicial inválido" },
-        { status: 400 }
-      );
-    }
+  const fondoInicial = Number(body.fondoInicial);
+  if (!Number.isFinite(fondoInicial) || fondoInicial < 0) {
+    return NextResponse.json({ error: "Fondo inicial inválido" }, { status: 400 });
+  }
 
-    // Check if there's already an open session
+  try {
     const existingOpen = await prisma.sesionCaja.findFirst({
-      where: { estado: "ABIERTA" },
+      where: { estado: { in: ["ABIERTA", "EN_CIERRE"] } },
     });
 
     if (existingOpen) {
       return NextResponse.json(
-        { error: "Ya existe una sesión de caja abierta" },
+        { error: "Ya existe una sesión de caja abierta o en cierre" },
         { status: 409 }
       );
     }
 
-    // TODO: Get actual user ID from session/JWT
-    const userId = "placeholder-user-id";
-
     const sesion = await prisma.sesionCaja.create({
       data: {
-        idUsuario: userId,
-        fondoInicial,
+        idUsuario: user.idPersona,
+        fondoInicial: Math.round(fondoInicial * 100) / 100,
         estado: "ABIERTA",
       },
     });
 
     await prisma.bitacoraLog.create({
       data: {
-        idUsuario: userId,
+        idUsuario: user.idPersona,
         accion: `Caja abierta con fondo inicial: $${fondoInicial}`,
         moduloSistema: "CAJA",
         jsonPayload: { fondoInicial, idCaja: sesion.idCaja },
@@ -46,9 +56,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(sesion);
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al abrir caja" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error al abrir caja" }, { status: 500 });
   }
 }

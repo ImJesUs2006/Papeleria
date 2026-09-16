@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   DollarSign,
@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { CorteCiego } from "@/components/caja/corte-ciego";
 import { cn } from "@/lib/utils";
 
 interface SesionCaja {
@@ -22,7 +23,8 @@ interface SesionCaja {
   totalVentasDigital: number;
   totalRecargas: number;
   horaApertura: string;
-  estado: "ABIERTA" | "CERRADA";
+  estado: "ABIERTA" | "EN_CIERRE" | "CERRADA";
+  cierreInicioEn?: string | null;
 }
 
 type FlujoIngreso = "PAPELERIA" | "RECARGA";
@@ -30,11 +32,30 @@ type FlujoIngreso = "PAPELERIA" | "RECARGA";
 export default function CajaPage() {
   const [sesionActual, setSesionActual] = useState<SesionCaja | null>(null);
   const [fondoInicial, setFondoInicial] = useState("");
-  const [showConfirmClose, setShowConfirmClose] = useState(false);
+  const [showCorteCiego, setShowCorteCiego] = useState(false);
   const [ingresoPapa, setIngresoPapa] = useState("");
   const [ingresoRecarga, setIngresoRecarga] = useState("");
   const [procesando, setProcesando] = useState<FlujoIngreso | null>(null);
   const [notaOK, setNotaOK] = useState<string | null>(null);
+  const [cargandoEstado, setCargandoEstado] = useState(true);
+
+  useEffect(() => {
+    // Restaura la sesión vigente (incl. un corte EN_CIERRE a medias).
+    (async () => {
+      try {
+        const res = await fetch("/api/caja/estado", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.sesion) {
+            setSesionActual(data.sesion);
+            if (data.sesion.estado === "EN_CIERRE") setShowCorteCiego(true);
+          }
+        }
+      } finally {
+        setCargandoEstado(false);
+      }
+    })();
+  }, []);
 
   const handleAbrirCaja = async () => {
     const fondo = parseFloat(fondoInicial);
@@ -106,7 +127,24 @@ export default function CajaPage() {
           </p>
         </motion.div>
 
-        {!sesionActual ? (
+        {cargandoEstado ? (
+          <div className="max-w-md mx-auto">
+            <div className="bg-surface-800 border border-surface-600 rounded-2xl p-8 space-y-4">
+              <div className="animate-pulse space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-xl bg-surface-600" />
+                  <div className="space-y-2">
+                    <div className="h-4 w-32 rounded bg-surface-600" />
+                    <div className="h-3 w-24 rounded bg-surface-600" />
+                  </div>
+                </div>
+                <div className="h-4 w-40 rounded bg-surface-600" />
+                <div className="h-14 rounded-xl bg-surface-600" />
+                <div className="h-12 rounded-xl bg-surface-600" />
+              </div>
+            </div>
+          </div>
+        ) : !sesionActual ? (
           /* Apertura de caja */
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -163,20 +201,38 @@ export default function CajaPage() {
             {/* Status bar */}
             <div className="flex items-center justify-between bg-surface-800 border border-surface-600 rounded-xl px-6 py-4">
               <div className="flex items-center gap-3">
-                <div className="h-3 w-3 rounded-full bg-neon-green animate-pulse" />
+                <div
+                  className={cn(
+                    "h-3 w-3 rounded-full animate-pulse",
+                    sesionActual.estado === "EN_CIERRE"
+                      ? "bg-neon-red"
+                      : "bg-neon-green"
+                  )}
+                />
                 <span className="text-sm font-medium text-gray-100">
-                  Caja Abierta desde{" "}
-                  {new Date(sesionActual.horaApertura).toLocaleTimeString(
-                    "es-MX"
+                  {sesionActual.estado === "EN_CIERRE" ? (
+                    <>
+                      Corte ciego en curso desde{" "}
+                      {sesionActual.cierreInicioEn
+                        ? new Date(sesionActual.cierreInicioEn).toLocaleTimeString("es-MX")
+                        : new Date().toLocaleTimeString("es-MX")}
+                    </>
+                  ) : (
+                    <>
+                      Caja Abierta desde{" "}
+                      {new Date(sesionActual.horaApertura).toLocaleTimeString(
+                        "es-MX"
+                      )}
+                    </>
                   )}
                 </span>
               </div>
               <button
-                onClick={() => setShowConfirmClose(true)}
+                onClick={() => setShowCorteCiego(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-neon-red/10 border border-neon-red/30 rounded-lg text-neon-red text-sm font-medium hover:bg-neon-red/20 transition-colors"
               >
                 <Lock className="h-4 w-4" />
-                Cerrar Caja
+                {sesionActual.estado === "EN_CIERRE" ? "Continuar corte" : "Cerrar Caja"}
               </button>
             </div>
 
@@ -202,6 +258,25 @@ export default function CajaPage() {
             </AnimatePresence>
 
             {/* SEPARACIÓN DE FLUJOS - CRÍTICO */}
+            {sesionActual.estado === "EN_CIERRE" ? (
+              <div className="bg-surface-800 border-2 border-neon-red/40 rounded-2xl p-8 text-center">
+                <div className="h-12 w-12 mx-auto rounded-xl bg-neon-red/10 flex items-center justify-center mb-4">
+                  <Lock className="h-6 w-6 text-neon-red" />
+                </div>
+                <h3 className="font-black text-gray-100 mb-1">
+                  Corte ciego en curso
+                </h3>
+                <p className="text-sm text-muted max-w-sm mx-auto">
+                  Los montos están ocultos. Continúa el conteo físico con el
+                  botón{" "}
+                  <span className="text-neon-red font-medium">
+                    &quot;Continuar corte&quot;
+                  </span>{" "}
+                  de arriba.
+                </p>
+              </div>
+            ) : (
+              <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Flujo Papelería */}
               <motion.div
@@ -362,46 +437,22 @@ export default function CajaPage() {
                 </span>
               </div>
             </div>
+            </>
+            )}
           </div>
         )}
 
-        {/* Modal confirmar cierre */}
+        {/* Modal Corte Ciego */}
         <AnimatePresence>
-          {showConfirmClose && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-              onClick={() => setShowConfirmClose(false)}
-            >
-              <motion.div
-                initial={{ scale: 0.9, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 20 }}
-                onClick={(e) => e.stopPropagation()}
-                className="bg-surface-800 border border-surface-600 rounded-2xl p-6 max-w-md w-full mx-4"
-              >
-                <h3 className="text-lg font-bold text-gray-100 mb-2">
-                  ¿Cerrar caja?
-                </h3>
-                <p className="text-sm text-muted mb-6">
-                  Se generará un reporte de cierre. Esta acción no se puede
-                  deshacer.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowConfirmClose(false)}
-                    className="flex-1 py-2.5 rounded-xl border border-surface-500 text-muted hover:text-gray-100 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button className="flex-1 py-2.5 rounded-xl bg-neon-red text-white font-bold shadow-neon-pink">
-                    Confirmar Cierre
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
+          {showCorteCiego && (
+            <CorteCiego
+              onCancelar={() => setShowCorteCiego(false)}
+              onCerrada={() => {
+                setSesionActual(null);
+                setShowCorteCiego(false);
+                setNotaOK(null);
+              }}
+            />
           )}
         </AnimatePresence>
       </div>

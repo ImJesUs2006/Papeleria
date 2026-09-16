@@ -32,7 +32,12 @@ export default function LoginScreen() {
 
       const user = await res.json();
       login(user);
-      window.location.href = "/cobro";
+      // Primer arranque: la administradora configura el negocio.
+      if (user.setupPendiente && user.rol === "ADMINISTRADORA") {
+        window.location.href = "/setup";
+      } else {
+        window.location.href = "/cobro";
+      }
     } catch {
       setError("Error de conexión con el servidor");
     } finally {

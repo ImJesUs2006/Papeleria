@@ -140,7 +140,7 @@ export function ManualSearchModal({ open, onClose }: Props) {
                   </div>
                   <p className="text-muted font-medium">
                     Sin resultados para{" "}
-                    <span className="text-gray-100">"{query}"</span>
+                    <span className="text-gray-100">&quot;{query}&quot;</span>
                   </p>
                   <p className="text-xs text-muted/70">
                     Verifica el código o prueba con el nombre completo.

@@ -140,20 +140,29 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate file type
-    const validExtensions = [".xlsx", ".xls", ".csv"];
+    // Validate file type (ExcelJS: .xlsx y .csv; .xls binario no soportado)
+    const validExtensions = [".xlsx", ".csv"];
     const fileName = file.name.toLowerCase();
     if (!validExtensions.some((ext) => fileName.endsWith(ext))) {
       return NextResponse.json(
-        { error: "Formato no soportado. Usa .xlsx, .xls o .csv" },
+        { error: "Formato no soportado. Usa .xlsx o .csv" },
         { status: 400 }
+      );
+    }
+
+    // Límite defensivo de tamaño (10 MB) antes de parsear.
+    const MAX_BYTES = 10 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json(
+        { error: "El archivo supera el límite de 10 MB" },
+        { status: 413 }
       );
     }
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const { headers, rows, sheetName } = parseExcelBuffer(buffer);
+    const { headers, rows, sheetName } = await parseExcelBuffer(buffer, file.name);
 
     if (rows.length === 0) {
       return NextResponse.json({

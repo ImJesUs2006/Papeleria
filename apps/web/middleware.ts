@@ -33,7 +33,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // Role-based route protection
-  const isAdminRoute = pathname.startsWith("/configuracion") ||
+  const isAdminRoute = pathname.startsWith("/setup") ||
+    pathname.startsWith("/configuracion") ||
     pathname.startsWith("/reportes") ||
     pathname.startsWith("/bitacora") ||
     pathname.includes("/inventario");

@@ -131,6 +131,17 @@ export async function executeSale(
   const totalNeto = round2(subtotal + iva);
   const folioVenta = generarFolio();
 
+  // Bloqueo de ventas si la caja indicada no está ABIERTA (defensa en profundidad).
+  if (ctx.idCaja) {
+    const sesion = await tx.sesionCaja.findUnique({
+      where: { idCaja: ctx.idCaja },
+      select: { estado: true },
+    });
+    if (!sesion || sesion.estado !== "ABIERTA") {
+      throw new SaleError("La caja está en proceso de cierre; no se pueden registrar ventas", 409);
+    }
+  }
+
   // 1. Cabecera de venta
   await tx.venta.create({
     data: {

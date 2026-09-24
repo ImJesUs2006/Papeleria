@@ -46,7 +46,11 @@ npm run dev        # http://localhost:3000
 ## Documentación
 
 - [`docs/GUIA_INSTALACION.md`](docs/GUIA_INSTALACION.md) — paso a paso para alguien nuevo.
-- [`docs/INFORME_SISTEMAv4.md`](docs/INFORME_SISTEMAv4.md) — arquitectura y estado actual (Iteración 4).
+- [`docs/INFORME_SISTEMAv8.md`](docs/INFORME_SISTEMAv8.md) — arquitectura de la iteración 8.
+- [`docs/INFORME_SISTEMAv7.md`](docs/INFORME_SISTEMAv7.md) — arquitectura de la iteración 7.
+- [`docs/INFORME_SISTEMAv6.md`](docs/INFORME_SISTEMAv6.md) — arquitectura de la iteración 6.
+- [`docs/INFORME_SISTEMAv5.md`](docs/INFORME_SISTEMAv5.md) — arquitectura de la iteración 5.
+- [`docs/INFORME_SISTEMAv4.md`](docs/INFORME_SISTEMAv4.md) — arquitectura de la iteración 4.
 - [`docs/INFORME_SISTEMAv3.md`](docs/INFORME_SISTEMAv3.md) — arquitectura de la iteración 3.
 - [`docs/INFORME_SISTEMAv2.md`](docs/INFORME_SISTEMAv2.md) — arquitectura de la iteración 2 .
 - [`docs/INFORME_SISTEMAv1.md`](docs/INFORME_SISTEMAv1.md) — auditoría de la iteración 1.

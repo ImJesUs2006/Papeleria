@@ -140,6 +140,7 @@ export async function GET(request: Request) {
         proveedor: p.proveedor,
         tipoImpresion: p.tipoImpresion,
         codigoBarras: p.codigoBarras,
+        favorito: p.favorito,
         fechaCreacion: p.fechaCreacion,
       })),
       pagination: {

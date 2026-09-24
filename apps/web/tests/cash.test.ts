@@ -109,6 +109,9 @@ describe("POST /api/caja/cerrar", () => {
           totalRecargas: 50,
         })),
       },
+      retiroEfectivo: {
+        aggregate: vi.fn(async () => ({ _sum: { monto: null } })),
+      },
       $transaction: vi.fn(async (cb: any) => cb(tx)),
     };
     vi.doMock("@papeleria/database", () => ({ prisma }));

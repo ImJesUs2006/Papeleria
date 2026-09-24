@@ -11,15 +11,22 @@ export interface CartItem {
 
 interface CartState {
   items: CartItem[];
-  metodoPago: "EFECTIVO" | "TARJETA" | "DIGITAL";
+  metodoPago: "EFECTIVO" | "TARJETA" | "DIGITAL" | "CREDITO_TIENDA";
   tipoVenta: "PAPELERIA" | "RECARGA";
+  /** Blindaje Financiero: últimos 4 dígitos del rastreo de transferencia. */
+  referenciaTransferencia: string | null;
+  /** CRM (Fase 3): cliente asignado a una venta a crédito. */
+  idCliente: string | null;
+  nombreCliente: string | null;
 
   addItem: (item: Omit<CartItem, "subtotalLinea">) => void;
   removeItem: (codigoItem: string) => void;
   updateQuantity: (codigoItem: string, cantidad: number) => void;
   clearCart: () => void;
-  setMetodoPago: (metodo: "EFECTIVO" | "TARJETA" | "DIGITAL") => void;
+  setMetodoPago: (metodo: "EFECTIVO" | "TARJETA" | "DIGITAL" | "CREDITO_TIENDA") => void;
   setTipoVenta: (tipo: "PAPELERIA" | "RECARGA") => void;
+  setReferenciaTransferencia: (referencia: string | null) => void;
+  setCliente: (idCliente: string | null, nombreCliente: string | null) => void;
 
   getSubtotal: () => number;
   getIVA: () => number;
@@ -33,6 +40,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   metodoPago: "EFECTIVO",
   tipoVenta: "PAPELERIA",
+  referenciaTransferencia: null,
+  idCliente: null,
+  nombreCliente: null,
 
   addItem: (item) =>
     set((state) => {
@@ -80,10 +90,13 @@ export const useCartStore = create<CartState>((set, get) => ({
             ),
     })),
 
-  clearCart: () => set({ items: [] }),
+  clearCart: () => set({ items: [], referenciaTransferencia: null, idCliente: null, nombreCliente: null }),
 
   setMetodoPago: (metodoPago) => set({ metodoPago }),
   setTipoVenta: (tipoVenta) => set({ tipoVenta }),
+  setReferenciaTransferencia: (referenciaTransferencia) =>
+    set({ referenciaTransferencia }),
+  setCliente: (idCliente, nombreCliente) => set({ idCliente, nombreCliente }),
 
   getSubtotal: () => {
     const { items } = get();

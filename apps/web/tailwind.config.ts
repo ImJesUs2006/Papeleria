@@ -10,32 +10,52 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Fondo general de la app (data-theme cambia --bg-app en globals.css).
+        app: "var(--bg-app)",
+        // Color de acento HEX elegido por el negocio (botones principales).
+        acento: "var(--color-accento)",
+        // Tinta fija para texto sobre fondos de acento (siempre oscura).
+        "btn-ink": "#0a0a0a",
         surface: {
-          950: "#050505",
-          900: "#0a0a0a",
-          800: "#111111",
-          700: "#1a1a1a",
-          600: "#242424",
-          500: "#2e2e2e",
-          400: "#3a3a3a",
+          // Escala semántica: sus valores CSS nativos cambian según
+          // data-theme (neon | minimalista | brutalista | corporativo),
+          // definidos como variables en globals.css. 900/950 se mantienen
+          // fijos (scrims oscuros de modales y texto sobre acento).
+          800: "rgb(var(--surface-800-rgb) / <alpha-value>)",
+          700: "rgb(var(--surface-700-rgb) / <alpha-value>)",
+          600: "rgb(var(--surface-600-rgb) / <alpha-value>)",
+          500: "rgb(var(--surface-500-rgb) / <alpha-value>)",
+          400: "rgb(var(--surface-400-rgb) / <alpha-value>)",
+          900: "rgb(var(--surface-900-rgb) / <alpha-value>)",
+          950: "rgb(var(--surface-950-rgb) / <alpha-value>)",
+        },
+        // Tinta global (text-gray-100/200/300): se oscurece en temas claros.
+        gray: {
+          100: "rgb(var(--gray-100-rgb) / <alpha-value>)",
+          200: "rgb(var(--gray-200-rgb) / <alpha-value>)",
+          300: "rgb(var(--gray-300-rgb) / <alpha-value>)",
         },
         neon: {
-          green: "#00ff88",
-          cyan: "#00d4ff",
-          magenta: "#ff0080",
-          yellow: "#ffee00",
-          red: "#ff3366",
-          purple: "#b44bff",
+          // Marca Blanca: green/cyan/magenta son variables CSS override-ables
+          // en runtime (BrandTheme re-pinta botones y acentos con colorAcento).
+          green: "var(--neon-green, #00ff88)",
+          cyan: "var(--neon-cyan, #00d4ff)",
+          magenta: "var(--neon-magenta, #ff0080)",
+          yellow: "var(--neon-yellow, #ffee00)",
+          red: "var(--neon-red, #ff3366)",
+          purple: "var(--neon-purple, #b44bff)",
         },
-        muted: "#9ca3af",
+        muted: "rgb(var(--muted-rgb) / <alpha-value>)",
       },
       boxShadow: {
-        neon: "0 0 20px rgba(0, 255, 136, 0.35)",
-        "neon-cyan": "0 0 20px rgba(0, 212, 255, 0.35)",
-        "neon-magenta": "0 0 20px rgba(255, 0, 128, 0.35)",
-        glow: "0 0 40px rgba(0, 255, 136, 0.25)",
-        "neon-glow": "0 0 60px rgba(0, 255, 136, 0.12)",
-        "neon-inset": "inset 0 0 20px rgba(0, 255, 136, 0.08)",
+        // Sombras por variable: los temas claros los anulan en globals.css.
+        card: "var(--shadow-card)",
+        neon: "var(--shadow-neon)",
+        "neon-cyan": "var(--shadow-neon-cyan)",
+        "neon-magenta": "var(--shadow-neon-magenta)",
+        glow: "var(--shadow-glow)",
+        "neon-glow": "var(--shadow-neon-glow)",
+        "neon-inset": "var(--shadow-neon-inset)",
       },
       animation: {
         "pulse-neon": "pulseNeon 2s ease-in-out infinite",

@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, PackagePlus } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { BarcodeScanner } from "@/components/pos/barcode-scanner";
 import { CartPanel } from "@/components/pos/cart-panel";
+import { ProductGrid } from "@/components/pos/product-grid";
 import { useCartStore } from "@/store/cart";
 import { cn } from "@/lib/utils";
 
@@ -20,28 +21,6 @@ export default function CobroPage() {
   const addItem = useCartStore((s) => s.addItem);
   const [codigoError, setCodigoError] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
-  const [sugeridos, setSugeridos] = useState<ProductoRapido[]>([]);
-  const [imagenes, setImagenes] = useState<Record<string, string>>({});
-
-  const cargarImagenes = async (productos: ProductoRapido[]) => {
-    await Promise.all(
-      productos.map(async (p) => {
-        try {
-          const res = await fetch(`/api/productos/${encodeURIComponent(p.codigoItem)}`);
-          if (!res.ok) return;
-          const detalle = await res.json();
-          if (detalle.imagenBase64) {
-            setImagenes((prev) => ({
-              ...prev,
-              [p.codigoItem]: `data:${detalle.imagenMime};base64,${detalle.imagenBase64}`,
-            }));
-          }
-        } catch {
-          /* sin imagen: se ignora */
-        }
-      })
-    );
-  };
 
   const manejarScan = async (codigo: string) => {
     setCodigoError(null);
@@ -68,8 +47,6 @@ export default function CobroPage() {
         precioUnitario: p.precioUnitario,
         cantidad: 1,
       });
-      setSugeridos(match.slice(0, 3));
-      cargarImagenes(match.slice(0, 3));
     } catch {
       setCodigoError("No se pudo conectar con el servidor");
     } finally {
@@ -80,7 +57,7 @@ export default function CobroPage() {
   return (
     <DashboardLayout>
       <div className="flex flex-1 h-full">
-        {/* Left: Scanner + productos rápidos */}
+        {/* Left: Scanner + catálogo visual */}
         <div className="flex-1 flex flex-col p-6 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -91,7 +68,7 @@ export default function CobroPage() {
               Punto de Venta
             </h2>
             <p className="text-sm text-muted">
-              Escanea el producto o búscalo manualmente
+              Escanea, busca manualmente o toca una tarjeta del catálogo
             </p>
           </motion.div>
 
@@ -118,61 +95,12 @@ export default function CobroPage() {
             )}
           </AnimatePresence>
 
-          {/* Área de productos: sugeridos tras escanear + botón agregar rápido */}
-          <div className="mt-6 flex-1">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-muted uppercase tracking-wider">
-                {buscando ? "Buscando..." : "Productos"}
-              </h3>
-              <PackagePlus className="h-4 w-4 text-neon-cyan" />
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {sugeridos.map((p, i) => (
-                <motion.button
-                  key={p.codigoItem}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    delay: i * 0.06,
-                    type: "spring",
-                    stiffness: 260,
-                    damping: 22,
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() =>
-                    addItem({
-                      codigoItem: p.codigoItem,
-                      descripcion: p.descripcion,
-                      precioUnitario: p.precioUnitario,
-                      cantidad: 1,
-                    })
-                  }
-                  className="bg-surface-700 border border-surface-500 rounded-xl p-4 text-left hover:border-neon-cyan/50 transition-colors min-h-[88px] flex flex-col justify-between"
-                >
-                  {imagenes[p.codigoItem] && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={imagenes[p.codigoItem]}
-                      alt={p.descripcion}
-                      className="h-20 w-full object-cover rounded-lg mb-2"
-                    />
-                  )}
-                  <span className="text-sm font-medium text-gray-100 line-clamp-2 leading-snug">
-                    {p.descripcion}
-                  </span>
-                  <span className="mt-2 text-lg font-black text-neon-cyan text-glow-cyan">
-                    ${p.precioUnitario.toFixed(2)}
-                  </span>
-                </motion.button>
-              ))}
-              {sugeridos.length === 0 && (
-                <div className="col-span-full flex flex-col items-center justify-center py-10 rounded-2xl border border-dashed border-surface-500 text-muted text-sm">
-                  <PackagePlus className="h-8 w-8 mb-2 opacity-40" />
-                  Escanea un código para ver el producto aquí
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Catálogo táctil por defecto: Top 20 favoritos / más vendidos */}
+          {buscando ? (
+            <div className="mt-6 text-sm text-muted">Buscando…</div>
+          ) : (
+            <ProductGrid />
+          )}
         </div>
 
         {/* Right: Cart panel */}

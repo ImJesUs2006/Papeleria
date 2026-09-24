@@ -1,8 +1,17 @@
 import type { Prisma } from "@papeleria/database";
+import { registrarMovimientosKardex } from "./kardex";
 
-export const METODOS_PAGO = ["EFECTIVO", "TARJETA", "DIGITAL"] as const;
+export const METODOS_PAGO = [
+  "EFECTIVO",
+  "TARJETA",
+  "DIGITAL",
+  "TRANSFERENCIA",
+  "CREDITO_TIENDA",
+] as const;
 export const TIPOS_VENTA = ["PAPELERIA", "RECARGA"] as const;
 export const IVA_RATE = 0.16;
+/** Programa de fidelización: 1 punto por cada $100 de compra. */
+export const PESOS_POR_PUNTO = 100;
 
 export type MetodoPago = (typeof METODOS_PAGO)[number];
 export type TipoVenta = (typeof TIPOS_VENTA)[number];
@@ -38,6 +47,17 @@ export interface SaleInput {
   metodoPago: string;
   tipoVenta?: string;
   montoRecibido?: number | null;
+  /**
+   * CRM (Fase 3): obligatorio cuando `metodoPago === "CREDITO_TIENDA"`.
+   * El total se suma al `saldoDeudor` del cliente y acumula puntos de
+   * fidelidad (1 por cada $100) en lugar de ingresar a la caja.
+   */
+  idCliente?: string | null;
+  /**
+   * Blindaje Financiero: últimos 4 dígitos de la referencia/rastreo,
+   * obligatorio cuando el método de pago es transferencia (DIGITAL/TRANSFERENCIA).
+   */
+  referenciaTransferencia?: string | null;
 }
 
 export interface SaleContext {
@@ -83,6 +103,39 @@ export async function executeSale(
   if (!METODOS_PAGO.includes(input.metodoPago as MetodoPago)) {
     throw new SaleError("Método de pago inválido");
   }
+
+  // CRM: la venta a crédito exige cliente registrado y NO ingresa a caja.
+  const esCredito = input.metodoPago === "CREDITO_TIENDA";
+  let idCliente: string | null = null;
+  if (esCredito) {
+    idCliente = String(input.idCliente ?? "").trim() || null;
+    if (!idCliente) {
+      throw new SaleError(
+        "Venta a crédito: selecciona el cliente al que se le cargará el saldo"
+      );
+    }
+    const cliente = await tx.cliente.findUnique({
+      where: { idCliente },
+      select: { idCliente: true },
+    });
+    if (!cliente) {
+      throw new SaleError("Cliente no encontrado", 404);
+    }
+  }
+
+  // Blindaje Financiero: la transferencia exige la referencia de pago.
+  const esTransferencia =
+    input.metodoPago === "DIGITAL" || input.metodoPago === "TRANSFERENCIA";
+  let referenciaTransferencia: string | null = null;
+  if (esTransferencia) {
+    referenciaTransferencia = String(input.referenciaTransferencia ?? "").trim();
+    if (!/^\d{4}$/.test(referenciaTransferencia)) {
+      throw new SaleError(
+        "Pago por transferencia: se requieren los últimos 4 dígitos de la referencia/rastreo"
+      );
+    }
+  }
+
   const tipoVenta: TipoVenta = input.tipoVenta === "RECARGA" ? "RECARGA" : "PAPELERIA";
 
   // Validación de stock y cálculo de totales
@@ -151,8 +204,10 @@ export async function executeSale(
       totalNeto,
       idUsuario: ctx.idUsuario,
       idCaja: ctx.idCaja ?? undefined,
+      idCliente: esCredito ? idCliente : undefined,
       estado: "COMPLETADA",
       metodoPago: input.metodoPago as MetodoPago,
+      referenciaTransferencia,
     },
   });
 
@@ -170,16 +225,36 @@ export async function executeSale(
     });
   }
 
-  // 3. Descuento de stock
+  // 3. Descuento de stock + Kardex inmutable (SALIDA por línea)
   for (const l of lineas) {
     await tx.producto.update({
       where: { codigoItem: l.codigoItem },
       data: { stockActual: { decrement: l.cantidad } },
     });
   }
+  await registrarMovimientosKardex(
+    tx,
+    lineas.map((l) => ({
+      codigoItem: l.codigoItem,
+      tipo: "SALIDA",
+      cantidad: l.cantidad,
+      motivo: `Venta ${folioVenta}`,
+      idUsuario: ctx.idUsuario,
+    }))
+  );
 
-  // 4. Asignación financiera a la caja abierta
-  if (ctx.idCaja) {
+  // 4. Asignación financiera
+  if (esCredito && idCliente) {
+    // CRM: el importe NO toca la caja; va al saldo del cliente + puntos.
+    const puntos = Math.floor(totalNeto / PESOS_POR_PUNTO);
+    await tx.cliente.update({
+      where: { idCliente },
+      data: {
+        saldoDeudor: { increment: totalNeto },
+        puntosFidelidad: { increment: puntos },
+      },
+    });
+  } else if (ctx.idCaja) {
     const campo =
       tipoVenta === "RECARGA"
         ? "totalRecargas"
@@ -206,6 +281,7 @@ export async function executeSale(
         totalNeto,
         metodoPago: input.metodoPago,
         tipoVenta,
+        referenciaTransferencia,
         numItems: lineas.length,
       },
     },

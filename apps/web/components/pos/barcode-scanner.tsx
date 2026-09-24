@@ -131,7 +131,7 @@ export function BarcodeScanner({
               </p>
               <button
                 onClick={() => setManualOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neon-yellow text-surface-900 font-bold text-xs shrink-0"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neon-yellow text-btn-ink font-bold text-xs shrink-0"
               >
                 <Keyboard className="h-4 w-4" />
                 Abrir

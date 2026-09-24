@@ -364,7 +364,7 @@ export default function DevolucionesPage() {
                       className={cn(
                         "mt-4 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all",
                         totales.hay && !enviando
-                          ? "bg-neon-green text-surface-900 shadow-neon"
+                          ? "bg-neon-green text-btn-ink shadow-neon"
                           : "bg-surface-600 text-muted cursor-not-allowed"
                       )}
                     >

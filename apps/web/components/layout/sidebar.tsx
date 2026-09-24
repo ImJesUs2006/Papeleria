@@ -98,7 +98,7 @@ const NAV_ITEMS: Array<{
 export function Sidebar() {
   const pathname = usePathname();
   const { nombre, rol, hasPermission, logout } = useAuthStore();
-  const { trust, isFeatureEnabled } = useConfigStore();
+  const { trust, isFeatureEnabled, config } = useConfigStore();
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!hasPermission(item.permission)) return false;
@@ -113,12 +113,21 @@ export function Sidebar() {
     <aside className="w-64 h-screen bg-surface-800 border-r border-surface-600 flex flex-col">
       {/* Brand */}
       <div className="px-6 py-5 border-b border-surface-600">
-        <h1 className="text-xl font-black tracking-tight">
-          <span className="text-neon-green">Pape</span>
-          <span className="text-gray-100">lería</span>
-        </h1>
-        <p className="text-xs text-muted mt-1">
-          {rol === "ADMINISTRADORA" ? "Panel Admin" : "Punto de Venta"}
+        {config?.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={config.logo}
+            alt={config.nombreNegocio}
+            className="h-9 w-auto max-w-[180px] object-contain mb-1"
+          />
+        ) : (
+          <h1 className="text-xl font-black tracking-tight">
+            <span className="text-neon-green">Pape</span>
+            <span className="text-gray-100">lería</span>
+          </h1>
+        )}
+        <p className="text-xs text-muted mt-1 text-ellipsis overflow-hidden whitespace-nowrap" title={config?.nombreNegocio}>
+          {rol === "ADMINISTRADORA" ? "Panel Admin" : "Punto de Venta"} · {config?.nombreNegocio ?? ""}
         </p>
       </div>
 

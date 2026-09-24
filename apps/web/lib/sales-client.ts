@@ -23,6 +23,8 @@ export async function registrarVentaClient(items: CartItem[], extra: {
   metodoPago: string;
   tipoVenta: "PAPELERIA" | "RECARGA";
   montoRecibido?: number | null;
+  referenciaTransferencia?: string | null;
+  idCliente?: string | null;
   idUsuario: string;
   nombreUsuario: string;
 }): Promise<ResultadoVenta> {
@@ -31,6 +33,8 @@ export async function registrarVentaClient(items: CartItem[], extra: {
     metodoPago: extra.metodoPago,
     tipoVenta: extra.tipoVenta,
     montoRecibido: extra.montoRecibido ?? null,
+    referenciaTransferencia: extra.referenciaTransferencia ?? null,
+    idCliente: extra.idCliente ?? null,
   };
 
   try {
@@ -56,6 +60,14 @@ export async function registrarVentaClient(items: CartItem[], extra: {
     const status = (e as any)?.status;
     if (status && status >= 400 && status < 500) throw e;
 
+    // CRM: el crédito de tienda NO se puede encolar offline: no existe un
+    // idCliente verificado ni caja para que el sync re-liquide la deuda.
+    if (extra.metodoPago === "CREDITO_TIENDA") {
+      throw new Error(
+        "Venta a crédito: requiere conexión para registrar el saldo del cliente"
+      );
+    }
+
     const subtotal = items.reduce((s, i) => s + i.cantidad * i.precioUnitario, 0);
     const iva = subtotal * IVA_RATE;
     const totalNeto = Math.round((subtotal + iva) * 100) / 100;
@@ -78,6 +90,7 @@ export async function registrarVentaClient(items: CartItem[], extra: {
       })),
       metodoPago: extra.metodoPago as any,
       tipoVenta: extra.tipoVenta,
+      referenciaTransferencia: extra.referenciaTransferencia ?? null,
       subtotal: Math.round(subtotal * 100) / 100,
       iva: Math.round(iva * 100) / 100,
       totalNeto,

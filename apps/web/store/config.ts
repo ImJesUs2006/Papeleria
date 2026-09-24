@@ -40,6 +40,8 @@ interface ConfigState {
   isFeatureEnabled: (flag: keyof BusinessConfig["featureFlags"]) => boolean;
   refresh: (config: BusinessConfig, firma: string, sessionKey: string) => boolean;
   invalidate: () => void;
+  /** Fuerza un flag en el estado local. Seguro: el servidor revalida en cada API. */
+  setFlag: (flag: keyof BusinessConfig["featureFlags"], value: boolean) => void;
 }
 
 function applyVerified(config: BusinessConfig) {
@@ -103,6 +105,17 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   },
 
   invalidate: () => set({ trust: "NO_VERIFICADA" }),
+
+  setFlag: (flag, value) =>
+    set((state) => {
+      if (!state.config) return {};
+      return {
+        config: {
+          ...state.config,
+          featureFlags: { ...state.config.featureFlags, [flag]: value },
+        },
+      };
+    }),
 
   isFeatureEnabled: (flag) => {
     // SOLO se honran flags de un blob con firma verificada (trust VERIFICADA).

@@ -11,6 +11,8 @@ export interface ArqueoInput {
   totalRecargas: number;
   /** Salidas de efectivo de la caja (reembolsos, abonos a proveedores). */
   totalEgresos?: number;
+  /** Retiros parciales de la caja (Fase 3): se restan del efectivo esperado. */
+  retirosEfectivo?: number;
   efectivoDeclarado: number;
   digitalDeclarado: number;
   recargasDeclarado: number;
@@ -44,7 +46,10 @@ const EPSILON = 0.01;
  */
 export function calcularArqueo(input: ArqueoInput): ArqueoResult {
   const egresos = input.totalEgresos ?? 0;
-  const esperadoEfectivo = round2(input.fondoInicial + input.totalVentasEfectivo - egresos);
+  const retiros = input.retirosEfectivo ?? 0;
+  const esperadoEfectivo = round2(
+    input.fondoInicial + input.totalVentasEfectivo - egresos - retiros
+  );
   const esperadoDigital = round2(input.totalVentasDigital);
   const esperadoRecargas = round2(input.totalRecargas);
 

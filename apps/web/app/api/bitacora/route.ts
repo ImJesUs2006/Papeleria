@@ -34,6 +34,9 @@ export async function GET(request: Request) {
     const hastaParam = searchParams.get("hasta");
     const modulo = searchParams.get("modulo");
     const exportar = searchParams.get("export") === "xlsx";
+    // Fase B: paginación estricta para no arrastrar el log completo.
+    const limite = Math.min(Math.max(Number(searchParams.get("limit")) || 50, 1), 200);
+    const offset = Math.max(Number(searchParams.get("offset")) || 0, 0);
 
     const AND: any[] = [];
 
@@ -51,14 +54,18 @@ export async function GET(request: Request) {
       AND.push({ moduloSistema: modulo as any });
     }
 
-    const logs = await prisma.bitacoraLog.findMany({
-      where: { AND },
-      orderBy: { fechaHora: "desc" },
-      take: exportar ? 2000 : 100,
-      include: {
-        usuario: { select: { nombre: true, username: true, rol: true } },
-      },
-    });
+    const [logs, total] = await Promise.all([
+      prisma.bitacoraLog.findMany({
+        where: { AND },
+        orderBy: { fechaHora: "desc" },
+        take: exportar ? 2000 : limite,
+        skip: exportar ? 0 : offset,
+        include: {
+          usuario: { select: { nombre: true, username: true, rol: true } },
+        },
+      }),
+      prisma.bitacoraLog.count({ where: { AND } }),
+    ]);
 
     if (exportar) {
       const headers = [
@@ -107,7 +114,10 @@ export async function GET(request: Request) {
         detallesError: log.detallesError,
         ipOrigen: log.ipOrigen,
       })),
-      total: logs.length,
+      total,
+      offset,
+      limite,
+      tieneMas: offset + logs.length < total,
     });
   } catch (error) {
     return NextResponse.json(

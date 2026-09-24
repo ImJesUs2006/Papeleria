@@ -3,6 +3,7 @@ import { prisma } from "@papeleria/database";
 import { getSession } from "@/lib/auth";
 import { buildStyledWorkbook } from "@/lib/export-exceljs";
 import { getReporteData, ReporteError } from "@/lib/reports";
+import { getBusinessConfig } from "@/lib/feature-flags";
 
 // ============================================================
 // GET /api/reportes  → descarga Excel ejecutiva (exceljs)
@@ -28,12 +29,57 @@ export async function GET(request: Request) {
 
     const reporte = await getReporteData(tipo, { desde, hasta, idCaja });
 
+    // Reportes Dinámicos (Fase 2): el encabezado usa el color de marca
+    // del negocio y el inventario resalta en rojo el stock bajo su mínimo.
+    const config = await getBusinessConfig();
+
+    // Kardex (Fase 3): el reporte de inventario incluye una hoja con los
+    // movimientos inmutable —de más recientes a más antiguos— para trazar
+    // la evolución del stock (ventas, devoluciones y ajustes).
+    let extraSheets: Parameters<typeof buildStyledWorkbook>[0]["extraSheets"];
+    if (tipo === "inventario") {
+      const movimientos = await prisma.movimientoKardex.findMany({
+        orderBy: { fecha: "desc" },
+        take: 3000,
+        include: {
+          producto: { select: { descripcion: true } },
+          usuario: { select: { nombre: true } },
+        },
+      });
+      extraSheets = [
+        {
+          name: "Kardex de movimientos",
+          columns: [
+            { header: "Fecha" },
+            { header: "Código" },
+            { header: "Descripción" },
+            { header: "Tipo" },
+            { header: "Cambio", numFmt: "0" },
+            { header: "Motivo" },
+            { header: "Responsable" },
+          ],
+          rows: movimientos.map((m) => [
+            m.fecha.toISOString(),
+            m.codigoItem,
+            m.producto?.descripcion ?? "",
+            m.tipo,
+            m.cantidadCambio,
+            m.motivo,
+            m.usuario?.nombre ?? "Sistema",
+          ]),
+        },
+      ];
+    }
+
     const buffer = await buildStyledWorkbook({
       sheetName: reporte.sheetName,
       columns: reporte.columns,
       rows: reporte.rows,
-      headerColor: "0F766E",
+      headerColor: config.colorAcento,
       totalLabel: "TOTAL",
+      conditionals:
+        tipo === "inventario" ? [{ col: 3, thresholdCol: 4 }] : undefined,
+      extraSheets,
     });
 
     await prisma.bitacoraLog.create({

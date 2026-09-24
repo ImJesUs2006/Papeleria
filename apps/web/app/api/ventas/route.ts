@@ -10,6 +10,7 @@ const MAPA_METODO: Record<string, string> = {
   TARJETA_TERMINAL: "TARJETA_TERMINAL",
   DIGITAL: "TRANSFERENCIA",
   TRANSFERENCIA: "TRANSFERENCIA",
+  CREDITO_TIENDA: "CREDITO_TIENDA",
 };
 
 export async function POST(request: Request) {

@@ -173,6 +173,10 @@ export async function PATCH(
       data.codigoBarras = body.codigoBarras || null;
     }
 
+    if (body.favorito !== undefined) {
+      data.favorito = body.favorito === true;
+    }
+
     // Imagen del producto: data URL o base64 crudo. Límite ~1.5 MB.
     if (body.imagenBase64 !== undefined) {
       if (body.imagenBase64 === null || body.imagenBase64 === "") {
@@ -249,6 +253,7 @@ export async function PATCH(
       ubicacionEstante: actualizado.ubicacionEstante,
       proveedor: actualizado.proveedor,
       codigoBarras: actualizado.codigoBarras,
+      favorito: actualizado.favorito,
     });
   } catch (error) {
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@papeleria/database";
 import { getBusinessConfig } from "@/lib/feature-flags";
 
 // ============================================================
@@ -50,22 +51,30 @@ export async function PUT(request: Request) {
         featureFlags: parsed.data.featureFlags,
         metodosPago: parsed.data.metodosPago,
         politicaStockOffline: parsed.data.politicaStockOffline,
+        logo: parsed.data.logo ?? null,
+        temaBase: parsed.data.temaBase,
+        colorAcento: parsed.data.colorAcento,
+        datosBancarios: parsed.data.datosBancarios ?? Prisma.DbNull,
         configVersion: proximaVersion,
         setupPendiente: false,
         updatedById: user.idPersona,
       },
     });
 
-    await prisma.bitacoraLog.create({
-      data: {
-        idUsuario: user.idPersona,
-        accion: `Configuración de negocio actualizada → v${proximaVersion}`,
-        moduloSistema: "CONFIGURACION",
-        jsonPayload: { configVersion: proximaVersion },
-      },
-    });
+    const [, config] = await Promise.all([
+      prisma.bitacoraLog.create({
+        data: {
+          idUsuario: user.idPersona,
+          accion: `Configuración de negocio actualizada → v${proximaVersion}`,
+          moduloSistema: "CONFIGURACION",
+          jsonPayload: { configVersion: proximaVersion },
+        },
+      }),
+      // Fase B: la relectura firmada es independiente de la auditoría;
+      // se ejecuta en paralelo a la bitácora para recortar latencia.
+      getBusinessConfig(),
+    ]);
 
-    const config = await getBusinessConfig();
     return NextResponse.json({ ok: true, ...buildSignedConfig(config) });
   } catch {
     return NextResponse.json({ error: "Error al actualizar configuración" }, { status: 500 });

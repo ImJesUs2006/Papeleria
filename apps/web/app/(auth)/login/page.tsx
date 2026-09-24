@@ -46,7 +46,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-900 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-app p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -111,7 +111,7 @@ export default function LoginScreen() {
               className={cn(
                 "w-full py-3 rounded-xl font-bold text-lg transition-all",
                 username && password
-                  ? "bg-neon-green text-surface-900 shadow-neon"
+                  ? "bg-neon-green text-btn-ink shadow-neon"
                   : "bg-surface-600 text-muted cursor-not-allowed"
               )}
             >

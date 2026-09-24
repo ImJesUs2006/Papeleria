@@ -20,6 +20,16 @@ export interface ExportColumn {
   total?: boolean;
 }
 
+/**
+ * Formato condicional por celda.
+ * `col` (Stock Actual, 0-based) se pinta en rojo si
+ * `col <= thresholdCol` (Stock Mínimo, 0-based).
+ */
+export interface ExportConditional {
+  col: number;
+  thresholdCol: number;
+}
+
 export interface BuildWorkbookOptions {
   sheetName: string;
   columns: ExportColumn[];
@@ -28,6 +38,10 @@ export interface BuildWorkbookOptions {
   headerColor?: string;
   /** Texto de la celda de encabezado en la fila de totales. */
   totalLabel?: string;
+  /** Resaltados condicionales a aplicar a las filas de datos. */
+  conditionals?: ExportConditional[];
+  /** Hojas adicionales (ej. Kardex de movimientos de inventario, Fase 3). */
+  extraSheets?: Array<{ name: string; columns: ExportColumn[]; rows: CellValue[][] }>;
 }
 
 export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<Buffer> {
@@ -72,7 +86,22 @@ export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<B
 
   // Filas de datos.
   for (const row of opts.rows) {
-    ws.addRow(row);
+    const fila = ws.addRow(row);
+
+    // Formato condicional: alerta en rojo cuando stockActual <= stockMinimo.
+    for (const cond of opts.conditionals ?? []) {
+      const v = row[cond.col];
+      const limite = row[cond.thresholdCol];
+      if (typeof v === "number" && typeof limite === "number" && v <= limite) {
+        const celda = fila.getCell(cond.col + 1);
+        celda.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFEE2E2" },
+        };
+        celda.font = { bold: true, color: { argb: "FFB91C1C" } };
+      }
+    }
   }
 
   // Fila de totales.
@@ -99,6 +128,43 @@ export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<B
     from: { row: 1, column: 1 },
     to: { row: 1, column: nCols },
   };
+
+  // Hojas adicionales (Kardex): mismas reglas de estilo básico.
+  for (const extra of opts.extraSheets ?? []) {
+    const wsExtra = wb.addWorksheet(extra.name, {
+      views: [{ state: "frozen", ySplit: 1 }],
+    });
+    wsExtra.columns = extra.columns.map((col, i) => {
+      const maxLen = Math.max(
+        col.header.length,
+        ...extra.rows.map((r) => String(r[i] ?? "").length)
+      );
+      return {
+        header: col.header,
+        key: `x-${i}-${col.header}`,
+        width: col.width ?? Math.min(Math.max(maxLen + 3, 10), 45),
+        style: col.numFmt ? { numFmt: col.numFmt } : undefined,
+      };
+    });
+    const hRow = wsExtra.getRow(1);
+    hRow.height = 20;
+    hRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: `FF${headerColor}` },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+    for (const row of extra.rows) {
+      wsExtra.addRow(row);
+    }
+    wsExtra.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: extra.columns.length },
+    };
+  }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);

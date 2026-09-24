@@ -50,29 +50,65 @@ const MODULO_COLORS: Record<string, string> = {
 };
 
 export default function BitacoraPage() {
+  const PAGE_SIZE = 50;
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const [tieneMas, setTieneMas] = useState(false);
+  const [total, setTotal] = useState(0);
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [modulo, setModulo] = useState<string>("TODOS");
   const [exportando, setExportando] = useState(false);
 
+  const paramsFiltros = useCallback(() => {
+    const params = new URLSearchParams();
+    if (desde) params.set("desde", desde);
+    if (hasta) params.set("hasta", hasta);
+    if (modulo !== "TODOS") params.set("modulo", modulo);
+    return params;
+  }, [desde, hasta, modulo]);
+
   const cargar = useCallback(async () => {
     setLoading(true);
+    setTieneMas(false);
     try {
-      const params = new URLSearchParams();
-      if (desde) params.set("desde", desde);
-      if (hasta) params.set("hasta", hasta);
-      if (modulo !== "TODOS") params.set("modulo", modulo);
+      const params = paramsFiltros();
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", "0");
 
       const res = await fetch(`/api/bitacora?${params.toString()}`);
       if (!res.ok) throw new Error("error");
       const data = await res.json();
       setLogs(data.data ?? []);
+      setTotal(data.total ?? (data.data ?? []).length);
+      setTieneMas(Boolean(data.tieneMas));
+    } catch {
+      setLogs([]);
+      setTotal(0);
+      setTieneMas(false);
     } finally {
       setLoading(false);
     }
-  }, [desde, hasta, modulo]);
+  }, [paramsFiltros]);
+
+  const cargarMas = useCallback(async () => {
+    if (cargandoMas || !tieneMas) return;
+    setCargandoMas(true);
+    try {
+      const params = paramsFiltros();
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(logs.length));
+
+      const res = await fetch(`/api/bitacora?${params.toString()}`);
+      if (!res.ok) throw new Error("error");
+      const data = await res.json();
+      setLogs((prev) => [...prev, ...(data.data ?? [])]);
+      setTieneMas(Boolean(data.tieneMas));
+    } finally {
+      setCargandoMas(false);
+    }
+  }, [cargandoMas, tieneMas, logs.length, paramsFiltros]);
 
   useEffect(() => {
     cargar();
@@ -81,10 +117,8 @@ export default function BitacoraPage() {
   const exportarExcel = async () => {
     setExportando(true);
     try {
-      const params = new URLSearchParams({ export: "xlsx" });
-      if (desde) params.set("desde", desde);
-      if (hasta) params.set("hasta", hasta);
-      if (modulo !== "TODOS") params.set("modulo", modulo);
+      const params = paramsFiltros();
+      params.set("export", "xlsx");
 
       const res = await fetch(`/api/bitacora?${params.toString()}`);
       if (!res.ok) throw new Error("error");
@@ -172,7 +206,7 @@ export default function BitacoraPage() {
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={cargar}
-                className="w-full py-2.5 rounded-xl bg-neon-green text-surface-900 font-bold text-sm shadow-neon hover:brightness-110 transition-all"
+                className="w-full py-2.5 rounded-xl bg-neon-green text-btn-ink font-bold text-sm shadow-neon hover:brightness-110 transition-all"
               >
                 Aplicar filtros
               </motion.button>
@@ -188,7 +222,7 @@ export default function BitacoraPage() {
               <span className="font-bold text-gray-100">
                 Registros{" "}
                 <span className="text-muted font-normal">
-                  ({logs.length})
+                  ({total === 0 ? logs.length : total})
                 </span>
               </span>
             </div>
@@ -286,6 +320,22 @@ export default function BitacoraPage() {
                   ))}
                 </tbody>
               </table>
+            )}
+            {!loading && tieneMas && (
+              <div className="flex justify-center py-4 border-t border-surface-600">
+                <button
+                  onClick={cargarMas}
+                  disabled={cargandoMas}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-surface-700 hover:bg-surface-600 text-sm font-bold text-gray-100 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {cargandoMas ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <History className="h-4 w-4" />
+                  )}
+                  {cargandoMas ? "Cargando…" : "Cargar más registros"}
+                </button>
+              </div>
             )}
           </div>
         </div>

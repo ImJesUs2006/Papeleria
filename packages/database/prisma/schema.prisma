@@ -60,69 +60,85 @@ enum TipoDevolucion {
   NOTA_CREDITO
 }
 
+enum TipoMovimientoKardex {
+  ENTRADA
+  SALIDA
+  AJUSTE
+}
+
 // ============================================================
 // TABLAS
 // ============================================================
 
 model Usuario {
-  idPersona     String   @id @default(uuid())
-  nombre        String
-  username      String   @unique
-  passwordHash  String
-  rol           Rol      @default(CAJERA)
-  activa        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  ultimoLoginAt DateTime?
+  idPersona          String    @id @default(uuid())
+  nombre             String
+  username           String    @unique
+  passwordHash       String
+  rol                Rol       @default(CAJERA)
+  activa             Boolean   @default(true)
+  // ---- Seguridad Root (Fase 3) ----
+  // Única persona habilitada para acciones destructivas del sistema
+  // (Factory Reset/restauración de snapshots).
+  isRoot             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  ultimoLoginAt      DateTime?
   passwordCambiadaEn DateTime?
 
-  ventas              Venta[]
-  sesionesCaja        SesionCaja[]
-  bitacoraLogs        BitacoraLog[]
-  pedidosProveedor    PedidoProveedor[]
-  configActualizada   ConfiguracionNegocio[]
-  cierresIniciados    SesionCaja[]          @relation("CierreIniciadoPor")
-  devoluciones        Devolucion[]
-  pagosProveedor      PagoProveedor[]
+  ventas             Venta[]
+  sesionesCaja       SesionCaja[]
+  bitacoraLogs       BitacoraLog[]
+  pedidosProveedor   PedidoProveedor[]
+  configActualizada  ConfiguracionNegocio[]
+  cierresIniciados   SesionCaja[]           @relation("CierreIniciadoPor")
+  devoluciones       Devolucion[]
+  pagosProveedor     PagoProveedor[]
+  snapshotsSeguridad SnapshotSeguridad[]    @relation("SnapshotCreadoPor")
+  retirosAutorizados RetiroEfectivo[]       @relation("RetiroAutorizadoPor")
+  movimientosKardex  MovimientoKardex[]
 
   @@map("usuarios")
 }
 
 model Producto {
-  codigoItem       String      @id
-  descripcion      String
-  precioUnitario   Decimal     @db.Decimal(10, 2)
-  precioCompra     Decimal?    @db.Decimal(10, 2)
-  stockActual      Int         @default(0)
-  stockMinimo      Int         @default(5)
-  ubicacionEstante String?
-  tipoImpresion    TipoImpresion?
-  proveedor        String?
-  codigoBarras     String?     @unique
-  activo           Boolean     @default(true)
-  fechaCreacion    DateTime    @default(now())
-  fechaActualizacion DateTime  @updatedAt
-  imagenMime       String?
-  imagenBase64     String?     @db.Text
+  codigoItem         String         @id
+  descripcion        String
+  precioUnitario     Decimal        @db.Decimal(10, 2)
+  precioCompra       Decimal?       @db.Decimal(10, 2)
+  stockActual        Int            @default(0)
+  stockMinimo        Int            @default(5)
+  ubicacionEstante   String?
+  tipoImpresion      TipoImpresion?
+  proveedor          String?
+  codigoBarras       String?        @unique
+  activo             Boolean        @default(true)
+  // Destacado para el catálogo visual del POS (grid táctil "más vendidos / favoritos").
+  favorito           Boolean        @default(false)
+  fechaCreacion      DateTime       @default(now())
+  fechaActualizacion DateTime       @updatedAt
+  imagenMime         String?
+  imagenBase64       String?        @db.Text
 
-  lineasDetalle    LineaDetalleVenta[]
-  itemsPedido      ItemPedidoProveedor[]
-  devolucionLineas DevolucionLinea[]
+  lineasDetalle     LineaDetalleVenta[]
+  itemsPedido       ItemPedidoProveedor[]
+  devolucionLineas  DevolucionLinea[]
+  kardexMovimientos MovimientoKardex[]
 
   @@map("productos")
 }
 
 model Proveedor {
-  idProveedor  String   @id @default(uuid())
-  nombre       String
-  telefono     String?
-  email        String?
-  direccion    String?
-  contacto     String?
+  idProveedor   String   @id @default(uuid())
+  nombre        String
+  telefono      String?
+  email         String?
+  direccion     String?
+  contacto      String?
   limiteCredito Decimal? @db.Decimal(10, 2)
   saldoCredito  Decimal? @default(0) @db.Decimal(10, 2)
-  activo       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
 
   pedidos PedidoProveedor[]
   pagos   PagoProveedor[]
@@ -131,54 +147,63 @@ model Proveedor {
 }
 
 model PedidoProveedor {
-  idPedido       String   @id @default(uuid())
-  idProveedor    String
-  fechaPedido    DateTime @default(now())
-  fechaEntrega   DateTime?
-  totalEstimado  Decimal  @db.Decimal(10, 2)
-  estado         String   @default("PENDIENTE")
-  notas          String?
-  createdBy      String
+  idPedido      String    @id @default(uuid())
+  idProveedor   String
+  fechaPedido   DateTime  @default(now())
+  fechaEntrega  DateTime?
+  totalEstimado Decimal   @db.Decimal(10, 2)
+  estado        String    @default("PENDIENTE")
+  notas         String?
+  createdBy     String
 
-  proveedor  Proveedor @relation(fields: [idProveedor], references: [idProveedor])
-  usuario    Usuario   @relation(fields: [createdBy], references: [idPersona])
-  items      ItemPedidoProveedor[]
+  proveedor Proveedor             @relation(fields: [idProveedor], references: [idProveedor])
+  usuario   Usuario               @relation(fields: [createdBy], references: [idPersona])
+  items     ItemPedidoProveedor[]
 
   @@map("pedidos_proveedor")
 }
 
 model ItemPedidoProveedor {
-  idItemPedido  String  @id @default(uuid())
-  idPedido      String
-  codigoItem    String
-  cantidad      Int
+  idItemPedido   String  @id @default(uuid())
+  idPedido       String
+  codigoItem     String
+  cantidad       Int
   precioCotizado Decimal @db.Decimal(10, 2)
 
-  pedido     PedidoProveedor @relation(fields: [idPedido], references: [idPedido])
-  producto   Producto        @relation(fields: [codigoItem], references: [codigoItem])
+  pedido   PedidoProveedor @relation(fields: [idPedido], references: [idPedido])
+  producto Producto        @relation(fields: [codigoItem], references: [codigoItem])
 
   @@map("items_pedido_proveedor")
 }
 
 model Venta {
-  folioVenta      String   @id
-  fechaHora       DateTime @default(now())
-  subtotal        Decimal  @db.Decimal(10, 2)
-  iva             Decimal  @db.Decimal(10, 2)
-  totalNeto       Decimal  @db.Decimal(10, 2)
-  idUsuario       String
-  idCaja          String?
-  estado          EstadoVenta @default(ACTIVA)
-  metodoPago      String   @default("EFECTIVO")
-  createdAt       DateTime @default(now())
+  folioVenta              String      @id
+  fechaHora               DateTime    @default(now())
+  subtotal                Decimal     @db.Decimal(10, 2)
+  iva                     Decimal     @db.Decimal(10, 2)
+  totalNeto               Decimal     @db.Decimal(10, 2)
+  idUsuario               String
+  idCaja                  String?
+  // ---- CRM y Cuentas por Cobrar (Fase 3) ----
+  // Cliente asociado cuando el pago se hace con "Crédito de Tienda"
+  // (el total pasa a `saldoDeudor` en lugar de ingresar a caja).
+  idCliente               String?
+  estado                  EstadoVenta @default(ACTIVA)
+  metodoPago              String      @default("EFECTIVO")
+  // ---- Blindaje Financiero (Fase 2) ----
+  // Últimos 4+ dígitos de la referencia/rastreo de la transferencia,
+  // exigidos por el POS cuando el cobro es por transferencia (DIGITAL).
+  referenciaTransferencia String?     @db.Text
+  createdAt               DateTime    @default(now())
   // ---- Offline-first (idempotencia + traza de origen) ----
-  idLocal         String?  @unique
-  origen          String   @default("ONLINE")
-  dispositivoId   String?
-  fechaHoraCliente DateTime?
+  idLocal                 String?     @unique
+  origen                  String      @default("ONLINE")
+  dispositivoId           String?
+  fechaHoraCliente        DateTime?
 
-  usuario       Usuario              @relation(fields: [idUsuario], references: [idPersona])
-  sesionCaja    SesionCaja?          @relation(fields: [idCaja], references: [idCaja])
+  usuario       Usuario             @relation(fields: [idUsuario], references: [idPersona])
+  sesionCaja    SesionCaja?         @relation(fields: [idCaja], references: [idCaja])
+  cliente       Cliente?            @relation(fields: [idCliente], references: [idCliente])
   lineasDetalle LineaDetalleVenta[]
   devoluciones  Devolucion[]
 
@@ -194,7 +219,7 @@ model LineaDetalleVenta {
   descuentoLinea Decimal @default(0) @db.Decimal(10, 2)
   subtotalLinea  Decimal @db.Decimal(10, 2)
 
-  venta   Venta    @relation(fields: [folioVenta], references: [folioVenta])
+  venta    Venta    @relation(fields: [folioVenta], references: [folioVenta])
   producto Producto @relation(fields: [codigoItem], references: [codigoItem])
 
   @@map("lineas_detalle_venta")
@@ -202,6 +227,9 @@ model LineaDetalleVenta {
 
 model SesionCaja {
   idCaja              String           @id @default(uuid())
+  // ---- Multi-Caja (Fase 3) ----
+  // Identificador humano del terminal físico (ej. "Caja 1", "Terminal 2").
+  nombreCaja          String?
   idUsuario           String
   fondoInicial        Decimal          @db.Decimal(10, 2)
   totalVentasEfectivo Decimal          @default(0) @db.Decimal(10, 2)
@@ -222,33 +250,68 @@ model SesionCaja {
   faltanteTotal       Decimal?         @db.Decimal(10, 2)
   descuadre           Boolean          @default(false)
 
-  usuario        Usuario                        @relation(fields: [idUsuario], references: [idPersona])
-  cierreIniciado Usuario?                       @relation("CierreIniciadoPor", fields: [cierreIniciadoPor], references: [idPersona])
+  usuario        Usuario          @relation(fields: [idUsuario], references: [idPersona])
+  cierreIniciado Usuario?         @relation("CierreIniciadoPor", fields: [cierreIniciadoPor], references: [idPersona])
   ventas         Venta[]
   devoluciones   Devolucion[]
+  retiros        RetiroEfectivo[]
 
   @@map("sesiones_caja")
 }
 
 model ConfiguracionNegocio {
-  id             Int         @id @default(1)
-  nombreNegocio  String      @default("Mi Negocio")
-  tipoNegocio    TipoNegocio @default(PAPELERIA_RETAIL)
-  moneda         String      @default("MXN")
-  ivaRate        Decimal     @default(16) @db.Decimal(5, 2)
+  id                   Int         @id @default(1)
+  nombreNegocio        String      @default("Mi Negocio")
+  tipoNegocio          TipoNegocio @default(PAPELERIA_RETAIL)
+  moneda               String      @default("MXN")
+  ivaRate              Decimal     @default(16) @db.Decimal(5, 2)
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
-  featureFlags   Json        @default("{}")
+  featureFlags         Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
-  metodosPago    Json        @default("[]")
-  politicaStockOffline String @default("PERMITIR_NEGATIVO")
-  configVersion  Int         @default(1)
-  setupPendiente Boolean     @default(true)
-  updatedById    String?
-  updatedAt      DateTime    @updatedAt
+  metodosPago          Json        @default("[]")
+  politicaStockOffline String      @default("PERMITIR_NEGATIVO")
+  // ---- Marca Blanca / Temas (Fase 1 → Fase 3) ----
+  // Logo del negocio: data URI base64 (máx 1 MB, validado en API) o URL.
+  logo                 String?     @db.Text
+  // Tema base visual del sistema: "NEON" | "MINIMALISTA" | "BRUTALISTA" | "CORPORATIVO".
+  // BrandTheme inyecta data-theme="<temaBase>" en <html> y las variables
+  // semánticas de Tailwind (bg-surface, border-base, shadow-card) cambian
+  // sus valores CSS nativos según el tema.
+  temaBase             String      @default("NEON")
+  // Color de acento (hex #rrggbb) para botones principales y acentos (antes temaColor).
+  colorAcento          String      @default("#10b981")
+  // ---- Blindaje Financiero (Fase 2) ----
+  // Cuenta de transferencia del negocio para cobros PPG/pagaré, ej.
+  // { banco: string; titular: string; clabe: string; cuenta: string }
+  // Administrada por el Admin desde Configuración; el POS la muestra en
+  // el modal de pago "Transferencia" exigiendo los últimos 4 dígitos de
+  // la referencia/rastreo.
+  datosBancarios       Json?
+  configVersion        Int         @default(1)
+  setupPendiente       Boolean     @default(true)
+  updatedById          String?
+  updatedAt            DateTime    @updatedAt
 
   updatedBy Usuario? @relation(fields: [updatedById], references: [idPersona])
 
   @@map("configuracion_negocio")
+}
+
+model SnapshotSeguridad {
+  id        String   @id @default(uuid())
+  fecha     DateTime @default(now())
+  // Estado completo (configuración + totales por sesión de caja) en JSON,
+  // capturado ANTES de un reinicio del sistema para permitir restauración.
+  datosJson Json
+  motivo    String
+  // Quién originó el snapshot (la única persona que puede reiniciar).
+  idUsuario String?
+
+  usuario Usuario? @relation("SnapshotCreadoPor", fields: [idUsuario], references: [idPersona])
+
+  @@index([fecha])
+  @@index([idUsuario])
+  @@map("snapshots_seguridad")
 }
 
 model BitacoraLog {
@@ -323,4 +386,66 @@ model PagoProveedor {
 
   @@index([idProveedor])
   @@map("pagos_proveedor")
+}
+
+// ============================================================
+// FASE 3 — CRM · Kardex · Multi-Caja
+// ============================================================
+
+// Cliente del sistema de cuentas por cobrar (Crédito de Tienda) y
+// programa de fidelización (1 punto por cada $100 de compra).
+model Cliente {
+  idCliente       String   @id @default(uuid())
+  nombre          String
+  telefono        String?
+  saldoDeudor     Decimal  @default(0) @db.Decimal(10, 2)
+  puntosFidelidad Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ventas Venta[]
+
+  @@map("clientes")
+}
+
+// Kardex de inventario INMUTABLE: toda variación de stock (venta,
+// devolución, carga masiva, ajuste, pedido) genera EXACTAMENTE un
+// registro aquí; nunca se toca `stockActual` sin su trazo.
+model MovimientoKardex {
+  idMovimiento   String               @id @default(uuid())
+  fecha          DateTime             @default(now())
+  codigoItem     String
+  cantidadCambio Int
+  // ENTRADA incrementa el stock, SALIDA lo decrementa; AJUSTE corrige
+  // inventarios (recuento físico) con signo según la diferencia real.
+  tipo           TipoMovimientoKardex
+  motivo         String
+  idUsuario      String
+
+  producto Producto @relation(fields: [codigoItem], references: [codigoItem])
+  usuario  Usuario  @relation(fields: [idUsuario], references: [idPersona])
+
+  @@index([codigoItem, fecha])
+  @@index([fecha])
+  @@map("movimientos_kardex")
+}
+
+// Retiros parciales de efectivo de una caja (seguridad, transaccional):
+// AL cerrar, el corte ciego resta estos montos del esperado para no
+// marcar descuadre matemático.
+model RetiroEfectivo {
+  idRetiro  String   @id @default(uuid())
+  idCaja    String
+  idAdmin   String
+  monto     Decimal  @db.Decimal(10, 2)
+  motivo    String?
+  fechaHora DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  sesionCaja SesionCaja @relation(fields: [idCaja], references: [idCaja])
+  admin      Usuario    @relation("RetiroAutorizadoPor", fields: [idAdmin], references: [idPersona])
+
+  @@index([idCaja])
+  @@index([fechaHora])
+  @@map("retiros_efectivo")
 }

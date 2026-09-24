@@ -6,8 +6,14 @@ import { useEffect, useRef } from "react";
 // useHotkeys — atajos de teclado globales.
 //   useHotkeys({ "ctrl+p": cobrar, Escape: cerrar, "mod+enter": enviar })
 // "mod" = Ctrl en Windows/Linux, Cmd en macOS.
-// Por defecto se ignoran las teclas mientras se escribe en un input,
-// salvo que el atajo use modificadores (Ctrl/Cmd/Alt).
+//
+// Regla anti-interferencia (Fase B): por defecto los atajos NUNCA se
+// disparan mientras el foco está en un campo de texto (input, textarea,
+// select, contentEditable), aunque lleven modificadores — así "shift+/"
+// no abre la ayuda mientras el operador escribe "?" en un buscador.
+// Los componentes que SÍ quieren dispararse desde un input lo indican
+// explícitamente con `allowInInputs: true` (p. ej. Ctrl+P del POS o
+// Escape para cerrar un modal que contiene un formulario).
 // ============================================================
 
 export type HotkeyHandler = (e: KeyboardEvent) => void;
@@ -82,9 +88,13 @@ export function useHotkeys(
       const entrada = mapNorm.get(normalizar(evento));
       if (!entrada) return;
 
-      const usaModificador = /mod|ctrl|alt|meta|shift/.test(entrada.combo);
-      if (!allowInInputs && enCampoDeTexto(e.target) && !usaModificador) return;
+      // Fase B: si el foco está en un campo de texto y el componente no lo
+      // habilitó, el atajo no se procesa — la edición gana siempre.
+      if (!allowInInputs && enCampoDeTexto(e.target)) return;
 
+      // Evita que el navegador se apropie de la tecla (Ctrl+P imprime,
+      // "/" enfoca la búsqueda instantánea, F1 abre la ayuda…). Solo al
+      // disparar realmente el atajo y solo cuando el caller lo solicitó.
       if (preventDefault) e.preventDefault();
       entrada.handler(e);
     };

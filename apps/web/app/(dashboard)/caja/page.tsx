@@ -11,9 +11,13 @@ import {
   Plus,
   CheckCircle2,
   Loader2,
+  History,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { CorteCiego } from "@/components/caja/corte-ciego";
+import { HistorialCaja } from "@/components/caja/historial";
+import { AccionesSesion } from "@/components/caja/abono-retiro";
+import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
 
 interface SesionCaja {
@@ -22,6 +26,7 @@ interface SesionCaja {
   totalVentasEfectivo: number;
   totalVentasDigital: number;
   totalRecargas: number;
+  totalRetiros?: number;
   horaApertura: string;
   estado: "ABIERTA" | "EN_CIERRE" | "CERRADA";
   cierreInicioEn?: string | null;
@@ -38,6 +43,9 @@ export default function CajaPage() {
   const [procesando, setProcesando] = useState<FlujoIngreso | null>(null);
   const [notaOK, setNotaOK] = useState<string | null>(null);
   const [cargandoEstado, setCargandoEstado] = useState(true);
+  const [tab, setTab] = useState<"sesion" | "historial">("sesion");
+  const rol = useAuthStore((s) => s.rol);
+  const esAdmin = rol === "ADMINISTRADORA";
 
   useEffect(() => {
     // Restaura la sesión vigente (incl. un corte EN_CIERRE a medias).
@@ -79,8 +87,23 @@ export default function CajaPage() {
     totalVentasEfectivo: Number(data.totalVentasEfectivo ?? 0),
     totalVentasDigital: Number(data.totalVentasDigital ?? 0),
     totalRecargas: Number(data.totalRecargas ?? 0),
+    totalRetiros: Number(data.totalRetiros ?? 0),
     fondoInicial: Number(data.fondoInicial ?? 0),
   });
+
+  // Tras un abono/retiro re-consulta la sesión para reflejar la caja.
+  const refrescarSesion = async () => {
+    try {
+      const res = await fetch("/api/caja/estado", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.sesion) setSesionActual({ ...data.sesion, ...zeroTotals(data.sesion) });
+        else setSesionActual(null);
+      }
+    } catch {
+      /* sin conexión: se mantiene el estado visual */
+    }
+  };
 
   const handleRegistrarIngreso = async (tipo: FlujoIngreso) => {
     const monto = parseFloat(tipo === "PAPELERIA" ? ingresoPapa : ingresoRecarga);
@@ -127,6 +150,30 @@ export default function CajaPage() {
           </p>
         </motion.div>
 
+        <div className="flex gap-1 mb-6 bg-surface-800 p-1 rounded-xl w-fit">
+          {(
+            [
+              { id: "sesion", label: "Sesión actual", icon: DollarSign },
+              { id: "historial", label: "Historial de sesiones", icon: History },
+            ] as const
+          ).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                tab === id ? "bg-surface-600 text-gray-100" : "text-muted hover:text-gray-100"
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "historial" ? (
+          <HistorialCaja />
+        ) : (
+        <>
         {cargandoEstado ? (
           <div className="max-w-md mx-auto">
             <div className="bg-surface-800 border border-surface-600 rounded-2xl p-8 space-y-4">
@@ -187,7 +234,7 @@ export default function CajaPage() {
                 className={cn(
                   "w-full py-3 rounded-xl font-bold transition-all",
                   fondoInicial
-                    ? "bg-neon-green text-surface-900 shadow-neon"
+                    ? "bg-neon-green text-btn-ink shadow-neon"
                     : "bg-surface-600 text-muted cursor-not-allowed"
                 )}
               >
@@ -334,7 +381,7 @@ export default function CajaPage() {
                         className={cn(
                           "flex items-center gap-2 px-4 rounded-xl font-bold transition-all shrink-0",
                           ingresoPapa && procesando === null
-                            ? "bg-neon-green text-surface-900 shadow-neon"
+                            ? "bg-neon-green text-btn-ink shadow-neon"
                             : "bg-surface-600 text-muted cursor-not-allowed"
                         )}
                       >
@@ -401,7 +448,7 @@ export default function CajaPage() {
                         className={cn(
                           "flex items-center gap-2 px-4 rounded-xl font-bold transition-all shrink-0",
                           ingresoRecarga && procesando === null
-                            ? "bg-neon-cyan text-surface-900 shadow-neon-cyan"
+                            ? "bg-neon-cyan text-btn-ink shadow-neon-cyan"
                             : "bg-surface-600 text-muted cursor-not-allowed"
                         )}
                       >
@@ -423,10 +470,12 @@ export default function CajaPage() {
                 <span className="text-muted">Total en caja</span>
                 <span className="text-2xl font-black text-gray-100">
                   $
-                  {(
+                  {Math.max(
                     sesionActual.fondoInicial +
-                    sesionActual.totalVentasEfectivo +
-                    sesionActual.totalRecargas
+                      sesionActual.totalVentasEfectivo +
+                      sesionActual.totalRecargas -
+                      (sesionActual.totalRetiros ?? 0),
+                    0
                   ).toFixed(2)}
                 </span>
               </div>
@@ -436,10 +485,27 @@ export default function CajaPage() {
                   ${sesionActual.fondoInicial.toFixed(2)}
                 </span>
               </div>
+              {(sesionActual.totalRetiros ?? 0) > 0 && (
+                <div className="flex justify-between items-center mt-1 text-sm">
+                  <span className="text-muted">Retiros autorizados</span>
+                  <span className="text-neon-red">
+                    -${(sesionActual.totalRetiros ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              )}
             </div>
+
+            {/* Acciones de sesión: abonos (CRM) y retiros (Admin, Fase 3) */}
+            <AccionesSesion
+              sesion={sesionActual}
+              esAdmin={esAdmin}
+              onCambio={refrescarSesion}
+            />
             </>
             )}
           </div>
+        )}
+        </>
         )}
 
         {/* Modal Corte Ciego */}

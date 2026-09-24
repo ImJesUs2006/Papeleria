@@ -14,7 +14,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-900 p-6">
+    <div className="min-h-screen flex items-center justify-center bg-app p-6">
       <div className="bg-surface-800 border border-neon-red/40 rounded-2xl p-6 max-w-md w-full text-center">
         <h2 className="text-xl font-black text-gray-100 mb-1">Algo salió mal</h2>
         <p className="text-sm text-muted mb-4 break-words">
@@ -23,7 +23,7 @@ export default function GlobalError({
         </p>
         <button
           onClick={reset}
-          className="w-full py-3 rounded-xl bg-neon-green text-surface-900 font-bold shadow-neon"
+          className="w-full py-3 rounded-xl bg-neon-green text-btn-ink font-bold shadow-neon"
         >
           Reintentar
         </button>

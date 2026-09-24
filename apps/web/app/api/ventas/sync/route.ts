@@ -3,6 +3,7 @@ import { prisma, Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
+import { registrarMovimientosKardex } from "@/lib/kardex";
 
 // ============================================================
 // POST /api/ventas/sync
@@ -186,6 +187,20 @@ export async function POST(request: Request) {
 
           if (lineas.length === 0) continue; // ya se marcó rechazo dentro del loop
 
+          // Blindaje Financiero: transferencias exigen la referencia (4 dígitos).
+          const esTransferencia = v.metodoPago === "DIGITAL" || v.metodoPago === "TRANSFERENCIA";
+          const referenciaTransferencia = esTransferencia
+            ? String(v.referenciaTransferencia ?? "").trim()
+            : null;
+          if (esTransferencia && !/^\d{4}$/.test(referenciaTransferencia ?? "")) {
+            out.push({
+              ...resumenBase,
+              estado: "rechazada",
+              error: "Pago por transferencia: se requieren los últimos 4 dígitos de la referencia",
+            });
+            continue;
+          }
+
           // 5. Liquidación: IVA y totales SIEMPRE recalculados en servidor.
           const iva = Math.round(subtotal * Number(config.ivaRate) / 100 * 100) / 100;
           const totalNeto = Math.round((subtotal + iva) * 100) / 100;
@@ -211,6 +226,7 @@ export async function POST(request: Request) {
               idCaja: cajaAbierta?.idCaja ?? null,
               estado: "COMPLETADA",
               metodoPago: v.metodoPago,
+              referenciaTransferencia,
               idLocal,
               origen: "OFFLINE",
               dispositivoId,
@@ -234,6 +250,18 @@ export async function POST(request: Request) {
               data: { stockActual: { decrement: l.cantidad } },
             });
           }
+
+          // 7b. Kardex inmutable de la venta sincronizada (SALIDA por línea).
+          await registrarMovimientosKardex(
+            tx,
+            lineas.map((l) => ({
+              codigoItem: l.codigoItem,
+              tipo: "SALIDA",
+              cantidad: l.cantidad,
+              motivo: `Venta offline ${folioVenta}`,
+              idUsuario: cajero.idPersona,
+            }))
+          );
 
           // 8. Impacto financiero en caja (efectivo vs digital vs recargas).
           if (cajaAbierta) {

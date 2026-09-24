@@ -377,7 +377,7 @@ function NuevoUsuarioModal({
           className={cn(
             "w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all",
             !guardando && nombre && username && password.length >= 8
-              ? "bg-neon-green text-surface-900 shadow-neon"
+              ? "bg-neon-green text-btn-ink shadow-neon"
               : "bg-surface-600 text-muted cursor-not-allowed"
           )}
         >
@@ -451,7 +451,7 @@ function CambiarPasswordModal({
           className={cn(
             "w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all",
             password.length >= 8
-              ? "bg-neon-cyan text-surface-900 shadow-neon-cyan"
+              ? "bg-neon-cyan text-btn-ink shadow-neon-cyan"
               : "bg-surface-600 text-muted cursor-not-allowed"
           )}
         >

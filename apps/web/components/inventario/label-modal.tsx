@@ -126,7 +126,7 @@ export function LabelModal({ product, onClose }: Props) {
 
           {/* Etiqueta imprimible */}
           <div className="print-label-area bg-white rounded-2xl p-5 mb-5">
-            <p className="text-sm font-bold text-surface-900 text-center mb-3">
+            <p className="text-sm font-bold text-btn-ink text-center mb-3">
               {product.descripcion}
             </p>
             <div className="flex flex-col items-center gap-3">
@@ -142,7 +142,7 @@ export function LabelModal({ product, onClose }: Props) {
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] text-gray-500">{product.codigoItem}</p>
-                  <p className="text-2xl font-black text-surface-900">
+                  <p className="text-2xl font-black text-btn-ink">
                     ${product.precioUnitario.toFixed(2)}
                   </p>
                 </div>
@@ -156,7 +156,7 @@ export function LabelModal({ product, onClose }: Props) {
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={copiarImagen}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-neon-cyan text-surface-900 font-bold text-sm shadow-neon-cyan transition-all"
+              className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-neon-cyan text-btn-ink font-bold text-sm shadow-neon-cyan transition-all"
             >
               {copiando ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

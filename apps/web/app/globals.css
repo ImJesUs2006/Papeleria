@@ -2,39 +2,167 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ============================================================
+   Sistema de temas (Fase 3): tokens SEMÁNTICOS.
+   BrandTheme inyecta `data-theme` (neon | minimalista | brutalista |
+   corporativo) en <html> y re-pinta --neon-green/--marca-color con
+   ConfiguracionNegocio.colorAcento. Las variables de aquí cambian
+   sus valores nativos según el tema: las utilidades de Tailwind
+   (bg-surface-*, border-surface-*, text-gray-100/200/300, text-muted,
+   shadow-neon/glow/card) se ven afectadas globalmente.
+   ============================================================ */
+
+:root,
+:root[data-theme="neon"] {
+  color-scheme: dark;
+
+  --bg-app: #0a0a0a;
   --bg-deep: #0a0a0a;
+
+  /* Acentos (cyan/magenta fijos; green lo re-pinta colorAcento). */
   --neon-green: #00ff88;
   --neon-cyan: #00d4ff;
   --neon-magenta: #ff0080;
+  --neon-yellow: #ffee00;
+  --neon-red: #ff3366;
+  --neon-purple: #b44bff;
+  --marca-color: var(--neon-green);
+  --color-accento: var(--neon-green);
+
+  /* Superficies semánticas (utilidades bg-surface-* / border-surface-*). */
+  --surface-950-rgb: 5 5 5;
+  --surface-900-rgb: 10 10 10;
+  --surface-800-rgb: 17 17 17;
+  --surface-700-rgb: 26 26 26;
+  --surface-600-rgb: 36 36 36;
+  --surface-500-rgb: 46 46 46;
+  --surface-400-rgb: 58 58 58;
+
+  /* Tinta semántica (text-gray-100/200/300 y text-muted). */
+  --gray-100-rgb: 243 244 246;
+  --gray-200-rgb: 229 231 235;
+  --gray-300-rgb: 209 213 219;
+  --muted-rgb: 156 163 175;
+
+  /* Sombras semánticas (anuladas o sustituidas en temas claros). */
+  --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --shadow-neon: 0 0 20px color-mix(in srgb, var(--neon-green) 35%, transparent);
+  --shadow-neon-cyan: 0 0 20px color-mix(in srgb, var(--neon-cyan) 35%, transparent);
+  --shadow-neon-magenta: 0 0 20px color-mix(in srgb, var(--neon-magenta) 35%, transparent);
+  --shadow-glow: 0 0 40px color-mix(in srgb, var(--neon-green) 25%, transparent);
+  --shadow-neon-glow: 0 0 60px color-mix(in srgb, var(--neon-green) 12%, transparent);
+  --shadow-neon-inset: inset 0 0 20px color-mix(in srgb, var(--neon-green) 8%, transparent);
 }
 
-html {
-  color-scheme: dark;
+/* ---- MINIMALISTA: plano, luminoso y sin brillos ---- */
+:root[data-theme="minimalista"] {
+  color-scheme: light;
+
+  --bg-app: #f4f5f7;
+  --bg-deep: #f4f5f7;
+
+  --surface-950-rgb: 20 22 28;
+  --surface-900-rgb: 228 231 236;
+  --surface-800-rgb: 255 255 255;
+  --surface-700-rgb: 255 255 255;
+  --surface-600-rgb: 244 245 248;
+  --surface-500-rgb: 226 228 233;
+  --surface-400-rgb: 205 209 216;
+
+  --gray-100-rgb: 17 24 39;
+  --gray-200-rgb: 31 41 55;
+  --gray-300-rgb: 55 65 81;
+  --muted-rgb: 107 114 128;
+
+  --shadow-card: none;
+  --shadow-neon: none;
+  --shadow-neon-cyan: none;
+  --shadow-neon-magenta: none;
+  --shadow-glow: none;
+  --shadow-neon-glow: none;
+  --shadow-neon-inset: none;
+}
+
+/* ---- BRUTALISTA: blanco, bordes negros y sombra sólida ---- */
+:root[data-theme="brutalista"] {
+  color-scheme: light;
+
+  --bg-app: #fafaf5;
+  --bg-deep: #fafaf5;
+
+  --surface-950-rgb: 10 10 10;
+  --surface-900-rgb: 235 235 228;
+  --surface-800-rgb: 255 255 255;
+  --surface-700-rgb: 255 255 255;
+  --surface-600-rgb: 232 232 226;
+  --surface-500-rgb: 0 0 0;
+  --surface-400-rgb: 20 20 20;
+
+  --gray-100-rgb: 10 10 10;
+  --gray-200-rgb: 10 10 10;
+  --gray-300-rgb: 35 35 35;
+  --muted-rgb: 71 71 71;
+
+  --shadow-card: 5px 5px 0 #000;
+  --shadow-neon: none;
+  --shadow-neon-cyan: none;
+  --shadow-neon-magenta: none;
+  --shadow-glow: none;
+  --shadow-neon-glow: none;
+  --shadow-neon-inset: none;
+}
+
+/* ---- CORPORATIVO: luz profesional con capas suaves ---- */
+:root[data-theme="corporativo"] {
+  color-scheme: light;
+
+  --bg-app: #eef1f6;
+  --bg-deep: #eef1f6;
+
+  --surface-950-rgb: 15 23 42;
+  --surface-900-rgb: 241 245 249;
+  --surface-800-rgb: 255 255 255;
+  --surface-700-rgb: 250 251 253;
+  --surface-600-rgb: 238 241 245;
+  --surface-500-rgb: 213 219 227;
+  --surface-400-rgb: 195 203 214;
+
+  --gray-100-rgb: 15 23 42;
+  --gray-200-rgb: 30 41 59;
+  --gray-300-rgb: 51 65 85;
+  --muted-rgb: 100 116 139;
+
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-neon: none;
+  --shadow-neon-cyan: none;
+  --shadow-neon-magenta: none;
+  --shadow-glow: none;
+  --shadow-neon-glow: none;
+  --shadow-neon-inset: none;
 }
 
 body {
-  background-color: var(--bg-deep);
-  color: #f3f4f6;
+  background-color: var(--bg-app);
+  color: rgb(var(--gray-100-rgb));
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ---------- Scrollbars oscuros ---------- */
+/* ---------- Scrollbars que siguen el tema ---------- */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #111111;
+  background: rgb(var(--surface-700-rgb));
 }
 ::-webkit-scrollbar-thumb {
-  background: #333333;
+  background: rgb(var(--surface-500-rgb));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555555;
+  background: rgb(var(--surface-400-rgb));
 }
 
 /* ---------- Focus ring neón ---------- */
@@ -53,11 +181,11 @@ button:focus-visible {
 /* ---------- Utilities reutilizables ---------- */
 @layer components {
   .btn-primary {
-    @apply bg-neon-green text-surface-900 font-bold rounded-xl py-3 px-6 shadow-neon transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
+    @apply bg-neon-green text-btn-ink font-bold rounded-xl py-3 px-6 shadow-neon transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
   }
 
   .btn-cyan {
-    @apply bg-neon-cyan text-surface-900 font-bold rounded-xl py-3 px-6 shadow-neon-cyan transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
+    @apply bg-neon-cyan text-btn-ink font-bold rounded-xl py-3 px-6 shadow-neon-cyan transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed;
   }
 
   .btn-magenta {
@@ -132,6 +260,9 @@ button:focus-visible {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
+    /* Reimpresión de tickets: aunque el área esté `display:none` en
+       pantalla, en impresión debe revelarse. */
+    display: block !important;
   }
 
   .print-ticket-57 {
@@ -154,6 +285,12 @@ button:focus-visible {
   .print-hint,
   .print-hint * {
     display: none !important;
+  }
+
+  /* Contenedor invisible en pantalla que debe revelarse al imprimir
+     (reimpresión de tickets desde el historial de caja). */
+  .print-block {
+    display: block !important;
   }
 
   /* Evita partir la etiqueta/tique entre páginas. */

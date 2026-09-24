@@ -63,12 +63,21 @@ export async function POST(request: Request) {
       );
     }
 
+    // Retiros parciales de la sesión: el corte ciego NO los marca como
+    // faltante porque el efectivo salió con autorización de la admin.
+    const retiros = await prisma.retiroEfectivo.aggregate({
+      where: { idCaja: sesion.idCaja },
+      _sum: { monto: true },
+    });
+    const retirosEfectivo = Number(retiros._sum.monto ?? 0);
+
     const arqueo = calcularArqueo({
       fondoInicial: Number(sesion.fondoInicial),
       totalVentasEfectivo: Number(sesion.totalVentasEfectivo),
       totalVentasDigital: Number(sesion.totalVentasDigital),
       totalRecargas: Number(sesion.totalRecargas),
       totalEgresos: Number(sesion.totalEgresos) || 0,
+      retirosEfectivo,
       efectivoDeclarado: efectivoContado,
       digitalDeclarado: vouchersContado,
       recargasDeclarado: recargasContado,

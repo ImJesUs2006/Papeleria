@@ -271,7 +271,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
               className={cn(
                 "w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
                 puedeConcluir
-                  ? "bg-neon-green text-surface-900 shadow-neon"
+                  ? "bg-neon-green text-btn-ink shadow-neon"
                   : "bg-surface-600 text-muted cursor-not-allowed"
               )}
             >
@@ -357,7 +357,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={onCerrada}
-              className="w-full py-3.5 rounded-2xl bg-neon-green text-surface-900 font-bold shadow-neon"
+              className="w-full py-3.5 rounded-2xl bg-neon-green text-btn-ink font-bold shadow-neon"
             >
               Terminar
             </motion.button>

@@ -26,12 +26,18 @@ export async function GET() {
       estado: true,
       cierreToken: true,
       cierreInicioEn: true,
+      _count: { select: { retiros: true } },
     },
   });
 
   if (!sesion) {
     return NextResponse.json({ sesion: null });
   }
+
+  const retiros = await prisma.retiroEfectivo.aggregate({
+    where: { idCaja: sesion.idCaja },
+    _sum: { monto: true },
+  });
 
   return NextResponse.json({
     sesion: {
@@ -41,6 +47,8 @@ export async function GET() {
       totalVentasEfectivo: Number(sesion.totalVentasEfectivo),
       totalVentasDigital: Number(sesion.totalVentasDigital),
       totalRecargas: Number(sesion.totalRecargas),
+      totalRetiros: Number(retiros._sum.monto ?? 0),
+      numRetiros: sesion._count.retiros,
       horaApertura: sesion.horaApertura.toISOString(),
       estado: sesion.estado,
       cierreToken: sesion.estado === "EN_CIERRE" ? sesion.cierreToken : null,

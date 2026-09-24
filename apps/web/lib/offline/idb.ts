@@ -19,6 +19,8 @@ export interface VentaOffline {
   iva: number;
   totalNeto: number;
   montoRecibido?: number | null;
+  /** Blindaje Financiero: últimos 4 dígitos del rastreo de transferencia. */
+  referenciaTransferencia?: string | null;
   intentos: number;
   ultimoError?: string;
   folioVentaServer?: string;

@@ -1,7 +1,12 @@
 import { prisma } from "@papeleria/database";
 import type { Prisma } from "@papeleria/database";
-import type { BusinessConfig, FeatureFlags } from "@/lib/business-types";
-import { DEFAULT_FEATURE_FLAGS } from "@/lib/business-types";
+import type { BusinessConfig, DatosBancarios, FeatureFlags, TemaBase } from "@/lib/business-types";
+import {
+  DEFAULT_FEATURE_FLAGS,
+  TEMAS_BASE,
+  DEFAULT_TEMA_BASE,
+  DEFAULT_COLOR_ACENTO,
+} from "@/lib/business-types";
 import { buildSignedConfig } from "@/lib/config-signing";
 
 // ============================================================
@@ -31,8 +36,16 @@ function normalizeMetodosPago(raw: Prisma.JsonValue | null): string[] {
   return raw.filter(
     (m): m is string =>
       typeof m === "string" &&
-      ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"].includes(m)
+      ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"].includes(m)
   );
+}
+
+/** Normaliza datosBancarios a un objeto tipado (filtra tipos no deseados). */
+function normalizeDatosBancarios(raw: Prisma.JsonValue | null): DatosBancarios | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const pick = (k: string) => (typeof obj[k] === "string" ? String(obj[k]) : undefined);
+  return { banco: pick("banco"), titular: pick("titular"), clabe: pick("clabe"), cuenta: pick("cuenta") };
 }
 
 export async function getBusinessConfig(): Promise<BusinessConfig> {
@@ -49,10 +62,16 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       featureFlags: DEFAULT_FEATURE_FLAGS,
       metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
       politicaStockOffline: "PERMITIR_NEGATIVO",
+      logo: null,
+      temaBase: DEFAULT_TEMA_BASE,
+      colorAcento: DEFAULT_COLOR_ACENTO,
+      datosBancarios: null,
       configVersion: 1,
       setupPendiente: true,
     };
   }
+
+  const temaRaw = String(row.temaBase ?? "").toUpperCase() as TemaBase;
 
   const base: BusinessConfig = {
     nombreNegocio: row.nombreNegocio,
@@ -62,6 +81,10 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
     featureFlags: normalizeFlags(row.featureFlags),
     metodosPago: normalizeMetodosPago(row.metodosPago) as BusinessConfig["metodosPago"],
     politicaStockOffline: row.politicaStockOffline as BusinessConfig["politicaStockOffline"],
+    logo: row.logo ?? null,
+    temaBase: temaRaw in TEMAS_BASE ? temaRaw : DEFAULT_TEMA_BASE,
+    colorAcento: row.colorAcento || DEFAULT_COLOR_ACENTO,
+    datosBancarios: normalizeDatosBancarios(row.datosBancarios),
     configVersion: row.configVersion,
     setupPendiente: row.setupPendiente,
   };

@@ -35,7 +35,7 @@ export default function DashboardError({
         <div className="flex gap-2">
           <button
             onClick={reset}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-neon-green text-surface-900 font-bold text-sm shadow-neon"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-neon-green text-btn-ink font-bold text-sm shadow-neon"
           >
             <RotateCcw className="h-4 w-4" /> Reintentar
           </button>

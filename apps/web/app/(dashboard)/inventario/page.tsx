@@ -19,10 +19,13 @@ import {
   ChevronRight,
   Barcode,
   PencilLine,
+  Star,
   Plus,
+  History,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { QuickEdit } from "@/components/inventario/quick-edit";
+import { KardexHistorial } from "@/components/inventario/kardex-historial";
 import {
   ProductFormModal,
   type ProductFormData,
@@ -42,6 +45,7 @@ interface Product {
   proveedor: string | null;
   tipoImpresion: string | null;
   codigoBarras?: string | null;
+  favorito?: boolean;
 }
 
 interface UploadResult {
@@ -70,7 +74,7 @@ export default function InventarioPage() {
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"buscar" | "cargar" | "editar">("buscar");
+  const [activeTab, setActiveTab] = useState<"buscar" | "cargar" | "editar" | "historial">("buscar");
   const { setEtiqueta, node: labelNode } = useLabelModal();
 
   // Alta/edición manual de productos
@@ -134,6 +138,27 @@ export default function InventarioPage() {
     const timer = setTimeout(() => fetchProducts(), 300);
     return () => clearTimeout(timer);
   }, [fetchProducts]);
+
+  // Marcar/desmarcar favorito (aparece en el catálogo táctil del POS).
+  const toggleFavorito = async (p: Product) => {
+    const proximo = !p.favorito;
+    setProducts((prev) =>
+      prev.map((x) => (x.codigoItem === p.codigoItem ? { ...x, favorito: proximo } : x))
+    );
+    try {
+      await fetch(`/api/productos/${encodeURIComponent(p.codigoItem)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorito: proximo }),
+      });
+    } catch {
+      setProducts((prev) =>
+        prev.map((x) =>
+          x.codigoItem === p.codigoItem ? { ...x, favorito: !proximo } : x
+        )
+      );
+    }
+  };
 
   const toggleSort = (field: SortField) => {
     if (sortBy === field) {
@@ -215,7 +240,7 @@ export default function InventarioPage() {
           </div>
           <button
             onClick={() => { setEditing(null); setFormOpen(true); }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-neon-green text-surface-900 font-bold text-sm shadow-neon shrink-0"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-neon-green text-btn-ink font-bold text-sm shadow-neon shrink-0"
           >
             <Plus className="h-4 w-4" /> Nuevo producto
           </button>
@@ -223,7 +248,7 @@ export default function InventarioPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-surface-800 p-1 rounded-xl w-fit">
-          {(["buscar", "editar", "cargar"] as const).map((tab) => (
+          {(["buscar", "editar", "cargar", "historial"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -247,11 +272,18 @@ export default function InventarioPage() {
                   <Upload className="h-3.5 w-3.5" /> Carga Masiva
                 </>
               )}
+              {tab === "historial" && (
+                <>
+                  <History className="h-3.5 w-3.5" /> Historial
+                </>
+              )}
             </button>
           ))}
         </div>
 
         {activeTab === "editar" && <QuickEdit />}
+
+        {activeTab === "historial" && <KardexHistorial />}
 
         {activeTab === "buscar" ? (
           <div className="space-y-4 mb-8">
@@ -279,7 +311,7 @@ export default function InventarioPage() {
               <Filter className="h-4 w-4" />
               Filtros
               {hasActiveFilters && (
-                <span className="h-4 w-4 rounded-full bg-neon-blue text-surface-900 text-[10px] font-bold flex items-center justify-center">
+                <span className="h-4 w-4 rounded-full bg-neon-blue text-btn-ink text-[10px] font-bold flex items-center justify-center">
                   {[filterProveedor, filterUbicacion, filterPrecioMin, filterPrecioMax, filterStockMin, filterStockMax, filterBajoStock, filterSinStock].filter(Boolean).length}
                 </span>
               )}
@@ -429,6 +461,19 @@ export default function InventarioPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
+                            onClick={() => toggleFavorito(p)}
+                            aria-label={p.favorito ? "Quitar de favoritos" : "Marcar como favorito"}
+                            title={p.favorito ? "Quitar de favoritos" : "Marcar como favorito"}
+                            className={cn(
+                              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors",
+                              p.favorito
+                                ? "bg-neon-yellow/10 text-neon-yellow"
+                                : "bg-surface-700 hover:bg-neon-yellow/10 text-muted hover:text-neon-yellow"
+                            )}
+                          >
+                            <Star className={cn("h-4 w-4", p.favorito && "fill-neon-yellow")} />
+                          </button>
+                          <button
                             onClick={() => { setEditing(p); setFormOpen(true); }}
                             className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-green/10 flex items-center justify-center text-muted hover:text-neon-green transition-colors"
                             title="Editar producto"
@@ -474,7 +519,7 @@ export default function InventarioPage() {
                     onClick={() => setPage(pageNum)}
                     className={cn(
                       "w-8 h-8 rounded-lg text-xs font-bold transition-all",
-                      pageNum === page ? "bg-neon-green text-surface-900" : "bg-surface-800 border border-surface-600 text-muted hover:text-gray-100"
+                      pageNum === page ? "bg-neon-green text-btn-ink" : "bg-surface-800 border border-surface-600 text-muted hover:text-gray-100"
                     )}
                   >
                     {pageNum}

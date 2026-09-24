@@ -127,6 +127,12 @@ export default function DashboardPage() {
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.ventasPorHora} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradMarca" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--marca-color)" stopOpacity={0.9} />
+                          <stop offset="100%" stopColor="var(--marca-color)" stopOpacity={0.3} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#2e2e2e" />
                       <XAxis dataKey="hora" tick={{ fill: "#9ca3af", fontSize: 10 }} interval={3} />
                       <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} />
@@ -135,7 +141,7 @@ export default function DashboardPage() {
                         labelStyle={{ color: "#00d4ff", fontWeight: 700 }}
                         formatter={(v: any) => [`$${Number(v).toFixed(2)}`, "Monto"]}
                       />
-                      <Bar dataKey="monto" fill="#00d4ff" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="monto" fill="url(#gradMarca)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -185,6 +191,12 @@ export default function DashboardPage() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.topProductos} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradMarcaH" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="var(--marca-color)" stopOpacity={0.25} />
+                        <stop offset="100%" stopColor="var(--marca-color)" stopOpacity={1} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2e2e2e" horizontal={false} />
                     <XAxis type="number" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                     <YAxis type="category" dataKey="descripcion" width={170} tick={{ fill: "#e5e7eb", fontSize: 11 }} />
@@ -192,7 +204,7 @@ export default function DashboardPage() {
                       contentStyle={{ background: "#111111", border: "1px solid #333", borderRadius: 12, color: "#f3f4f6" }}
                       formatter={(v: any) => [`${v} uds`, "Cantidad"]}
                     />
-                    <Bar dataKey="cantidad" fill="#00ff88" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="cantidad" fill="url(#gradMarcaH)" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

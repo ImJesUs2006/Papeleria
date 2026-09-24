@@ -26,6 +26,11 @@ function makeTx(venta: any = makeVenta(), sesionEstado = "ABIERTA") {
       update: vi.fn().mockResolvedValue({}),
     },
     devolucion: { create: vi.fn().mockResolvedValue({}) },
+    movimientoKardex: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    cliente: {
+      findUnique: vi.fn().mockResolvedValue({ saldoDeudor: 0 }),
+      update: vi.fn().mockResolvedValue({}),
+    },
     bitacoraLog: { create: vi.fn().mockResolvedValue({}) },
   };
   return tx;

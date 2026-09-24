@@ -1,5 +1,6 @@
 import type { Prisma } from "@papeleria/database";
 import { round2, IVA_RATE } from "./sales";
+import { registrarMovimientosKardex } from "./kardex";
 
 export const TIPOS_DEVOLUCION = ["DEVOLUCION", "NOTA_CREDITO"] as const;
 export const METODOS_REEMBOLSO = [
@@ -132,6 +133,8 @@ export async function executeReturn(
   if (venta.estado === "CANCELADA") {
     throw new ReturnError("No se puede devolver una venta cancelada", 409);
   }
+  // CRM: si la venta original fue a crédito, el reembolso abona a la deuda.
+  const ventaCredito = venta.metodoPago === "CREDITO_TIENDA" && venta.idCliente != null;
 
   const originales = new Map<string, { cantidad: number; precio: number; descripcion: string }>();
   for (const l of venta.lineasDetalle) {
@@ -189,9 +192,36 @@ export async function executeReturn(
     });
   }
 
-  // Egreso de efectivo de la caja abierta (reembolso).
+  // Kardex inmutable (ENTRADA por línea).
+  await registrarMovimientosKardex(
+    tx,
+    cantidades.map((c) => ({
+      codigoItem: c.codigoItem,
+      tipo: "ENTRADA",
+      cantidad: c.cantidad,
+      motivo: `${tipo === "NOTA_CREDITO" ? "Nota de crédito" : "Devolución"} ${folioDevolucion}`,
+      idUsuario: ctx.idUsuario,
+    }))
+  );
+
+  // Devolución o abono a la deuda del cliente (venta original a crédito).
   let idCaja = ctx.idCaja;
   if (metodoReembolso === "EFECTIVO") {
+    if (ventaCredito && venta.idCliente) {
+      const cliente = await tx.cliente.findUnique({
+        where: { idCliente: venta.idCliente },
+        select: { saldoDeudor: true },
+      });
+      if (!cliente) {
+        throw new ReturnError("Cliente no encontrado", 404);
+      }
+      const deuda = round2(Math.max(Number(cliente.saldoDeudor) - totalNeto, 0));
+      await tx.cliente.update({
+        where: { idCliente: venta.idCliente },
+        data: { saldoDeudor: deuda },
+      });
+      idCaja = null;
+    } else {
     if (!idCaja) {
       throw new ReturnError(
         "La caja no está abierta; no se puede reembolsar en efectivo",
@@ -212,6 +242,7 @@ export async function executeReturn(
       where: { idCaja },
       data: { totalEgresos: { increment: totalNeto } },
     });
+    }
   } else {
     idCaja = null;
   }
@@ -263,6 +294,7 @@ export async function executeReturn(
         metodoReembolso,
         totalNeto,
         ventaCompleta,
+        abonoDeudaCliente: ventaCredito ? venta.idCliente : undefined,
         items: cantidades,
       },
     },

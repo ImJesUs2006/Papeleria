@@ -287,7 +287,7 @@ export default function PedidosPage() {
                 const esHoy = new Date().toDateString() === fecha.toDateString();
                 return (
                   <div key={i} className={cn("min-h-[90px] p-2 border-r border-b border-surface-700", esHoy && "bg-neon-green/5")}>
-                    <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold", esHoy ? "bg-neon-green text-surface-900" : "text-muted")}>
+                    <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold", esHoy ? "bg-neon-green text-btn-ink" : "text-muted")}>
                       {fecha.getDate()}
                     </span>
                     <div className="mt-1 space-y-1">

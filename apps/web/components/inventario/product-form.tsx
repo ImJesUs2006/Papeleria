@@ -539,7 +539,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
             className={cn(
               "flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all",
               !isSubmitting && !cargando
-                ? "bg-neon-green text-surface-900 shadow-neon"
+                ? "bg-neon-green text-btn-ink shadow-neon"
                 : "bg-surface-600 text-muted cursor-not-allowed"
             )}
           >

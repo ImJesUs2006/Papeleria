@@ -35,6 +35,7 @@ function crearTxMock(producto: any) {
       findUnique: vi.fn(async () => ({ estado: "ABIERTA" })),
       update: vi.fn(async () => ({})),
     },
+    movimientoKardex: { createMany: vi.fn(async () => ({ count: 0 })) },
     bitacoraLog: { create: vi.fn(async () => ({})) },
   };
 }
@@ -155,5 +156,81 @@ describe("POST /api/ventas", () => {
       where: { idCaja: "CAJA-1" },
       data: { totalRecargas: { increment: 14.5 } },
     });
+  });
+
+  it("exige la referencia (últimos 4 dígitos) en pagos por transferencia", async () => {
+    const tx = crearTxMock(crearProducto({ stockActual: 5 }));
+    const prisma = {
+      configuracionNegocio: { findUnique: vi.fn(async () => null) },
+      sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
+      $transaction: vi.fn(async (cb: any) => cb(tx as any)),
+    };
+    vi.doMock("@papeleria/database", () => ({ prisma }));
+
+    const { POST: POSTReal } = await import("@/app/api/ventas/route");
+
+    const sinReferencia = await POSTReal(
+      new Request("http://localhost/api/ventas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [{ codigoItem: "PROD-001", cantidad: 1 }],
+          metodoPago: "DIGITAL",
+          referenciaTransferencia: null,
+        }),
+      })
+    );
+    expect(sinReferencia.status).toBe(400);
+    expect(await sinReferencia.json()).toMatchObject({
+      error: expect.stringMatching(/referencia/i),
+    });
+    expect(tx.venta.create).not.toHaveBeenCalled();
+  });
+
+  it("registra la transferencia con su referencia y la asigna al flujo digital", async () => {
+    const tx = crearTxMock(crearProducto({ stockActual: 5 }));
+    const prisma = {
+      configuracionNegocio: { findUnique: vi.fn(async () => null) },
+      sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
+      $transaction: vi.fn(async (cb: any) => cb(tx as any)),
+    };
+    vi.doMock("@papeleria/database", () => ({ prisma }));
+
+    const { POST: POSTReal } = await import("@/app/api/ventas/route");
+    const res = await POSTReal(
+      new Request("http://localhost/api/ventas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [{ codigoItem: "PROD-001", cantidad: 1 }],
+          metodoPago: "DIGITAL",
+          referenciaTransferencia: "4821",
+        }),
+      })
+    );
+
+    expect(res.status).toBe(201);
+    // Blindaje Financiero: la referencia queda persistida en la venta.
+    expect(tx.venta.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metodoPago: "DIGITAL",
+          referenciaTransferencia: "4821",
+        }),
+      })
+    );
+    // El ingreso se asigna a digital (no a efectivo).
+    expect(tx.sesionCaja.update).toHaveBeenCalledWith({
+      where: { idCaja: "CAJA-1" },
+      data: { totalVentasDigital: { increment: 14.5 } },
+    });
+    // La referencia queda en la bitácora.
+    expect(tx.bitacoraLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          jsonPayload: expect.objectContaining({ referenciaTransferencia: "4821" }),
+        }),
+      })
+    );
   });
 });

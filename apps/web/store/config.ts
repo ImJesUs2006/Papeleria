@@ -13,14 +13,20 @@ import { isConfigSignatureValidClient } from "@/lib/config-signing-client";
 //   sessionKey en localStorage/IndexedDB.
 // - En disco solo persiste { config, firma } (zona "offline-cache").
 // - Al hidratar, la firma se verifica contra la sessionKey EN
-//   MEMORIA. Si no hay sessionKey (arranque en frío offline) o la
-//   firma no cuadra → estado "NO_VERIFICADA": se aplican flags en
-//   false salvo módulos de caja/cobro, y se muestra una alerta.
+//   MEMORIA (vía WebCrypto). Si no hay sessionKey (arranque en frío
+//   offline) o la firma no cuadra → estado "NO_VERIFICADA": se
+//   aplican flags en false salvo módulos de caja/cobro, y se muestra
+//   una alerta. Si WebCrypto no existe (http por LAN en aula, donde
+//   crypto.subtle está ausente), confiamos en la réplica autenticada
+//   que el servidor entrega (estado "CONFIANZA", visible en la UI),
+//   porque el servidor sigue siendo la autoridad final (requireFeature
+//   revalida en cada endpoint).
 // ============================================================
 
 export type ConfigTrustState =
   | "PENDIENTE"
   | "VERIFICADA"
+  | "CONFIANZA"
   | "NO_VERIFICADA"
   | "ERROR";
 
@@ -67,11 +73,28 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const res = await fetch("/api/configuracion/negocio/cache", { cache: "no-store" });
       if (!res.ok) throw new Error(`cache ${res.status}`);
       const data = await res.json();
-      // sessionKey llega en memoria: verificamos al vuelo y NO la persistimos.
-      const ok = await isConfigSignatureValidClient(data.config, data.firma, data.sessionKey);
+      // WebCrypto (crypto.subtle) solo existe en contextos seguros (https/localhost).
+      // En LAN por http (típico en aula) NO hay subtle: verificar la firma es
+      // imposible, pero el servidor acaba de responder autenticado y REVALIDA los
+      // flags en cada API (requireFeature), así que confiamos en la réplica que
+      // entrega. Si subtle SÍ existe, la firma manda: un blob manipulado jamás
+      // activa módulos (protección offline anti-manipulación intacta).
+      const canVerify =
+        typeof crypto !== "undefined" && !!crypto.subtle && typeof crypto.subtle.verify === "function";
+      const ok = canVerify
+        ? await isConfigSignatureValidClient(data.config, data.firma, data.sessionKey)
+        : false;
+      const sessionKeyOk = typeof data.sessionKey === "string" && data.sessionKey.length > 0;
       if (ok) {
         const config: BusinessConfig = data.config;
         set({ config, trust: "VERIFICADA", lastError: null });
+        applyVerified(config);
+      } else if (!canVerify && sessionKeyOk) {
+        // Modo lustre "CONFIANZA" (LAN sin WebCrypto): no hay verificación
+        // criptográfica local, pero la réplica es la entregada por el propio
+        // servidor autenticado y los flags se revalidan en cada API.
+        const config: BusinessConfig = data.config;
+        set({ config, trust: "CONFIANZA", lastError: null });
         applyVerified(config);
       } else {
         set({ config: data.config, trust: "NO_VERIFICADA", lastError: "Firma de configuración inválida" });
@@ -93,15 +116,33 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   },
 
   refresh: (config, firma, sessionKey) => {
-    // Mantiene verificable la config tras una actualización del admin.
-    const verified = sessionKey.length > 0;
+    // Mantiene la config tras una actualización del admin. Si el navegador
+    // tiene WebCrypto (https/localhost) se marca VERIFICADA; en LAN por http
+    // (sin crypto.subtle) se admite el blob del PUT como CONFIANZA (la firma
+    // local es imposible), nunca como NO_VERIFICADA: el usuario acaba de
+    // guardar y el servidor respondió 200 con su réplica firmada.
+    const sessionKeyOk = typeof sessionKey === "string" && sessionKey.length > 0;
+    const canVerify =
+      typeof crypto !== "undefined" && !!crypto.subtle && typeof crypto.subtle.verify === "function";
+    const elegida: ConfigTrustState = !sessionKeyOk
+      ? "NO_VERIFICADA"
+      : canVerify
+      ? "VERIFICADA"
+      : "CONFIANZA";
+    // Deep merge anti "toggles fantasma": si la config que llega del servidor
+    // (o del PUT) viniera con featureFlags parciales, los módulos ausentes
+    // conservan su estado previo; el Sidebar no desaparece al guardar.
+    const previo = get().config;
+    const configMerged: BusinessConfig = previo
+      ? { ...config, featureFlags: { ...previo.featureFlags, ...config.featureFlags } }
+      : config;
     set({
-      config,
-      trust: verified ? "VERIFICADA" : "NO_VERIFICADA",
-      lastError: verified ? null : "Config sin verificación de llave",
+      config: configMerged,
+      trust: elegida,
+      lastError: sessionKeyOk ? null : "Config sin verificación de llave",
     });
-    if (verified) applyVerified(config);
-    return verified;
+    if (sessionKeyOk) applyVerified(configMerged);
+    return sessionKeyOk;
   },
 
   invalidate: () => set({ trust: "NO_VERIFICADA" }),
@@ -118,10 +159,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }),
 
   isFeatureEnabled: (flag) => {
-    // SOLO se honran flags de un blob con firma verificada (trust VERIFICADA).
-    // No verificado o con firma inválida → módulos no críticos apagados;
-    // caja/cobro siguen dependiendo de la autoridad del servidor.
-    if (get().trust !== "VERIFICADA") return false;
+    // SOLO se honran flags provenientes de un blob confiable:
+    // "VERIFICADA" (firma válida con WebCrypto) o "CONFIANZA" (LAN sin
+    // WebCrypto: réplica entregada por el servidor autenticado, que
+    // revalida en cada API). NO_VERIFICADA/firma inválida → apagadas.
+    const t = get().trust;
+    if (t !== "VERIFICADA" && t !== "CONFIANZA") return false;
     return get().config?.featureFlags[flag] === true;
   },
 }));

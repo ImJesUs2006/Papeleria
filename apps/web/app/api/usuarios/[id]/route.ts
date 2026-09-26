@@ -63,6 +63,16 @@ export async function PATCH(
     data.activa = body.activa;
   }
 
+  // Permisos granulares (Fase 9).
+  for (const k of ["permisoCobrar", "permisoInventario", "permisoReportes"] as const) {
+    if (body[k] !== undefined) {
+      if (typeof body[k] !== "boolean") {
+        return NextResponse.json({ error: `Valor de ${k} inválido` }, { status: 400 });
+      }
+      data[k] = body[k];
+    }
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
   }
@@ -91,6 +101,9 @@ export async function PATCH(
           username: true,
           rol: true,
           activa: true,
+          permisoCobrar: true,
+          permisoInventario: true,
+          permisoReportes: true,
           ultimoLoginAt: true,
         },
       });

@@ -42,7 +42,7 @@ const MODULOS = [
 const MODULO_COLORS: Record<string, string> = {
   PUNTO_VENTA: "text-neon-green border-neon-green/40 bg-neon-green/10",
   INVENTARIO: "text-neon-cyan border-neon-cyan/40 bg-neon-cyan/10",
-  CAJA: "text-neon-yellow border-neon-yellow/40 bg-neon-yellow/10",
+  CAJA: "text-warning border-neon-yellow/40 bg-neon-yellow/10",
   REPORTES: "text-neon-purple border-neon-purple/40 bg-neon-purple/10",
   CONFIGURACION: "text-gray-300 border-surface-400 bg-surface-600/40",
   BITACORA: "text-neon-magenta border-neon-magenta/40 bg-neon-magenta/10",

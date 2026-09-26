@@ -292,7 +292,7 @@ export default function ProveedoresPage() {
                               ${p.limiteCredito.toFixed(2)}
                             </span>
                             <span className="text-muted"> límite</span>
-                            <span className={cn("block font-bold mt-0.5", p.saldoCredito > 0 ? "text-neon-yellow" : "text-muted")}>
+                            <span className={cn("block font-bold mt-0.5", p.saldoCredito > 0 ? "text-warning" : "text-muted")}>
                               Saldo: ${p.saldoCredito.toFixed(2)}
                             </span>
                           </div>
@@ -463,7 +463,7 @@ export default function ProveedoresPage() {
 
                 <div className="flex items-center justify-between bg-surface-900/50 rounded-xl px-4 py-3 mb-4">
                   <span className="text-xs text-muted">Saldo pendiente</span>
-                  <span className={cn("text-lg font-black", abono.saldoCredito > 0 ? "text-neon-yellow" : "text-neon-green")}>
+                  <span className={cn("text-lg font-black", abono.saldoCredito > 0 ? "text-warning" : "text-neon-green")}>
                     ${abono.saldoCredito.toFixed(2)}
                   </span>
                 </div>

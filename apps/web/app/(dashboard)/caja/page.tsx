@@ -12,16 +12,19 @@ import {
   CheckCircle2,
   Loader2,
   History,
+  ReceiptText,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { CorteCiego } from "@/components/caja/corte-ciego";
 import { HistorialCaja } from "@/components/caja/historial";
+import { TicketsSesion } from "@/components/caja/tickets-sesion";
 import { AccionesSesion } from "@/components/caja/abono-retiro";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
 
 interface SesionCaja {
   idCaja: string;
+  folioCaja?: string | null;
   fondoInicial: number;
   totalVentasEfectivo: number;
   totalVentasDigital: number;
@@ -43,7 +46,7 @@ export default function CajaPage() {
   const [procesando, setProcesando] = useState<FlujoIngreso | null>(null);
   const [notaOK, setNotaOK] = useState<string | null>(null);
   const [cargandoEstado, setCargandoEstado] = useState(true);
-  const [tab, setTab] = useState<"sesion" | "historial">("sesion");
+  const [tab, setTab] = useState<"sesion" | "tickets" | "historial">("sesion");
   const rol = useAuthStore((s) => s.rol);
   const esAdmin = rol === "ADMINISTRADORA";
 
@@ -154,6 +157,7 @@ export default function CajaPage() {
           {(
             [
               { id: "sesion", label: "Sesión actual", icon: DollarSign },
+              { id: "tickets", label: "Tickets de la sesión", icon: ReceiptText },
               { id: "historial", label: "Historial de sesiones", icon: History },
             ] as const
           ).map(({ id, label, icon: Icon }) => (
@@ -172,6 +176,8 @@ export default function CajaPage() {
 
         {tab === "historial" ? (
           <HistorialCaja />
+        ) : tab === "tickets" ? (
+          <TicketsSesion />
         ) : (
         <>
         {cargandoEstado ? (
@@ -200,8 +206,8 @@ export default function CajaPage() {
           >
             <div className="bg-surface-800 border border-surface-600 rounded-2xl p-8">
               <div className="flex items-center gap-3 mb-6">
-                <div className="h-12 w-12 rounded-xl bg-neon-green/10 flex items-center justify-center">
-                  <DollarSign className="h-6 w-6 text-neon-green" />
+                <div className="h-12 w-12 rounded-xl bg-acento/10 flex items-center justify-center">
+                  <DollarSign className="h-6 w-6 text-acento" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-100">
@@ -222,7 +228,7 @@ export default function CajaPage() {
                   value={fondoInicial}
                   onChange={(e) => setFondoInicial(e.target.value)}
                   placeholder="500.00"
-                  className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-lg text-gray-100 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all"
+                  className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-lg text-gray-100 focus:border-acento focus:shadow-neon focus:outline-none transition-all"
                 />
               </label>
 
@@ -234,7 +240,7 @@ export default function CajaPage() {
                 className={cn(
                   "w-full py-3 rounded-xl font-bold transition-all",
                   fondoInicial
-                    ? "bg-neon-green text-btn-ink shadow-neon"
+                    ? "bg-acento text-btn-ink shadow-neon"
                     : "bg-surface-600 text-muted cursor-not-allowed"
                 )}
               >
@@ -253,7 +259,7 @@ export default function CajaPage() {
                     "h-3 w-3 rounded-full animate-pulse",
                     sesionActual.estado === "EN_CIERRE"
                       ? "bg-neon-red"
-                      : "bg-neon-green"
+                      : "bg-acento"
                   )}
                 />
                 <span className="text-sm font-medium text-gray-100">
@@ -270,6 +276,9 @@ export default function CajaPage() {
                       {new Date(sesionActual.horaApertura).toLocaleTimeString(
                         "es-MX"
                       )}
+                      {sesionActual.folioCaja
+                        ? " · " + sesionActual.folioCaja
+                        : ""}
                     </>
                   )}
                 </span>
@@ -290,9 +299,9 @@ export default function CajaPage() {
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="flex items-center gap-3 bg-neon-green/10 border border-neon-green/40 rounded-xl px-4 py-3"
+                  className="flex items-center gap-3 bg-acento/10 border border-acento/40 rounded-xl px-4 py-3"
                 >
-                  <CheckCircle2 className="h-5 w-5 text-neon-green shrink-0" />
+                  <CheckCircle2 className="h-5 w-5 text-acento shrink-0" />
                   <p className="text-sm text-gray-100 flex-1">{notaOK}</p>
                   <button
                     onClick={() => setNotaOK(null)}
@@ -329,11 +338,11 @@ export default function CajaPage() {
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="bg-surface-800 border-2 border-neon-green/40 rounded-2xl p-6"
+                className="bg-surface-800 border-2 border-acento/40 rounded-2xl p-6"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-lg bg-neon-green/10 flex items-center justify-center">
-                    <TrendingUp className="h-5 w-5 text-neon-green" />
+                  <div className="h-10 w-10 rounded-lg bg-acento/10 flex items-center justify-center">
+                    <TrendingUp className="h-5 w-5 text-acento" />
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-100">Papelería</h3>
@@ -341,7 +350,7 @@ export default function CajaPage() {
                   </div>
                 </div>
 
-                <div className="text-3xl lg:text-4xl font-black text-neon-green text-glow-green mb-4">
+                <div className="text-3xl lg:text-4xl font-black text-acento text-glow-green mb-4">
                   ${sesionActual.totalVentasEfectivo.toFixed(2)}
                 </div>
 
@@ -361,9 +370,9 @@ export default function CajaPage() {
                 </div>
 
                 {/* Input de ingreso exclusivo de Papelería */}
-                <div className="border-t border-neon-green/20 pt-4">
+                <div className="border-t border-acento/20 pt-4">
                   <label className="block mb-2">
-                    <span className="text-xs font-bold text-neon-green uppercase tracking-wider">
+                    <span className="text-xs font-bold text-acento uppercase tracking-wider">
                       Registrar ingreso papelería
                     </span>
                     <div className="flex gap-2 mt-2">
@@ -372,7 +381,7 @@ export default function CajaPage() {
                         value={ingresoPapa}
                         onChange={(e) => setIngresoPapa(e.target.value)}
                         placeholder="0.00"
-                        className="w-full bg-surface-700 border-2 border-neon-green/40 rounded-xl px-4 py-3 text-lg text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all"
+                        className="w-full bg-surface-700 border-2 border-acento/40 rounded-xl px-4 py-3 text-lg text-gray-100 placeholder:text-muted/50 focus:border-acento focus:shadow-neon focus:outline-none transition-all"
                       />
                       <motion.button
                         whileTap={{ scale: 0.95 }}
@@ -381,7 +390,7 @@ export default function CajaPage() {
                         className={cn(
                           "flex items-center gap-2 px-4 rounded-xl font-bold transition-all shrink-0",
                           ingresoPapa && procesando === null
-                            ? "bg-neon-green text-btn-ink shadow-neon"
+                            ? "bg-acento text-btn-ink shadow-neon"
                             : "bg-surface-600 text-muted cursor-not-allowed"
                         )}
                       >

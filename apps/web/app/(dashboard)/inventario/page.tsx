@@ -447,13 +447,13 @@ export default function InventarioPage() {
                         <span className={cn(
                           "text-sm font-bold px-2 py-0.5 rounded-md",
                           p.stockActual <= 0 ? "bg-neon-red/10 text-neon-red" :
-                          p.stockActual <= p.stockMinimo ? "bg-neon-yellow/10 text-neon-yellow" :
+                          p.stockActual <= p.stockMinimo ? "bg-neon-yellow/10 text-warning" :
                           "text-gray-100"
                         )}>
                           {p.stockActual}
                         </span>
                         {p.stockActual <= p.stockMinimo && p.stockActual > 0 && (
-                          <span className="text-[10px] text-neon-yellow ml-2">MIN: {p.stockMinimo}</span>
+                          <span className="text-[10px] text-warning ml-2">MIN: {p.stockMinimo}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">{p.ubicacionEstante || "—"}</td>
@@ -467,8 +467,8 @@ export default function InventarioPage() {
                             className={cn(
                               "h-8 w-8 rounded-lg flex items-center justify-center transition-colors",
                               p.favorito
-                                ? "bg-neon-yellow/10 text-neon-yellow"
-                                : "bg-surface-700 hover:bg-neon-yellow/10 text-muted hover:text-neon-yellow"
+                                ? "bg-neon-yellow/10 text-warning"
+                                : "bg-surface-700 hover:bg-neon-yellow/10 text-muted hover:text-warning"
                             )}
                           >
                             <Star className={cn("h-4 w-4", p.favorito && "fill-neon-yellow")} />
@@ -589,7 +589,7 @@ export default function InventarioPage() {
                     </div>
                   ) : (
                     <div className="h-9 w-9 rounded-lg bg-neon-yellow/10 flex items-center justify-center">
-                      <AlertTriangle className="h-5 w-5 text-neon-yellow" />
+                      <AlertTriangle className="h-5 w-5 text-warning" />
                     </div>
                   )}
                   <div>

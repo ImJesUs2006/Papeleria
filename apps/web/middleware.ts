@@ -32,12 +32,19 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Role-based route protection
-  const isAdminRoute = pathname.startsWith("/setup") ||
-    pathname.startsWith("/configuracion") ||
-    pathname.startsWith("/reportes") ||
-    pathname.startsWith("/bitacora") ||
-    pathname.includes("/inventario");
+  // Role-based route protection. La config firmada (GET cache) es de LECTURA
+  // y la firma ya protege contra manipulación: cualquier usuario autenticado
+  // puede hidratar los flags (las CAJERA no degradan a NO_VERIFICADA). Los
+  // escritores de configuración SÍ siguen siendo exclusivos de ADMINISTRADORA.
+  const esCacheConfigLectura = pathname === "/api/configuracion/negocio/cache";
+  const isAdminRoute =
+    !esCacheConfigLectura &&
+    (pathname.startsWith("/setup") ||
+      pathname.startsWith("/configuracion") ||
+      pathname.startsWith("/reportes") ||
+      pathname.startsWith("/bitacora") ||
+      pathname.startsWith("/facturacion") ||
+      pathname.includes("/inventario"));
 
   if (isAdminRoute && payload.rol !== "ADMINISTRADORA") {
     if (pathname.startsWith("/api/")) {

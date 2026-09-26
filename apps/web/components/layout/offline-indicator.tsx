@@ -23,7 +23,7 @@ export function OfflineIndicator() {
               ? "bg-neon-red/15 border-neon-red/40 text-neon-red"
               : ultimoResultado
                 ? "bg-neon-green/15 border-neon-green/40 text-neon-green"
-                : "bg-neon-yellow/15 border-neon-yellow/40 text-neon-yellow"
+                : "bg-neon-yellow/15 border-neon-yellow/40 text-warning"
           )}
         >
           {!online ? (

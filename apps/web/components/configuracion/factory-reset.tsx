@@ -1,17 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, Loader2, RotateCcw, ShieldCheck, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  RotateCcw,
+  ShieldCheck,
+  X,
+  CircleAlert,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const FRASE = "CONFIRMAR BORRADO";
 
 // ============================================================
-// Factory Reset NO destructivo (Fase 1).
-// Pide contraseña del admin + frase exacta antes de reiniciar el
-// SetupWizard a PENDIENTE. El servidor guarda un snapshot primero.
+// Factory Reset NO destructivo.
+// Pide contraseña de la administradora + frase exacta antes de
+// reiniciar el SetupWizard a PENDIENTE. El servidor guarda un
+// snapshot primero. Los errores del servidor (p. ej. si el
+// snapshot falla) se muestran como TOAST con el mensaje exacto.
 // ============================================================
 
 export function FactoryResetButton() {
@@ -23,6 +32,17 @@ export function FactoryResetButton() {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ snapshotId: string } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (error) {
+      timerRef.current = setTimeout(() => setError(null), 7000);
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [error]);
 
   const fraseValida = confirmacion === FRASE;
   const puedeEnviar = fraseValida && password.length > 0 && !cargando;
@@ -40,6 +60,7 @@ export function FactoryResetButton() {
       if (!res.ok) throw new Error(data.error || "No se pudo reiniciar el sistema");
       setResultado(data);
     } catch (e: any) {
+      // Toast con el mensaje de error exacto devuelto por el servidor.
       setError(e?.message || "Error al reiniciar");
     } finally {
       setCargando(false);
@@ -175,14 +196,6 @@ export function FactoryResetButton() {
                       />
                     </label>
                   </div>
-
-                  {error && (
-                    <div className="mt-3 flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-3 py-2.5 text-sm text-gray-100">
-                      <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" />
-                      {error}
-                    </div>
-                  )}
-
                   <button
                     onClick={enviar}
                     disabled={!puedeEnviar}
@@ -210,6 +223,32 @@ export function FactoryResetButton() {
                 </>
               )}
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast con el error exacto del servidor */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            className="fixed bottom-5 right-5 z-[60] max-w-sm flex items-start gap-3 bg-surface-700 border border-neon-red/50 rounded-2xl px-4 py-3 shadow-neon-glow"
+            role="alert"
+          >
+            <CircleAlert className="h-5 w-5 text-neon-red shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-gray-100">No se pudo reiniciar</p>
+              <p className="text-xs text-muted mt-0.5 break-words">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="h-7 w-7 rounded-lg bg-surface-600 hover:bg-surface-500 flex items-center justify-center text-muted hover:text-gray-100 transition-colors shrink-0"
+              aria-label="Cerrar aviso"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

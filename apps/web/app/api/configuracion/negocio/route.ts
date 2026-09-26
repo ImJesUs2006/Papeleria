@@ -41,6 +41,15 @@ export async function PUT(request: Request) {
     const previa = await prisma.configuracionNegocio.findUnique({ where: { id: CONFIG_ID } });
     const proximaVersion = (previa?.configVersion ?? 0) + 1;
 
+    // Fase Pulido (bug de toggles fantasma): deep merge de flags. Aunque un
+    // cliente envíe un objeto featureFlags parcial, los módulos no mencionados
+    // conservan su estado previo en la BD y en el estado global/Store.
+    const { normalizeFlags, mergeFeatureFlags } = await import("@/lib/feature-flags");
+    const flagsMerged = mergeFeatureFlags(
+      normalizeFlags(previa?.featureFlags ?? null),
+      (parsed.data.featureFlags ?? {}) as Record<string, unknown>
+    );
+
     await prisma.configuracionNegocio.update({
       where: { id: CONFIG_ID },
       data: {
@@ -48,13 +57,18 @@ export async function PUT(request: Request) {
         tipoNegocio: parsed.data.tipoNegocio,
         moneda: parsed.data.moneda,
         ivaRate: parsed.data.ivaRate,
-        featureFlags: parsed.data.featureFlags,
+        featureFlags: flagsMerged,
         metodosPago: parsed.data.metodosPago,
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
         colorAcento: parsed.data.colorAcento,
         datosBancarios: parsed.data.datosBancarios ?? Prisma.DbNull,
+        usarImagenesProductos: parsed.data.usarImagenesProductos,
+        mensajeTicket: parsed.data.mensajeTicket ?? null,
+        anchoTicket: parsed.data.anchoTicket,
+        vistaDefectoPOS: parsed.data.vistaDefectoPOS,
+        datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
         configVersion: proximaVersion,
         setupPendiente: false,
         updatedById: user.idPersona,

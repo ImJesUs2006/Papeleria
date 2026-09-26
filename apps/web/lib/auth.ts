@@ -37,6 +37,7 @@ const PERMISSIONS: Record<string, string[]> = {
     "reportes.ver", "reportes.exportar",
     "configuracion.usuarios", "configuracion.roles",
     "bitacora.ver",
+    "facturacion.ver",
   ],
   CAJERA: [
     "caja.abrir", "caja.cerrar", "cobro.realizar",

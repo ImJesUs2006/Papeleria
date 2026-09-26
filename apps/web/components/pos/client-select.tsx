@@ -161,7 +161,7 @@ export function ClientSelectModal({ open, onClose, onSelect }: Props) {
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className={cn("text-xs font-bold", c.saldoDeudor > 0 ? "text-neon-yellow" : "text-neon-green")}>
+                          <span className={cn("text-xs font-bold", c.saldoDeudor > 0 ? "text-warning" : "text-neon-green")}>
                             ${c.saldoDeudor.toFixed(2)}
                           </span>
                           <Check className="h-4 w-4 text-muted" />

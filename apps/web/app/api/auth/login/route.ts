@@ -37,6 +37,9 @@ export async function POST(request: Request) {
       idPersona: user.idPersona,
       nombre: user.nombre,
       rol: user.rol,
+      permisoCobrar: user.permisoCobrar ?? true,
+      permisoInventario: user.permisoInventario ?? true,
+      permisoReportes: user.permisoReportes ?? true,
     });
 
     await prisma.$transaction([
@@ -62,6 +65,9 @@ export async function POST(request: Request) {
       idPersona: user.idPersona,
       nombre: user.nombre,
       rol: user.rol,
+      permisoCobrar: user.permisoCobrar ?? true,
+      permisoInventario: user.permisoInventario ?? true,
+      permisoReportes: user.permisoReportes ?? true,
       setupPendiente: config?.setupPendiente ?? true,
     });
 

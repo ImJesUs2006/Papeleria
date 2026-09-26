@@ -6,6 +6,7 @@ import {
   captureSnapshotState,
   resetNegocio,
   restoreFromSnapshot,
+  deleteSnapshot,
   SnapshotError,
 } from "@/lib/snapshots";
 
@@ -22,6 +23,12 @@ function makeConfigRow(overrides: any = {}) {
     logo: null,
     temaBase: "NEON",
     colorAcento: "#10b981",
+    datosBancarios: null,
+    usarImagenesProductos: true,
+    mensajeTicket: "¡Gracias por su compra!",
+    anchoTicket: "58mm",
+    vistaDefectoPOS: "CATALOGO_TACTIL",
+    datosFiscales: { rfc: "XAXX010101000", razonSocial: "Papelería El Lápiz S.A." },
     configVersion: 5,
     setupPendiente: false,
     ...overrides,
@@ -76,6 +83,14 @@ describe("buildResetJson", () => {
     expect(json.configuracion.temaBase).toBe("NEON");
     expect(json.configuracion.colorAcento).toBe("#10b981");
     expect(json.configuracion.configVersion).toBe(5);
+    expect(json.configuracion.anchoTicket).toBe("58mm");
+    expect(json.configuracion.vistaDefectoPOS).toBe("CATALOGO_TACTIL");
+    expect(json.configuracion.usarImagenesProductos).toBe(true);
+    expect(json.configuracion.mensajeTicket).toBe("¡Gracias por su compra!");
+    expect(json.configuracion.datosFiscales).toEqual({
+      rfc: "XAXX010101000",
+      razonSocial: "Papelería El Lápiz S.A.",
+    });
     expect(json.totales.ventas.conteo).toBe(3);
     expect(json.totales.sesionCaja).toHaveLength(1);
     expect(json.totales.sesionCaja[0].horaApertura).toContain("2026-09-01");
@@ -87,6 +102,11 @@ describe("buildResetJson", () => {
     expect(json.configuracion.tipoNegocio).toBe("PAPELERIA_RETAIL");
     expect(json.configuracion.temaBase).toBe("NEON");
     expect(json.configuracion.colorAcento).toBe("#10b981");
+    expect(json.configuracion.usarImagenesProductos).toBe(true);
+    expect(json.configuracion.anchoTicket).toBe("80mm");
+    expect(json.configuracion.vistaDefectoPOS).toBe("ESCANER");
+    expect(json.configuracion.mensajeTicket).toBeNull();
+    expect(json.configuracion.datosFiscales).toBeNull();
     expect(json.totales.ventas.conteo).toBe(0);
   });
 });
@@ -167,6 +187,11 @@ describe("restoreFromSnapshot", () => {
         logo: "data:image/png;base64,AAAA",
         temaBase: "BRUTALISTA",
         colorAcento: "#38bdf8",
+        usarImagenesProductos: true,
+        mensajeTicket: "Gracias por visitarnos",
+        anchoTicket: "80mm",
+        vistaDefectoPOS: "ESCANER",
+        datosFiscales: { rfc: "AAA010101AAA", regimenFiscal: "601 - Personas Morales" },
         configVersion: 3,
         setupPendiente: true,
       },
@@ -206,6 +231,11 @@ describe("restoreFromSnapshot", () => {
         temaBase: "BRUTALISTA",
         colorAcento: "#38bdf8",
         metodosPago: ["EFECTIVO"],
+        usarImagenesProductos: true,
+        mensajeTicket: "Gracias por visitarnos",
+        anchoTicket: "80mm",
+        vistaDefectoPOS: "ESCANER",
+        datosFiscales: { rfc: "AAA010101AAA", regimenFiscal: "601 - Personas Morales" },
         setupPendiente: false,
         configVersion: 10,
         updatedById: "u2",
@@ -230,5 +260,45 @@ describe("restoreFromSnapshot", () => {
     await expect(
       restoreFromSnapshot(tx, { id: "x", idUsuario: "u2" })
     ).rejects.toBeInstanceOf(SnapshotError);
+  });
+});
+
+describe("deleteSnapshot (limpieza del historial)", () => {
+  function makeDeleteTx(overrides: any = {}) {
+    const tx: any = {
+      snapshotSeguridad: { delete: vi.fn().mockResolvedValue({}) },
+      bitacoraLog: { create: vi.fn().mockResolvedValue({}) },
+      ...overrides,
+    };
+    return tx;
+  }
+
+  it("elimina el snapshot y registra bitácora con la admin y el id", async () => {
+    const tx = makeDeleteTx();
+    await deleteSnapshot(tx, { id: "snap-abc", idUsuario: "u1" });
+
+    expect(tx.snapshotSeguridad.delete).toHaveBeenCalledWith({ where: { id: "snap-abc" } });
+    expect(tx.bitacoraLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          accion: expect.stringContaining("snap-abc"),
+          idUsuario: "u1",
+          moduloSistema: "CONFIGURACION",
+        }),
+      })
+    );
+  });
+
+  it("lanza 404 si el snapshot ya no existe en la BD", async () => {
+    const tx = makeDeleteTx({
+      snapshotSeguridad: {
+        delete: vi.fn().mockImplementation(() => {
+          throw new Error("P2025: record not found");
+        }),
+      },
+    });
+    await expect(
+      deleteSnapshot(tx, { id: "fantasma", idUsuario: "u1" })
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

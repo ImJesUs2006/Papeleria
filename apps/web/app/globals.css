@@ -29,6 +29,9 @@
   --marca-color: var(--neon-green);
   --color-accento: var(--neon-green);
 
+  /* Texto de advertencia legible sobre fondo oscuro (text-warning). */
+  --text-warning: #fbbf24;
+
   /* Superficies semánticas (utilidades bg-surface-* / border-surface-*). */
   --surface-950-rgb: 5 5 5;
   --surface-900-rgb: 10 10 10;
@@ -74,6 +77,8 @@
   --gray-300-rgb: 55 65 81;
   --muted-rgb: 107 114 128;
 
+  --text-warning: #d97706;
+
   --shadow-card: none;
   --shadow-neon: none;
   --shadow-neon-cyan: none;
@@ -103,6 +108,8 @@
   --gray-300-rgb: 35 35 35;
   --muted-rgb: 71 71 71;
 
+  --text-warning: #78350f;
+
   --shadow-card: 5px 5px 0 #000;
   --shadow-neon: none;
   --shadow-neon-cyan: none;
@@ -131,6 +138,8 @@
   --gray-200-rgb: 30 41 59;
   --gray-300-rgb: 51 65 85;
   --muted-rgb: 100 116 139;
+
+  --text-warning: #b45309;
 
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08);
   --shadow-neon: none;

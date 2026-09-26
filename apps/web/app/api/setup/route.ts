@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
+import { Prisma, prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { getBusinessConfig, CONFIG_ID } from "@/lib/feature-flags";
 import { validateConfigInput } from "@/lib/validate-config";
@@ -47,18 +47,30 @@ export async function POST(request: Request) {
     const previa = await prisma.configuracionNegocio.findUnique({ where: { id: CONFIG_ID } });
     const proximaVersion = (previa?.configVersion ?? 0) + 1;
 
+    // Deep merge: el setup (o una reconfiguración parcial) no borra módulos.
+    const { normalizeFlags, mergeFeatureFlags } = await import("@/lib/feature-flags");
+    const flagsMerged = mergeFeatureFlags(
+      normalizeFlags(previa?.featureFlags ?? null),
+      (parsed.data.featureFlags ?? {}) as Record<string, unknown>
+    );
+
     const guardada = await prisma.configuracionNegocio.upsert({
       where: { id: CONFIG_ID },
       update: {
         nombreNegocio: parsed.data.nombreNegocio,
         tipoNegocio: parsed.data.tipoNegocio,
         metodosPago: parsed.data.metodosPago,
-        featureFlags: parsed.data.featureFlags,
+        featureFlags: flagsMerged,
         ivaRate: parsed.data.ivaRate,
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
         colorAcento: parsed.data.colorAcento,
+        usarImagenesProductos: parsed.data.usarImagenesProductos,
+        mensajeTicket: parsed.data.mensajeTicket ?? null,
+        anchoTicket: parsed.data.anchoTicket,
+        vistaDefectoPOS: parsed.data.vistaDefectoPOS,
+        datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
         configVersion: proximaVersion,
         setupPendiente: false,
         updatedById: user.idPersona,
@@ -68,12 +80,17 @@ export async function POST(request: Request) {
         nombreNegocio: parsed.data.nombreNegocio,
         tipoNegocio: parsed.data.tipoNegocio,
         metodosPago: parsed.data.metodosPago,
-        featureFlags: parsed.data.featureFlags,
+        featureFlags: flagsMerged,
         ivaRate: parsed.data.ivaRate,
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
         colorAcento: parsed.data.colorAcento,
+        usarImagenesProductos: parsed.data.usarImagenesProductos,
+        mensajeTicket: parsed.data.mensajeTicket ?? null,
+        anchoTicket: parsed.data.anchoTicket,
+        vistaDefectoPOS: parsed.data.vistaDefectoPOS,
+        datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
         configVersion: proximaVersion,
         setupPendiente: false,
         updatedById: user.idPersona,

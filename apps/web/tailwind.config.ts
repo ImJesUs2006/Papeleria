@@ -46,6 +46,9 @@ const config: Config = {
           purple: "var(--neon-purple, #b44bff)",
         },
         muted: "rgb(var(--muted-rgb) / <alpha-value>)",
+        // Contraste de estado "advertencia": text-warning cambia por tema
+        // (amarillo brillante en neón, ámbar oscuro en temas claros).
+        warning: "var(--text-warning, #fbbf24)",
       },
       boxShadow: {
         // Sombras por variable: los temas claros los anulan en globals.css.

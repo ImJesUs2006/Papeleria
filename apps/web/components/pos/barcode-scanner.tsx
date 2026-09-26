@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScanLine, AlertTriangle, Keyboard, RefreshCw } from "lucide-react";
 import { useScannerDetection } from "@/hooks/use-scanner";
@@ -12,12 +12,15 @@ interface BarcodeScannerProps {
   onScan: (code: string) => void;
   codigoError: string | null;
   className?: string;
+  /** Vista por defecto del POS: ESCANER enfoca el lector al abrir la pantalla. */
+  autoFocus?: boolean;
 }
 
 export function BarcodeScanner({
   onScan,
   codigoError,
   className,
+  autoFocus = false,
 }: BarcodeScannerProps) {
   const [manualOpen, setManualOpen] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
@@ -35,6 +38,14 @@ export function BarcodeScanner({
 
   const { inputRef, isScannerInput, scannerHealth, isFocused, focusInput } =
     useScannerDetection(onScan, handleScanFail);
+
+  // Vista por defecto "ESCANER": el lector se enfoca al montar la pantalla.
+  useEffect(() => {
+    if (autoFocus) {
+      const t = setTimeout(() => focusInput(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [autoFocus, focusInput]);
 
   // Atajos globales: enfocar el lector o abrir búsqueda manual.
   useHotkeys(
@@ -124,7 +135,7 @@ export function BarcodeScanner({
               transition={{ duration: 0.4 }}
               className="mt-3 flex items-center gap-3 bg-neon-yellow/10 border border-neon-yellow/40 rounded-xl px-4 py-3"
             >
-              <AlertTriangle className="h-5 w-5 text-neon-yellow shrink-0" />
+              <AlertTriangle className="h-5 w-5 text-warning shrink-0" />
               <p className="text-sm text-gray-100 flex-1">
                 No se detectó el código. Revisa la conexión del lector o usa la
                 búsqueda táctil.

@@ -88,7 +88,7 @@ export default function DashboardPage() {
                 { label: "Ventas totales", value: `$${data.resumen.totalVentas.toFixed(2)}`, icon: TrendingUp, color: "text-neon-green", bg: "bg-neon-green/10" },
                 { label: "Tickets emitidos", value: String(data.resumen.numVentas), icon: Receipt, color: "text-neon-cyan", bg: "bg-neon-cyan/10" },
                 { label: "Ticket promedio", value: `$${data.resumen.ticketPromedio.toFixed(2)}`, icon: BarChart3, color: "text-neon-magenta", bg: "bg-neon-magenta/10" },
-                { label: "Alertas de stock", value: String(data.resumen.agotados + data.resumen.alertaBaja), icon: PackageX, color: "text-neon-yellow", bg: "bg-neon-yellow/10" },
+                { label: "Alertas de stock", value: String(data.resumen.agotados + data.resumen.alertaBaja), icon: PackageX, color: "text-warning", bg: "bg-neon-yellow/10" },
               ].map((kpi, i) => (
                 <motion.div
                   key={kpi.label}
@@ -150,7 +150,7 @@ export default function DashboardPage() {
               {/* Alertas de stock */}
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="bg-surface-800 border border-surface-600 rounded-2xl p-5">
                 <div className="flex items-center gap-2 mb-4">
-                  <PieIcon className="h-5 w-5 text-neon-yellow" />
+                  <PieIcon className="h-5 w-5 text-warning" />
                   <h3 className="font-bold text-gray-100">Inventario crítico</h3>
                 </div>
                 <div className="h-40">
@@ -170,7 +170,7 @@ export default function DashboardPage() {
                   {data.alertasStock.slice(0, 6).map((a) => (
                     <div key={a.descripcion} className="flex items-center justify-between text-xs gap-2">
                       <span className="text-muted truncate">{a.descripcion}</span>
-                      <span className={cn("font-bold shrink-0", a.stockActual === 0 ? "text-neon-red" : "text-neon-yellow")}>
+                      <span className={cn("font-bold shrink-0", a.stockActual === 0 ? "text-neon-red" : "text-warning")}>
                         {a.stockActual} / mín {a.stockMinimo}
                       </span>
                     </div>

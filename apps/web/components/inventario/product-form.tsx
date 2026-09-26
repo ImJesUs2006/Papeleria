@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
+import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 const TIPO_IMPRESION_LABELS: Record<(typeof TIPO_IMPRESION_OPCIONES)[number], string> = {
@@ -152,6 +153,7 @@ async function comprimirImagen(file: File): Promise<{ mime: string; base64: stri
 
 export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
   const editando = Boolean(producto);
+  const usarImagenes = useConfigStore((s) => s.config?.usarImagenesProductos ?? true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [serverError, setServerError] = useState<string | null>(null);
@@ -316,7 +318,12 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4">
+        <div
+          className={cn(
+            "grid gap-4",
+            usarImagenes ? "grid-cols-1 md:grid-cols-[1fr_auto]" : "grid-cols-1"
+          )}
+        >
           <div className="space-y-4">
             <label className="block">
               <span className="text-xs text-muted mb-1 block">Descripción *</span>
@@ -438,7 +445,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
               <p
                 className={cn(
                   "text-xs font-bold",
-                  margen < 0 ? "text-neon-red" : margen === 0 ? "text-neon-yellow" : "text-neon-green"
+                  margen < 0 ? "text-neon-red" : margen === 0 ? "text-warning" : "text-neon-green"
                 )}
               >
                 Margen por unidad: ${margen.toFixed(2)}
@@ -470,7 +477,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
             </div>
           </div>
 
-          {/* Imagen */}
+          {usarImagenes && (
           <div className="flex flex-col items-center gap-2 md:pt-6">
             <span className="text-xs text-muted">Imagen</span>
             <button
@@ -523,6 +530,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
               }}
             />
           </div>
+        )}
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-2">

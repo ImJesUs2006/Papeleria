@@ -8,8 +8,9 @@ import { resetNegocio, MOTIVO_REINICIO } from "@/lib/snapshots";
 // POST /api/seguridad/reset — Factory Reset NO destructivo.
 //
 // Requisitos duros de seguridad:
-//   1. Solo la cuenta ADMINISTRADORA **raíz** (isRoot === true).
-//   2. Contraseña del admin verificada contra passwordHash.
+//   1. Rol ADMINISTRADORA (cualquier cuenta con ese rol, Fase 9
+//      ABAC: ya no se limita a la raíz; la contraseña es la llave).
+//   2. Contraseña del usuario verificada contra passwordHash.
 //   3. Confirmación textual exacta: "CONFIRMAR BORRADO".
 // El reset guarda un SnapshotSeguridad (config + totales) y
 // reinicia el SetupWizard a PENDIENTE. NO elimina datos.
@@ -50,14 +51,8 @@ export async function POST(request: Request) {
   if (!valida) {
     return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 401 });
   }
-  // Seguridad Root (Fase 3): ni una administradora común puede reiniciar
-  // el sistema; solo la cuenta marcada como isRoot en el esquema.
-  if (user.isRoot !== true) {
-    return NextResponse.json(
-      { error: "Solo la cuenta raíz puede reiniciar el sistema" },
-      { status: 403 }
-    );
-  }
+  // Fase 9 (ABAC): cualquier administradora con su contraseña y la frase
+  // exacta puede reiniciar; el snapshot protege la información previa.
 
   try {
     const snapshotId = await prisma.$transaction((tx) =>
@@ -78,10 +73,10 @@ export async function POST(request: Request) {
     // se normalizan con ?? null/{}/toNumber en lib/snapshots.ts.
     console.error("[snapshot:reset]", e);
     const status = typeof e?.status === "number" ? e.status : 500;
+    // El detalle real del fallo se devuelve para que la UI lo muestre
+    // en un toast (requisito Fase 9).
     const mensaje =
-      status >= 500
-        ? "No se pudo reiniciar el sistema. Revisa la bitácora de eventos (snapshot no creado)."
-        : e?.message || "No se pudo reiniciar el sistema";
+      e?.message || "No se pudo reiniciar el sistema. Revisa la bitácora de eventos (snapshot no creado).";
     return NextResponse.json({ error: mensaje }, { status });
   }
 }

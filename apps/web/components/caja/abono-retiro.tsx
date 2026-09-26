@@ -205,7 +205,7 @@ function ModalAbono({
                         {c.puntosFidelidad} pts
                       </p>
                     </div>
-                    <span className="text-xs font-bold text-neon-yellow shrink-0">
+                    <span className="text-xs font-bold text-warning shrink-0">
                       ${c.saldoDeudor.toFixed(2)}
                     </span>
                   </button>
@@ -217,7 +217,7 @@ function ModalAbono({
           <>
             <div className="bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 mb-4">
               <p className="text-sm font-bold text-gray-100">{seleccion.nombre}</p>
-              <p className="text-xs text-neon-yellow">
+              <p className="text-xs text-warning">
                 Deuda actual: ${seleccion.saldoDeudor.toFixed(2)}
               </p>
             </div>

@@ -25,6 +25,9 @@ export async function GET() {
       username: true,
       rol: true,
       activa: true,
+      permisoCobrar: true,
+      permisoInventario: true,
+      permisoReportes: true,
       ultimoLoginAt: true,
       passwordCambiadaEn: true,
       createdAt: true,
@@ -69,6 +72,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
   }
 
+  // Permisos granulares (Fase 9): booleanos, opcionales ⇒ true.
+  const permisos = (k: string) =>
+    typeof body[k] === "boolean" ? body[k] : true;
+  const permisoCobrar = permisos("permisoCobrar");
+  const permisoInventario = permisos("permisoInventario");
+  const permisoReportes = permisos("permisoReportes");
+
   try {
     const existe = await prisma.usuario.findUnique({ where: { username } });
     if (existe) {
@@ -78,13 +88,25 @@ export async function POST(request: Request) {
     const passwordHash = await hash(password, 10);
     const nuevo = await prisma.$transaction(async (tx) => {
       const creado = await tx.usuario.create({
-        data: { nombre, username, passwordHash, rol, passwordCambiadaEn: new Date() },
+        data: {
+          nombre,
+          username,
+          passwordHash,
+          rol,
+          permisoCobrar,
+          permisoInventario,
+          permisoReportes,
+          passwordCambiadaEn: new Date(),
+        },
         select: {
           idPersona: true,
           nombre: true,
           username: true,
           rol: true,
           activa: true,
+          permisoCobrar: true,
+          permisoInventario: true,
+          permisoReportes: true,
           ultimoLoginAt: true,
           createdAt: true,
         },
@@ -92,9 +114,16 @@ export async function POST(request: Request) {
       await tx.bitacoraLog.create({
         data: {
           idUsuario: user.idPersona,
-          accion: `Usuario creado: ${username} (${rol})`,
+          accion: `Usuario creado: ${username} (${rol}) cobrar=${permisoCobrar} inventario=${permisoInventario} reportes=${permisoReportes}`,
           moduloSistema: "SEGURIDAD",
-          jsonPayload: { idCreado: creado.idPersona, username, rol },
+          jsonPayload: {
+            idCreado: creado.idPersona,
+            username,
+            rol,
+            permisoCobrar,
+            permisoInventario,
+            permisoReportes,
+          },
         },
       });
       return creado;

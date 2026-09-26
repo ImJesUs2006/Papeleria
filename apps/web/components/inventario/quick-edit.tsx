@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { LabelModal, LabelProduct, useLabelModal } from "@/components/inventario/label-modal";
 import { ProductImageUpload } from "@/components/inventario/product-image-upload";
+import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 interface RowEdit {
@@ -27,6 +28,7 @@ interface RowEdit {
 type EstadoFila = "ok" | "guardando" | "guardado" | "error";
 
 export function QuickEdit() {
+  const usarImagenes = useConfigStore((s) => s.config?.usarImagenesProductos ?? true);
   const [rows, setRows] = useState<RowEdit[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -155,7 +157,7 @@ export function QuickEdit() {
               <thead className="sticky top-0 bg-surface-700">
                 <tr className="text-left text-[11px] uppercase tracking-wider text-muted border-b border-surface-500">
                   <th className="px-4 py-3 font-semibold">Producto</th>
-                  <th className="px-4 py-3 font-semibold w-24">Imagen</th>
+                  {usarImagenes && <th className="px-4 py-3 font-semibold w-24">Imagen</th>}
                   <th className="px-4 py-3 font-semibold w-32">Precio ($)</th>
                   <th className="px-4 py-3 font-semibold w-24">Stock</th>
                   <th className="px-4 py-3 font-semibold w-24">Stock min</th>
@@ -178,9 +180,11 @@ export function QuickEdit() {
                         <span className="text-gray-100 font-medium">{row.descripcion}</span>
                         <span className="block text-[10px] text-muted">{row.codigoItem}</span>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <ProductImageUpload codigo={row.codigoItem} size={40} />
-                      </td>
+                      {usarImagenes && (
+                        <td className="px-4 py-2.5">
+                          <ProductImageUpload codigo={row.codigoItem} size={40} />
+                        </td>
+                      )}
                       <td className="px-4 py-2.5">
                         <input
                           type="number"

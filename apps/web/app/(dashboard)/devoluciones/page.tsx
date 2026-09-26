@@ -438,7 +438,7 @@ export default function DevolucionesPage() {
                               "text-[11px] font-bold px-2 py-0.5 rounded-md",
                               d.tipo === "NOTA_CREDITO"
                                 ? "bg-neon-blue/10 text-neon-blue"
-                                : "bg-neon-yellow/10 text-neon-yellow"
+                                : "bg-neon-yellow/10 text-warning"
                             )}
                           >
                             {d.tipo === "NOTA_CREDITO" ? "Nota de crédito" : "Devolución"}

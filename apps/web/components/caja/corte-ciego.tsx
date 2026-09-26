@@ -15,6 +15,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useConfigStore } from "@/store/config";
 
 // ============================================================
 // CORTE CIEGO
@@ -48,6 +49,10 @@ interface ArqueoResultado {
 }
 
 export function CorteCiego({ onCerrada, onCancelar }: Props) {
+  const configCaja = useConfigStore((s) => ({
+    anchoTicket: s.config?.anchoTicket ?? "80mm",
+    mensajeTicket: s.config?.mensajeTicket ?? null,
+  }));
   const [fase, setFase] = useState<Fase>("iniciando");
   const [token, setToken] = useState<string | null>(null);
   const [horaInicio, setHoraInicio] = useState<string | null>(null);
@@ -185,12 +190,12 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
         {fase === "iniciando" && (
           <div className="space-y-5">
             <div className="flex items-start gap-3 bg-neon-yellow/5 border border-neon-yellow/20 rounded-2xl p-4">
-              <EyeOff className="h-5 w-5 text-neon-yellow shrink-0 mt-0.5" />
+              <EyeOff className="h-5 w-5 text-warning shrink-0 mt-0.5" />
               <div className="text-sm text-gray-200">
                 <p className="font-bold mb-1">¿Sabes cómo funciona?</p>
                 <p className="text-muted">
                   Al confirmar, el sistema{" "}
-                  <span className="text-neon-yellow font-bold">bloquea nuevas ventas</span> sin
+                  <span className="text-warning font-bold">bloquea nuevas ventas</span> sin
                   mostrarte los totales esperados. Debes contar físicamente el efectivo y los
                   vouchers de terminal/transferencia.
                 </p>
@@ -233,12 +238,12 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
             </div>
 
             <CampoMonto
-              icon={<Banknote className="h-4 w-4 text-neon-green" />}
+              icon={<Banknote className="h-4 w-4 text-acento" />}
               label="Efectivo contado ($)"
               value={efectivo}
               onChange={setEfectivo}
               placeholder="Ej. 1250.50"
-              cls="focus:border-neon-green"
+              cls="focus:border-acento"
             />
             <CampoMonto
               icon={<Receipt className="h-4 w-4 text-neon-cyan" />}
@@ -261,7 +266,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
               placeholder="Notas del corte (opcional)"
-              className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-2.5 text-sm text-gray-100 focus:border-neon-green focus:outline-none transition-all"
+              className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-2.5 text-sm text-gray-100 focus:border-acento focus:outline-none transition-all"
             />
 
             <motion.button
@@ -271,7 +276,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
               className={cn(
                 "w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
                 puedeConcluir
-                  ? "bg-neon-green text-btn-ink shadow-neon"
+                  ? "bg-acento text-btn-ink shadow-neon"
                   : "bg-surface-600 text-muted cursor-not-allowed"
               )}
             >
@@ -288,19 +293,24 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
 
         {/* FASE RESULTADO */}
         {fase === "resultado" && resultado && (
-          <div className="space-y-4 print-label-area">
+          <div
+            className={cn(
+              "space-y-4 print-label-area",
+              configCaja.anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80"
+            )}
+          >
             <div
               className={cn(
                 "flex items-center gap-3 rounded-2xl p-4 border",
                 resultado.descuadre
                   ? "bg-neon-red/10 border-neon-red/40"
-                  : "bg-neon-green/10 border-neon-green/40"
+                  : "bg-acento/10 border-acento/40"
               )}
             >
               {resultado.descuadre ? (
                 <AlertTriangle className="h-8 w-8 text-neon-red shrink-0" />
               ) : (
-                <CheckCircle2 className="h-8 w-8 text-neon-green shrink-0" />
+                <CheckCircle2 className="h-8 w-8 text-acento shrink-0" />
               )}
               <div>
                 <p className="font-black text-gray-100">
@@ -346,7 +356,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
                 <span
                   className={cn(
                     "font-black text-xl",
-                    resultado.descuadre ? "text-neon-red" : "text-neon-green"
+                    resultado.descuadre ? "text-neon-red" : "text-acento"
                   )}
                 >
                   ${resultado.diferenciaTotal.toFixed(2)}
@@ -357,13 +367,18 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={onCerrada}
-              className="w-full py-3.5 rounded-2xl bg-neon-green text-btn-ink font-bold shadow-neon"
+              className="w-full py-3.5 rounded-2xl bg-acento text-btn-ink font-bold shadow-neon"
             >
               Terminar
             </motion.button>
             <p className="text-center text-[10px] text-muted print-hint">
               (El reporte detallado queda en Reportes → Cierre de Caja)
             </p>
+            {configCaja.mensajeTicket && (
+              <p className="text-[10px] font-mono text-center print-label-area">
+                {configCaja.mensajeTicket}
+              </p>
+            )}
           </div>
         )}
 

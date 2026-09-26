@@ -53,10 +53,25 @@ function FilaTicket({ label, valor }: { label: string; valor: string }) {
 }
 
 /** Ticket térmico reutilizable para reimpresión de cortes cerrados. */
-function TicketCorte({ sesion, negocio }: { sesion: SesionHistorial; negocio: string }) {
+function TicketCorte({
+  sesion,
+  negocio,
+  anchoTicket,
+  mensajeTicket,
+}: {
+  sesion: SesionHistorial;
+  negocio: string;
+  anchoTicket: string;
+  mensajeTicket: string | null;
+}) {
   const a = sesion.arqueo;
   return (
-    <div className="print-label-area print-ticket-80 space-y-1.5 text-[11px] font-mono">
+    <div
+      className={cn(
+        "print-label-area space-y-1.5 text-[11px] font-mono",
+        anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80"
+      )}
+    >
       <div className="text-center">
         <p className="text-sm font-black">{negocio}</p>
         <p className="text-[10px]">CORTE DE CAJA</p>
@@ -99,6 +114,11 @@ function TicketCorte({ sesion, negocio }: { sesion: SesionHistorial; negocio: st
       <p className="text-center text-[9px] pt-1">
         Generado por Papelería SaaS · {new Date().toLocaleString("es-MX")}
       </p>
+      {mensajeTicket && (
+        <p className="text-center text-[10px] pt-1 font-bold border-t border-black">
+          {mensajeTicket}
+        </p>
+      )}
     </div>
   );
 }
@@ -109,6 +129,10 @@ export function HistorialCaja() {
   const [imprimiendo, setImprimiendo] = useState<string | null>(null);
   const [ticketParaImprimir, setTicketParaImprimir] = useState<SesionHistorial | null>(null);
   const negocio = useConfigStore((s) => s.config?.nombreNegocio ?? "Mi Negocio");
+  const configCaja = useConfigStore((s) => ({
+    anchoTicket: s.config?.anchoTicket ?? "80mm",
+    mensajeTicket: s.config?.mensajeTicket ?? null,
+  }));
 
   useEffect(() => {
     (async () => {
@@ -173,7 +197,7 @@ export function HistorialCaja() {
                 <span
                   className={cn(
                     "h-2.5 w-2.5 rounded-full",
-                    s.descuadre ? "bg-neon-red animate-pulse" : "bg-neon-green"
+                    s.descuadre ? "bg-neon-red animate-pulse" : "bg-acento"
                   )}
                 />
                 <div>
@@ -192,7 +216,7 @@ export function HistorialCaja() {
                 <span
                   className={cn(
                     "text-sm font-black",
-                    s.descuadre ? "text-neon-red" : "text-neon-green"
+                    s.descuadre ? "text-neon-red" : "text-acento"
                   )}
                 >
                   {s.descuadre
@@ -286,7 +310,7 @@ export function HistorialCaja() {
 
       {sesiones && (
         <p className="text-[11px] text-muted flex items-center gap-1.5">
-          <CheckCircle2 className="h-3 w-3 text-neon-green" />
+          <CheckCircle2 className="h-3 w-3 text-acento" />
           Mostrando las últimas {sesiones.length} sesiones cerradas
         </p>
       )}
@@ -294,7 +318,12 @@ export function HistorialCaja() {
       {/* Área imprimible del ticket térmico (oculta en pantalla). */}
       {ticketParaImprimir && (
         <div className="hidden print-block">
-          <TicketCorte sesion={ticketParaImprimir} negocio={negocio} />
+          <TicketCorte
+            sesion={ticketParaImprimir}
+            negocio={negocio}
+            anchoTicket={configCaja.anchoTicket}
+            mensajeTicket={configCaja.mensajeTicket}
+          />
         </div>
       )}
     </div>

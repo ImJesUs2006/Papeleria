@@ -17,6 +17,7 @@ export async function GET() {
     orderBy: { horaApertura: "desc" },
     select: {
       idCaja: true,
+      folioCaja: true,
       idUsuario: true,
       fondoInicial: true,
       totalVentasEfectivo: true,
@@ -42,6 +43,7 @@ export async function GET() {
   return NextResponse.json({
     sesion: {
       idCaja: sesion.idCaja,
+      folioCaja: sesion.folioCaja,
       idUsuario: sesion.idUsuario,
       fondoInicial: Number(sesion.fondoInicial),
       totalVentasEfectivo: Number(sesion.totalVentasEfectivo),

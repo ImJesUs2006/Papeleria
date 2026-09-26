@@ -45,6 +45,11 @@ export interface SnapshotJson {
     temaBase: string;
     colorAcento: string;
     datosBancarios: JsonValue | null;
+    usarImagenesProductos: boolean;
+    mensajeTicket: string | null;
+    anchoTicket: string;
+    vistaDefectoPOS: string;
+    datosFiscales: JsonValue | null;
     configVersion: number;
     setupPendiente: boolean;
   };
@@ -87,6 +92,11 @@ export function buildResetJson(
       temaBase: configRow?.temaBase ?? "NEON",
       colorAcento: configRow?.colorAcento ?? "#10b981",
       datosBancarios: configRow?.datosBancarios ?? null,
+      usarImagenesProductos: configRow?.usarImagenesProductos !== false,
+      mensajeTicket: configRow?.mensajeTicket ?? null,
+      anchoTicket: configRow?.anchoTicket ?? "80mm",
+      vistaDefectoPOS: configRow?.vistaDefectoPOS ?? "ESCANER",
+      datosFiscales: configRow?.datosFiscales ?? null,
       configVersion: Number(configRow?.configVersion ?? 1),
       setupPendiente: Boolean(configRow?.setupPendiente ?? true),
     },
@@ -257,6 +267,12 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
       datosBancarios: (cfg.datosBancarios && typeof cfg.datosBancarios === "object"
         ? cfg.datosBancarios
         : {}) as any,
+      usarImagenesProductos: cfg.usarImagenesProductos !== false,
+      mensajeTicket: cfg.mensajeTicket ?? null,
+      anchoTicket: cfg.anchoTicket ?? "80mm",
+      vistaDefectoPOS: cfg.vistaDefectoPOS ?? "ESCANER",
+      datosFiscales:
+        cfg.datosFiscales && typeof cfg.datosFiscales === "object" ? cfg.datosFiscales : null,
       setupPendiente: false,
       configVersion: proximaVersion + 1,
       updatedById: input.idUsuario,
@@ -273,4 +289,35 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
   });
 
   return { id: input.id, configVersion: proximaVersion + 1 };
+}
+
+interface DeleteTx {
+  snapshotSeguridad: { delete: (args: { where: { id: string } }) => Promise<any> };
+  bitacoraLog: { create: (args: any) => Promise<any> };
+}
+
+export interface DeleteSnapshotInput {
+  id: string;
+  idUsuario: string;
+}
+
+/**
+ * Elimina un snapshot del historial (limpieza opcional de la BD).
+ * Acción administrativa: se registra en bitácora con el id eliminado.
+ */
+export async function deleteSnapshot(tx: DeleteTx, input: DeleteSnapshotInput) {
+  try {
+    await tx.snapshotSeguridad.delete({ where: { id: input.id } });
+  } catch {
+    throw new SnapshotError("Snapshot no encontrado", 404);
+  }
+
+  await tx.bitacoraLog.create({
+    data: {
+      idUsuario: input.idUsuario,
+      accion: `Snapshot eliminado del historial ${input.id}`,
+      moduloSistema: "CONFIGURACION",
+      jsonPayload: { snapshotId: input.id },
+    },
+  });
 }

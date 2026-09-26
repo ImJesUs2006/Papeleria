@@ -407,7 +407,7 @@ export function CartPanel() {
               <p className="text-sm text-muted mb-4">Folio: {resultado.folioVenta}</p>
               {resultado.offline && (
                 <div className="flex items-center gap-2 bg-neon-yellow/10 border border-neon-yellow/40 rounded-xl px-3 py-2 mb-4 text-left">
-                  <WifiOff className="h-4 w-4 text-neon-yellow shrink-0" />
+                  <WifiOff className="h-4 w-4 text-warning shrink-0" />
                   <p className="text-[11px] text-gray-200">
                     Sin conexión: la venta se sincronizará automáticamente al recuperar la red.
                   </p>
@@ -417,7 +417,7 @@ export function CartPanel() {
                 ${resultado.totalNeto.toFixed(2)}
               </p>
               {resultado.cambio != null && resultado.cambio > 0 && (
-                <p className="text-sm text-neon-yellow font-bold mb-3">
+                <p className="text-sm text-warning font-bold mb-3">
                   Cambio: ${resultado.cambio.toFixed(2)}
                 </p>
               )}

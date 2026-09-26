@@ -13,6 +13,9 @@ export async function GET() {
       idPersona: session.idPersona,
       nombre: session.nombre,
       rol: session.rol,
+      permisoCobrar: session.permisoCobrar ?? true,
+      permisoInventario: session.permisoInventario ?? true,
+      permisoReportes: session.permisoReportes ?? true,
     });
   } catch {
     return NextResponse.json(

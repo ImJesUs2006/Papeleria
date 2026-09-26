@@ -13,12 +13,18 @@ import {
   Palette,
   ImagePlus,
   Landmark,
+  Store,
+  Printer,
+  Boxes,
+  FileText,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { UserManagement } from "@/components/configuracion/user-management";
+import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FactoryResetButton } from "@/components/configuracion/factory-reset";
+import { TrustBadge } from "@/components/configuracion/trust-badge";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
 import {
@@ -29,11 +35,18 @@ import {
   TEMAS_BASE,
   DEFAULT_TEMA_BASE,
   DEFAULT_COLOR_ACENTO,
+  ANCHOS_TICKET,
+  VISTAS_POS,
+  DEFAULT_ANCHO_TICKET,
+  DEFAULT_VISTA_POS,
   type BusinessConfig,
   type DatosBancarios,
+  type DatosFiscales,
   type FeatureFlags,
   type MetodoPagoConfig,
   type TemaBase,
+  type AnchoTicket,
+  type VistaPOS,
   type TipoNegocio,
 } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
@@ -109,6 +122,31 @@ function normalizeConfig(raw: any): BusinessConfig {
       typeof raw?.colorAcento === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.colorAcento)
         ? raw.colorAcento
         : DEFAULT_COLOR_ACENTO,
+    usarImagenesProductos: raw?.usarImagenesProductos !== false,
+    mensajeTicket:
+      typeof raw?.mensajeTicket === "string" && raw.mensajeTicket.trim()
+        ? raw.mensajeTicket
+        : null,
+    anchoTicket:
+      raw?.anchoTicket === "58mm" || raw?.anchoTicket === "80mm"
+        ? (raw.anchoTicket as AnchoTicket)
+        : DEFAULT_ANCHO_TICKET,
+    vistaDefectoPOS:
+      raw?.vistaDefectoPOS === "ESCANER" || raw?.vistaDefectoPOS === "CATALOGO_TACTIL"
+        ? (raw.vistaDefectoPOS as VistaPOS)
+        : DEFAULT_VISTA_POS,
+    datosFiscales: (() => {
+      const fRaw: any =
+        raw?.datosFiscales && typeof raw.datosFiscales === "object" ? raw.datosFiscales : {};
+      const fiscales: DatosFiscales = {
+        rfc: typeof fRaw.rfc === "string" ? fRaw.rfc : undefined,
+        razonSocial: typeof fRaw.razonSocial === "string" ? fRaw.razonSocial : undefined,
+        regimenFiscal: typeof fRaw.regimenFiscal === "string" ? fRaw.regimenFiscal : undefined,
+        codigoPostal: typeof fRaw.codigoPostal === "string" ? fRaw.codigoPostal : undefined,
+      };
+      const tieneAlgo = Object.values(fiscales).some((v) => typeof v === "string" && v.trim());
+      return tieneAlgo ? fiscales : null;
+    })(),
     datosBancarios,
     configVersion: Number.isFinite(Number(raw?.configVersion)) ? Number(raw.configVersion) : 1,
     setupPendiente: Boolean(raw?.setupPendiente),
@@ -128,9 +166,12 @@ export default function ConfiguracionPage() {
           className="mb-6"
         >
           <h2 className="text-2xl font-black text-gray-100 mb-1">Configuración</h2>
-          <p className="text-sm text-muted">
-            Gestión de usuarios, roles y parámetros del negocio
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-muted">
+              Gestión de usuarios, roles y parámetros del negocio
+            </p>
+            <TrustBadge />
+          </div>
         </motion.div>
 
         <div className="flex gap-1 mb-6 bg-surface-800 p-1 rounded-xl w-fit">
@@ -197,6 +238,7 @@ function NegocioConfigPanel() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [marcaError, setMarcaError] = useState<string | null>(null);
+  const [seccion, setSeccion] = useState<"identidad" | "pos" | "financiero" | "modulos">("identidad");
   const refreshConfig = useConfigStore((s) => s.refresh);
 
   /** Lee un archivo de imagen, valida peso/mime y lo convierte a base64 (data URL). */
@@ -236,6 +278,18 @@ function NegocioConfigPanel() {
     );
   };
 
+  const setDatoFiscal = (datos: DatosFiscales) => {
+    setConfig((c) => {
+      if (!c) return c;
+      const limpios: DatosFiscales = {};
+      for (const [k, v] of Object.entries(datos) as Array<[keyof DatosFiscales, any]>) {
+        if (typeof v === "string" && v.trim()) limpios[k] = v;
+      }
+      const tieneAlgo = Object.values(limpios).some((v) => typeof v === "string" && v.trim());
+      return { ...c, datosFiscales: tieneAlgo ? limpios : null };
+    });
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -272,6 +326,11 @@ const guardar = async () => {
           temaBase: config.temaBase,
           colorAcento: config.colorAcento,
           datosBancarios: config.datosBancarios ?? null,
+          usarImagenesProductos: config.usarImagenesProductos,
+          mensajeTicket: config.mensajeTicket ?? null,
+          anchoTicket: config.anchoTicket,
+          vistaDefectoPOS: config.vistaDefectoPOS,
+          datosFiscales: config.datosFiscales ?? null,
         }),
       });
       const data = await res.json();
@@ -352,6 +411,42 @@ const guardar = async () => {
         </div>
       )}
 
+      {/* Sub-pestañas de configuración */}
+      <div className="flex flex-wrap gap-1 bg-surface-700 p-1 rounded-xl w-fit">
+        {(
+          [
+            { id: "identidad" as const, label: "Identidad y Tema", icon: Store },
+            { id: "pos" as const, label: "Punto de Venta", icon: Printer },
+            { id: "financiero" as const, label: "Financiero", icon: Landmark },
+            { id: "modulos" as const, label: "Módulos Avanzados", icon: Boxes },
+          ]
+        ).map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setSeccion(id)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all",
+              seccion === id
+                ? "bg-surface-600 text-gray-100 shadow-inner"
+                : "text-muted hover:text-gray-100"
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence mode="wait">
+      {seccion === "identidad" && (
+        <motion.div
+          key="identidad"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className="space-y-5"
+        >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <label className="block">
           <span className="text-xs text-muted mb-1 block">Nombre del negocio</span>
@@ -518,7 +613,16 @@ const guardar = async () => {
           </div>
         </div>
       </div>
-
+      </motion.div>
+      )}
+      {seccion === "financiero" && (
+        <motion.div
+          key="financiero"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className="space-y-5"
+        >
       <div className="border-t border-surface-600 pt-4">
         <div className="flex items-center gap-2 mb-3">
           <Landmark className="h-4 w-4 text-neon-purple" />
@@ -571,6 +675,37 @@ const guardar = async () => {
         </div>
       </div>
 
+        <div className="border-t border-surface-600 pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="h-4 w-4 text-neon-cyan" />
+            <span className="text-xs font-bold text-muted uppercase tracking-wider">
+              Facturación · Datos fiscales del negocio
+            </span>
+          </div>
+          <p className="text-[11px] text-muted mb-3">
+            RFC y razón social que se usarán para emitir comprobantes desde el
+            módulo de Facturación.
+          </p>
+          <DatosFiscalesEditor
+            datos={config.datosFiscales}
+            onChange={setDatoFiscal}
+            disabled={guardando}
+          />
+        </div>
+      </motion.div>
+      )}
+      {seccion === "modulos" && (
+        <motion.div
+          key="modulos"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className="space-y-5"
+        >
+        <p className="text-[11px] text-muted">
+          Al guardar se aplica una combinación segura por módulo: los que no
+          edites conservan su estado actual (ninguno se apaga por sí solo).
+        </p>
       <div>
         <span className="text-xs text-muted mb-2 block">Módulos activos (Feature Flags)</span>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -600,6 +735,102 @@ const guardar = async () => {
           ))}
         </div>
       </div>
+
+      </motion.div>
+      )}
+      {seccion === "pos" && (
+        <motion.div
+          key="pos"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className="space-y-5"
+        >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <span className="text-xs text-muted mb-1 block">Ancho de impresión del ticket</span>
+            <div className="flex gap-2">
+              {(Object.keys(ANCHOS_TICKET) as AnchoTicket[]).map((anc) => (
+                <button
+                  key={anc}
+                  type="button"
+                  onClick={() => setConfig({ ...config, anchoTicket: anc })}
+                  className={cn(
+                    "px-4 py-2 rounded-xl border text-xs font-bold transition-all",
+                    config.anchoTicket === anc
+                      ? "bg-neon-cyan/10 border-neon-cyan/40 text-neon-cyan"
+                      : "bg-surface-700 border-surface-500 text-muted"
+                  )}
+                >
+                  {anc === "80mm" ? "Térmica 80 mm (estándar)" : "Térmica 58 mm (mini)"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="text-xs text-muted mb-1 block">Pantalla de cobro por defecto</span>
+            <div className="flex gap-2">
+              {VISTAS_POS.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setConfig({ ...config, vistaDefectoPOS: v })}
+                  className={cn(
+                    "px-4 py-2 rounded-xl border text-xs font-bold transition-all",
+                    config.vistaDefectoPOS === v
+                      ? "bg-neon-cyan/10 border-neon-cyan/40 text-neon-cyan"
+                      : "bg-surface-700 border-surface-500 text-muted"
+                  )}
+                >
+                  {v === "ESCANER" ? "Lector de código (escáner)" : "Catálogo táctil"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            setConfig({ ...config, usarImagenesProductos: !config.usarImagenesProductos })
+          }
+          className={cn(
+            "flex items-center gap-3 px-4 py-3 rounded-xl border w-full text-sm font-semibold transition-all",
+            config.usarImagenesProductos
+              ? "bg-neon-green/10 border-neon-green/40 text-gray-100"
+              : "bg-surface-700 border-surface-500 text-muted"
+          )}
+        >
+          <span
+            className={cn(
+              "h-4 w-4 rounded-md border flex items-center justify-center shrink-0",
+              config.usarImagenesProductos
+                ? "bg-neon-green border-neon-green"
+                : "border-surface-400"
+            )}
+          >
+            {config.usarImagenesProductos && <Check className="h-3 w-3 text-btn-ink" />}
+          </span>
+          Mostrar imágenes de productos en el POS
+          <span className="ml-auto text-[11px] text-muted font-normal hidden md:inline">
+            Desactivar acelera la red en equipos modestos
+          </span>
+        </button>
+
+        <label className="block">
+          <span className="text-xs text-muted mb-1 block">Mensaje al pie del ticket</span>
+          <textarea
+            value={config.mensajeTicket ?? ""}
+            onChange={(e) => setConfig({ ...config, mensajeTicket: e.target.value || null })}
+            placeholder="¡Gracias por su compra!"
+            maxLength={500}
+            rows={2}
+            className="input-dark w-full resize-none"
+          />
+          <span className="mt-1 text-[11px] text-muted">
+            Hasta 500 caracteres · aparece al final de tickets y cortes de caja.
+          </span>
+        </label>
 
       <div>
         <span className="text-xs text-muted mb-2 block">Métodos de pago aceptados</span>
@@ -641,6 +872,9 @@ const guardar = async () => {
           <option value="RECHAZAR">Rechazar ventas sin existencias</option>
         </select>
       </label>
+      </motion.div>
+      )}
+      </AnimatePresence>
 
       <div className="flex items-center gap-3 pt-2">
         <button

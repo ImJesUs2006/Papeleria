@@ -4,6 +4,10 @@ export interface AuthPayload extends JWTPayload {
   idPersona: string;
   nombre: string;
   rol: "ADMINISTRADORA" | "CAJERA";
+  // Permisos granulares (Fase 9). Ausentes en tokens antiguos ⇒ true.
+  permisoCobrar?: boolean;
+  permisoInventario?: boolean;
+  permisoReportes?: boolean;
 }
 
 const SECRET = new TextEncoder().encode(

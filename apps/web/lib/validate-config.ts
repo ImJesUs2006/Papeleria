@@ -4,9 +4,13 @@ import {
   METODOS_PAGO_DISPONIBLES,
   VALID_FLAG_KEYS,
   TEMAS_BASE,
+  ANCHOS_TICKET,
+  VISTAS_POS,
   DEFAULT_TEMA_BASE,
   DEFAULT_COLOR_ACENTO,
+  type AnchoTicket,
   type TemaBase,
+  type VistaPOS,
 } from "@/lib/business-types";
 
 const FEATURE_FLAGS_SCHEMA = z.object(
@@ -36,6 +40,16 @@ const DATOS_BANCARIOS_SCHEMA = z
   })
   .strict();
 
+// Datos fiscales para la emisión de comprobantes (módulo Facturación).
+const DATOS_FISCALES_SCHEMA = z
+  .object({
+    rfc: z.string().trim().max(20).optional(),
+    razonSocial: z.string().trim().max(120).optional(),
+    regimenFiscal: z.string().trim().max(60).optional(),
+    codigoPostal: z.string().trim().max(10).optional(),
+  })
+  .strict();
+
 export const CONFIG_INPUT_SCHEMA = z
   .object({
     nombreNegocio: z.string().trim().min(2).max(80).default("Mi Negocio"),
@@ -61,6 +75,16 @@ export const CONFIG_INPUT_SCHEMA = z
       .regex(/^#[0-9a-fA-F]{6}$/, "El color de acento debe ser un HEX (#rrggbb)")
       .default(DEFAULT_COLOR_ACENTO),
     datosBancarios: DATOS_BANCARIOS_SCHEMA.nullable().optional(),
+    // Hiper-personalización (Fase de Pulido).
+    usarImagenesProductos: z.boolean().default(true),
+    mensajeTicket: z.string().trim().max(500).nullable().optional(),
+    anchoTicket: z
+      .enum(ANCHOS_TICKET as unknown as [AnchoTicket, ...AnchoTicket[]])
+      .default("80mm"),
+    vistaDefectoPOS: z
+      .enum(VISTAS_POS as unknown as [VistaPOS, ...VistaPOS[]])
+      .default("ESCANER"),
+    datosFiscales: DATOS_FISCALES_SCHEMA.nullable().optional(),
   })
   .strict();
 

@@ -81,6 +81,12 @@ model Usuario {
   // Única persona habilitada para acciones destructivas del sistema
   // (Factory Reset/restauración de snapshots).
   isRoot             Boolean   @default(false)
+  // ---- Permisos Granulares (Fase 9 / ABAC) ----
+  // Control fino por módulo sobre el rol base (CAJERA por defecto con todo
+  // activo: no rompe usuarios existentes; la administradora los administra).
+  permisoCobrar      Boolean   @default(true)
+  permisoInventario  Boolean   @default(true)
+  permisoReportes    Boolean   @default(true)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   ultimoLoginAt      DateTime?
@@ -227,6 +233,10 @@ model LineaDetalleVenta {
 
 model SesionCaja {
   idCaja              String           @id @default(uuid())
+  // ---- Folios Amigables (Fase 9) ----
+  // Identificador legible para reportes e impresiones (ej. "CAJA-001")
+  // en lugar del UUID interno. Se asigna en la apertura de caja.
+  folioCaja           String?          @unique
   // ---- Multi-Caja (Fase 3) ----
   // Identificador humano del terminal físico (ej. "Caja 1", "Terminal 2").
   nombreCaja          String?
@@ -260,37 +270,50 @@ model SesionCaja {
 }
 
 model ConfiguracionNegocio {
-  id                   Int         @id @default(1)
-  nombreNegocio        String      @default("Mi Negocio")
-  tipoNegocio          TipoNegocio @default(PAPELERIA_RETAIL)
-  moneda               String      @default("MXN")
-  ivaRate              Decimal     @default(16) @db.Decimal(5, 2)
+  id                    Int         @id @default(1)
+  nombreNegocio         String      @default("Mi Negocio")
+  tipoNegocio           TipoNegocio @default(PAPELERIA_RETAIL)
+  moneda                String      @default("MXN")
+  ivaRate               Decimal     @default(16) @db.Decimal(5, 2)
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
-  featureFlags         Json        @default("{}")
+  featureFlags          Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
-  metodosPago          Json        @default("[]")
-  politicaStockOffline String      @default("PERMITIR_NEGATIVO")
+  metodosPago           Json        @default("[]")
+  politicaStockOffline  String      @default("PERMITIR_NEGATIVO")
   // ---- Marca Blanca / Temas (Fase 1 → Fase 3) ----
   // Logo del negocio: data URI base64 (máx 1 MB, validado en API) o URL.
-  logo                 String?     @db.Text
+  logo                  String?     @db.Text
   // Tema base visual del sistema: "NEON" | "MINIMALISTA" | "BRUTALISTA" | "CORPORATIVO".
   // BrandTheme inyecta data-theme="<temaBase>" en <html> y las variables
   // semánticas de Tailwind (bg-surface, border-base, shadow-card) cambian
   // sus valores CSS nativos según el tema.
-  temaBase             String      @default("NEON")
+  temaBase              String      @default("NEON")
   // Color de acento (hex #rrggbb) para botones principales y acentos (antes temaColor).
-  colorAcento          String      @default("#10b981")
+  colorAcento           String      @default("#10b981")
+  // ---- Hiper-personalización (Fase de Pulido / Fase 4) ----
+  // Si false, el sistema oculta la subida de imágenes de producto en el
+  // formulario y la columna de imagen en el grid del POS/Inventario.
+  usarImagenesProductos Boolean     @default(true)
+  // Texto opcional al final del ticket (políticas de devolución, gracias, etc.).
+  mensajeTicket         String?
+  // Ancho del ticket térmico: "58mm" | "80mm" (clase CSS del recibo).
+  anchoTicket           String      @default("80mm")
+  // Vista inicial del POS: "ESCANER" (input enfocado) | "CATALOGO_TACTIL" (grid).
+  vistaDefectoPOS       String      @default("ESCANER")
+  // Datos fiscales para facturación (RFC, Razón Social, Régimen Fiscal y CP).
+  // Ej: { rfc: string; razonSocial: string; regimenFiscal: string; codigoPostal: string }
+  datosFiscales         Json?
   // ---- Blindaje Financiero (Fase 2) ----
   // Cuenta de transferencia del negocio para cobros PPG/pagaré, ej.
   // { banco: string; titular: string; clabe: string; cuenta: string }
   // Administrada por el Admin desde Configuración; el POS la muestra en
   // el modal de pago "Transferencia" exigiendo los últimos 4 dígitos de
   // la referencia/rastreo.
-  datosBancarios       Json?
-  configVersion        Int         @default(1)
-  setupPendiente       Boolean     @default(true)
-  updatedById          String?
-  updatedAt            DateTime    @updatedAt
+  datosBancarios        Json?
+  configVersion         Int         @default(1)
+  setupPendiente        Boolean     @default(true)
+  updatedById           String?
+  updatedAt             DateTime    @updatedAt
 
   updatedBy Usuario? @relation(fields: [updatedById], references: [idPersona])
 

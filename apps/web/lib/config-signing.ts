@@ -67,9 +67,21 @@ export type SignedConfigPayload = {
 };
 
 export function buildSignedConfig(config: BusinessConfig): SignedConfigPayload {
+  // El transporte HTTP (NextResponse.json) descarta valores `undefined` (y
+  // normaliza NaN/-0) al serializar. Si firmáramos el objeto en memoria —
+  // que puede traer `undefined` dormidos, p. ej. los campos ausentes de un
+  // datosBancarios parcial — la firma jamás cuadraría con lo que el cliente
+  // recibe. Firmamos sobre la MISMA representación que verá el navegador
+  // (round-trip JSON) para que la verificación sea idéntica en ambos lados.
+  const normalizedConfig = JSON.parse(JSON.stringify(config)) as BusinessConfig;
   const sessionId = newSessionId();
   const sessionKey = deriveSessionKey(sessionId);
-  return { sessionId, sessionKey, config, firma: signConfigWithKey(config, sessionKey) };
+  return {
+    sessionId,
+    sessionKey,
+    config: normalizedConfig,
+    firma: signConfigWithKey(normalizedConfig, sessionKey),
+  };
 }
 
 /**

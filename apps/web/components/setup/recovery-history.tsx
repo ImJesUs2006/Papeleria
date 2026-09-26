@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Lock,
+  Trash2,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +31,8 @@ interface RecoveryHistoryProps {
   onRestored: () => void;
 }
 
-const formatearFecha = (iso: string) => {
+const formatearFecha = (iso?: string) => {
+  if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString("es-MX", {
       day: "2-digit",
@@ -42,6 +45,12 @@ const formatearFecha = (iso: string) => {
     return iso;
   }
 };
+
+const formatearTotal = (n?: number) =>
+  (Number.isFinite(n) ? n : 0)!.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  });
 
 // ============================================================
 // Historial de snapshots de seguridad (Fase 1).
@@ -57,6 +66,8 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
   const [restaurar, setRestaurar] = useState<SnapshotResumen | null>(null);
   const [password, setPassword] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [confirmarEliminar, setConfirmarEliminar] = useState<string | null>(null);
+  const [eliminando, setEliminando] = useState(false);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -77,6 +88,7 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
     if (open) {
       setRestaurar(null);
       setPassword("");
+      setConfirmarEliminar(null);
       cargar();
     }
   }, [open, cargar]);
@@ -98,6 +110,23 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
       setError(e?.message || "Error al restaurar");
     } finally {
       setCargando(false);
+    }
+  };
+
+  const eliminar = async (id: string) => {
+    setEliminando(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/seguridad/snapshot/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo eliminar");
+      setItems((prev) => prev.filter((s) => s.id !== id));
+      if (restaurar?.id === id) setRestaurar(null);
+    } catch (e: any) {
+      setError(e?.message || "Error al eliminar");
+    } finally {
+      setEliminando(false);
+      setConfirmarEliminar(null);
     }
   };
 
@@ -132,7 +161,7 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
                   </p>
                 </div>
               </div>
-              <button
+              <button type="button"
                 onClick={onClose}
                 aria-label="Cerrar"
                 className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-muted hover:text-gray-100 transition-colors"
@@ -145,7 +174,7 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
               <div className="flex items-center justify-center gap-2 py-10 text-muted text-sm">
                 <Loader2 className="h-4 w-4 animate-spin" /> Cargando…
               </div>
-            ) : error ? (
+            ) : error && items.length === 0 ? (
               <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-3 py-2.5 text-sm text-gray-100 mt-3">
                 <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" /> {error}
               </div>
@@ -166,20 +195,58 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
                         {s.motivo}
                       </p>
                       <p className="text-[11px] text-muted mt-0.5">
-                        {formatearFecha(s.fecha)} · v{s.configVersion}
+                        {formatearFecha(s.fecha)} · v
+                        {Number.isFinite(s.configVersion) ? s.configVersion : "—"}
                       </p>
                       <p className="text-[11px] text-muted">
-                        {s.totalVentas.toLocaleString("es-MX", { style: "currency", currency: "MXN" })}{" "}
-                        en {s.totalTransacciones} ventas
+                        {formatearTotal(s.totalVentas)} en {s.totalTransacciones ?? 0} ventas
                       </p>
                     </div>
-                    <button
-                      onClick={() => setRestaurar(s)}
-                      disabled={cargando}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neon-cyan/10 border border-neon-cyan/40 text-neon-cyan text-xs font-bold hover:bg-neon-cyan/20 transition-all shrink-0"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Restaurar
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {confirmarEliminar === s.id ? (
+                        <>
+                          <button type="button"
+                            onClick={() => eliminar(s.id)}
+                            disabled={eliminando}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neon-red/10 border border-neon-red/40 text-neon-red text-xs font-bold hover:bg-neon-red/20 transition-all"
+                          >
+                            {eliminando ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                            Confirmar
+                          </button>
+                          <button type="button"
+                            onClick={() => setConfirmarEliminar(null)}
+                            disabled={eliminando}
+                            aria-label="Cancelar eliminación"
+                            className="h-8 w-8 rounded-lg bg-surface-600 hover:bg-surface-500 flex items-center justify-center text-muted transition-colors"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button"
+                            onClick={() => setRestaurar(s)}
+                            disabled={cargando}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neon-cyan/10 border border-neon-cyan/40 text-neon-cyan text-xs font-bold hover:bg-neon-cyan/20 transition-all"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" /> Restaurar
+                          </button>
+                          <button type="button"
+                            onClick={() => setConfirmarEliminar(s.id)}
+                            disabled={cargando}
+                            aria-label="Eliminar snapshot"
+                            title="Eliminar este snapshot del historial"
+                            className="h-8 w-8 rounded-lg bg-surface-600 hover:bg-neon-red/10 hover:text-neon-red flex items-center justify-center text-muted transition-colors"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -194,7 +261,7 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
                   className="mt-4 rounded-xl border border-neon-cyan/40 bg-neon-cyan/5 p-4"
                 >
                   <p className="text-sm text-gray-100 flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-neon-yellow shrink-0 mt-0.5" />
+                    <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                     Se restaurará la configuración del snapshot{" "}
                     <b>{formatearFecha(restaurar.fecha)}</b>. Solo escribe el color, logo,
                     módulos y tipos de pago: las ventas y sesiones quedan intactas.
@@ -212,7 +279,7 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
                     />
                   </label>
                   <div className="flex gap-2 mt-3">
-                    <button
+                    <button type="button"
                       onClick={() => setRestaurar(null)}
                       className="flex-1 px-3 py-2.5 rounded-lg bg-surface-700 text-muted text-sm font-bold hover:text-gray-100 transition-colors"
                     >
@@ -236,7 +303,7 @@ export function RecoveryHistory({ open, onClose, onRestored }: RecoveryHistoryPr
               )}
             </AnimatePresence>
 
-            {error && restaurar && (
+            {error && items.length > 0 && (
               <div className="mt-2 flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-3 py-2 text-sm text-gray-100">
                 <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" /> {error}
               </div>

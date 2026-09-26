@@ -14,6 +14,7 @@ import {
   Users,
   LogOut,
   RotateCcw,
+  FileText,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
@@ -88,6 +89,13 @@ const NAV_ITEMS: Array<{
     flag: "bitacora",
   },
   {
+    label: "Facturación",
+    href: "/facturacion",
+    icon: FileText,
+    permission: "facturacion.ver",
+    flag: "facturacion",
+  },
+  {
     label: "Configuración",
     href: "/configuracion",
     icon: Settings,
@@ -113,21 +121,34 @@ export function Sidebar() {
     <aside className="w-64 h-screen bg-surface-800 border-r border-surface-600 flex flex-col">
       {/* Brand */}
       <div className="px-6 py-5 border-b border-surface-600">
-        {config?.logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={config.logo}
-            alt={config.nombreNegocio}
-            className="h-9 w-auto max-w-[180px] object-contain mb-1"
-          />
-        ) : (
-          <h1 className="text-xl font-black tracking-tight">
-            <span className="text-neon-green">Pape</span>
-            <span className="text-gray-100">lería</span>
+        <div className="flex items-center gap-3">
+          {config?.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={config.logo}
+              alt={config.nombreNegocio}
+              className="h-9 w-9 rounded-full object-cover border border-surface-500 shrink-0"
+            />
+          ) : (
+            <div className="h-9 w-9 rounded-full bg-neon-green/15 border border-neon-green/40 flex items-center justify-center shrink-0">
+              <span className="text-neon-green font-black text-base">
+                {(config?.nombreNegocio ?? "N").charAt(0)}
+              </span>
+            </div>
+          )}
+          <h1
+            className="text-base font-black tracking-tight text-gray-100 truncate"
+            title={config?.nombreNegocio}
+          >
+            {config?.nombreNegocio ?? "Mi Negocio"}
           </h1>
-        )}
-        <p className="text-xs text-muted mt-1 text-ellipsis overflow-hidden whitespace-nowrap" title={config?.nombreNegocio}>
-          {rol === "ADMINISTRADORA" ? "Panel Admin" : "Punto de Venta"} · {config?.nombreNegocio ?? ""}
+        </div>
+        <p
+          className="text-xs text-muted mt-1 text-ellipsis overflow-hidden whitespace-nowrap"
+          title={config?.nombreNegocio}
+        >
+          {rol === "ADMINISTRADORA" ? "Panel Admin" : "Punto de Venta"} ·{" "}
+          {config?.nombreNegocio ?? ""}
         </p>
       </div>
 

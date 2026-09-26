@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PackagePlus, Star, ShoppingCart, TrendingUp } from "lucide-react";
 import { useCartStore } from "@/store/cart";
+import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 interface GridProducto {
@@ -24,6 +25,7 @@ interface GridProducto {
 
 export function ProductGrid() {
   const addItem = useCartStore((s) => s.addItem);
+  const usarImagenes = useConfigStore((s) => s.config?.usarImagenesProductos ?? true);
   const [productos, setProductos] = useState<GridProducto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +41,7 @@ export function ProductGrid() {
         const lista: GridProducto[] = data.data ?? [];
         if (!viva) return;
         setProductos(lista);
+        if (!usarImagenes) return;
         const imgs: Record<string, string> = {};
         await Promise.all(
           lista.map(async (p) => {
@@ -64,7 +67,7 @@ export function ProductGrid() {
     return () => {
       viva = false;
     };
-  }, []);
+  }, [usarImagenes]);
 
   const agregar = (p: GridProducto) => {
     if (p.stockActual <= 0) return;
@@ -155,7 +158,7 @@ export function ProductGrid() {
                   </div>
                 )}
                 {p.favorito && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-neon-yellow font-bold shrink-0">
+                  <span className="flex items-center gap-0.5 text-[10px] text-warning font-bold shrink-0">
                     <Star className="h-3 w-3 fill-neon-yellow" /> Fav
                   </span>
                 )}

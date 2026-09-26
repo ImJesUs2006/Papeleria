@@ -23,6 +23,9 @@ interface Usuario {
   username: string;
   rol: "ADMINISTRADORA" | "CAJERA";
   activa: boolean;
+  permisoCobrar: boolean;
+  permisoInventario: boolean;
+  permisoReportes: boolean;
   ultimoLoginAt: string | null;
 }
 
@@ -149,7 +152,7 @@ export function UserManagement() {
 
       <div className="bg-surface-800 border border-surface-600 rounded-2xl overflow-hidden">
         {loading ? (
-          <SkeletonTable rows={4} cols={5} />
+          <SkeletonTable rows={4} cols={6} />
         ) : usuarios.length === 0 ? (
           <div className="py-12 text-center text-muted text-sm">Sin usuarios</div>
         ) : (
@@ -158,6 +161,7 @@ export function UserManagement() {
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted">
                 <th className="px-4 py-3 font-semibold">Usuario</th>
                 <th className="px-4 py-3 font-semibold">Rol</th>
+                <th className="px-4 py-3 font-semibold">Permisos de módulo</th>
                 <th className="px-4 py-3 font-semibold">Estado</th>
                 <th className="px-4 py-3 font-semibold">Último acceso</th>
                 <th className="px-4 py-3 font-semibold text-right">Acciones</th>
@@ -188,6 +192,13 @@ export function UserManagement() {
                       <option value="ADMINISTRADORA">ADMINISTRADORA</option>
                       <option value="CAJERA">CAJERA</option>
                     </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <PermisoSwitches
+                      usuario={u}
+                      accionando={accionando}
+                      onCambiar={cambiar}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <span
@@ -311,6 +322,9 @@ function NuevoUsuarioModal({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rol, setRol] = useState<"ADMINISTRADORA" | "CAJERA">("CAJERA");
+  const [permisoCobrar, setPermisoCobrar] = useState(true);
+  const [permisoInventario, setPermisoInventario] = useState(true);
+  const [permisoReportes, setPermisoReportes] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
@@ -319,6 +333,9 @@ function NuevoUsuarioModal({
       setUsername("");
       setPassword("");
       setRol("CAJERA");
+      setPermisoCobrar(true);
+      setPermisoInventario(true);
+      setPermisoReportes(true);
     }
   }, [open]);
 
@@ -328,7 +345,15 @@ function NuevoUsuarioModal({
       const res = await fetch("/api/usuarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre, username, password, rol }),
+        body: JSON.stringify({
+          nombre,
+          username,
+          password,
+          rol,
+          permisoCobrar,
+          permisoInventario,
+          permisoReportes,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al crear usuario");
@@ -371,6 +396,40 @@ function NuevoUsuarioModal({
             <option value="ADMINISTRADORA">ADMINISTRADORA</option>
           </select>
         </Campo>
+        <div>
+          <span className="text-xs text-muted mb-1.5 block">
+            Permisos de módulo
+          </span>
+          <div className="flex flex-wrap gap-4">
+            {[
+              {
+                value: permisoCobrar,
+                set: setPermisoCobrar,
+                label: "Cobrar (Punto de Venta)",
+              },
+              {
+                value: permisoInventario,
+                set: setPermisoInventario,
+                label: "Inventario",
+              },
+              {
+                value: permisoReportes,
+                set: setPermisoReportes,
+                label: "Reportes",
+              },
+            ].map((p) => (
+              <label key={p.label} className="flex items-center gap-2 text-sm text-gray-100 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={p.value}
+                  onChange={(e) => p.set(e.target.checked)}
+                  className="h-4 w-4 rounded border-surface-500 bg-surface-700 accent-[var(--color-accento)]"
+                />
+                {p.label}
+              </label>
+            ))}
+          </div>
+        </div>
         <button
           onClick={crear}
           disabled={guardando || !nombre || !username || password.length < 8}
@@ -460,6 +519,58 @@ function CambiarPasswordModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+function PermisoSwitches({
+  usuario,
+  accionando,
+  onCambiar,
+}: {
+  usuario: Usuario;
+  accionando: string | null;
+  onCambiar: (u: Usuario, cambios: Partial<Usuario>) => void;
+}) {
+  const items: Array<{
+    key: "permisoCobrar" | "permisoInventario" | "permisoReportes";
+    label: string;
+    title: string;
+  }> = [
+    { key: "permisoCobrar", label: "Cobrar", title: "Permite usar el Punto de Venta / Cobro" },
+    { key: "permisoInventario", label: "Inventario", title: "Permite ver y editar inventario, proveedores y pedidos" },
+    { key: "permisoReportes", label: "Reportes", title: "Permite ver reportes, bitácora y facturación" },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map(({ key, label, title }) => {
+        const activo = usuario[key];
+        return (
+          <button
+            key={key}
+            type="button"
+            title={title}
+            disabled={accionando === usuario.idPersona}
+            onClick={() => {
+              let cambios: Partial<Usuario> = {};
+              if (key === "permisoCobrar") cambios = { permisoCobrar: !usuario.permisoCobrar };
+              else if (key === "permisoInventario")
+                cambios = { permisoInventario: !usuario.permisoInventario };
+              else cambios = { permisoReportes: !usuario.permisoReportes };
+              onCambiar(usuario, cambios);
+            }}
+            className={cn(
+              "px-2 py-1 rounded-md text-[11px] font-bold border transition-colors",
+              activo
+                ? "bg-acento/10 border-acento/40 text-acento hover:bg-acento/20"
+                : "bg-surface-700 border-surface-500 text-muted hover:text-gray-100"
+            )}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

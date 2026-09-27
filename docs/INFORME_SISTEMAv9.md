@@ -148,6 +148,12 @@ La Fase de Pulido (v9) ataca tres frentes:
 
 **Verificación del fix:** el mismo script HTTP que fallaba ahora devuelve `VERIFICA(current): true`. `typecheck` ✅ · `npm test` ✅ 52/52.
 
+### Regresión CI detectada: el bloqueo de Cobro rompía los E2E del POS
+
+**Fallo en GitHub Actions (`e2e`):** `pos.spec.ts` (*login redirige al punto de venta*) y `pos-grid.spec.ts` (*grid de productos*) fallaban al no encontrar el texto *"Punto de Venta"* ni `[data-testid="product-grid"]`. Causa: el bloqueo de **FASE C** (POS sin caja ABIERTA) era correcto para operación real, pero el `seed` de CI **no abre una sesión de caja** y los E2E asumían el grid visible justo tras el login.
+
+**Solución:** helper compartido `apps/web/e2e/helpers.ts` (`login`, `ensureCajaAbierta`, `agregarPrimerProducto`) y los 6 flujos de `/cobro` ahora llaman **`ensureCajaAbierta`** (idempotente, abre vía `POST /api/caja/abrir` si `/api/caja/estado` no reporta sesión) antes de validar grid/carrito — igual que haría una cajera. `pos.spec.ts` se mantiene `describe.serial` porque comparte estado de caja (el corte ciego la cierra y los siguientes la reabren).
+
 ---
 
 ## 6. Cómo probarlo manualmente

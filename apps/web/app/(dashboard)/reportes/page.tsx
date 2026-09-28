@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package,
@@ -125,7 +125,6 @@ export default function ReportesPage() {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
 
   const buildParams = (report: ReportDef): URLSearchParams | null => {
     const params = new URLSearchParams({ tipo: report.id });
@@ -154,7 +153,6 @@ export default function ReportesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al generar vista previa");
       setPreviewData(data);
-      setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
     } catch (e: any) {
       setPreviewError(e.message);
       setPreviewData(null);
@@ -319,48 +317,75 @@ export default function ReportesPage() {
           })}
         </div>
 
-        {/* Vista previa interactiva */}
-        <div ref={previewRef} className="mt-8">
-          <AnimatePresence mode="wait">
-            {previewLoading ? (
-              <PreviewSkeleton key="skeleton" />
-            ) : previewError ? (
+        {/* Vista previa interactiva en modal */}
+        <AnimatePresence>
+          {(previewLoading || previewError || previewData) && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setPreviewData(null);
+                setPreviewError(null);
+                setSelectedType(null);
+              }}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8"
+            >
               <motion.div
-                key="error"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-3 bg-neon-red/10 border border-neon-red/40 rounded-2xl px-5 py-4 text-sm text-gray-100"
+                initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                transition={{ type: "spring", damping: 26, stiffness: 320 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-5xl max-h-[88vh] flex flex-col bg-surface-900 border border-surface-600 rounded-2xl overflow-hidden shadow-2xl"
               >
-                <AlertTriangle className="h-5 w-5 text-neon-red shrink-0" />
-                <span className="flex-1">{previewError}</span>
-                <button
-                  onClick={() => setPreviewError(null)}
-                  className="h-7 w-7 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-muted hover:text-gray-100 transition-colors"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-600 bg-surface-800/80">
+                  <Eye className="h-4 w-4 text-neon-blue shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-gray-100 text-sm truncate">
+                      Vista previa
+                      {selectedType && ` · ${REPORT_TYPES.find((r) => r.id === selectedType)?.label ?? ""}`}
+                    </h3>
+                    <p className="text-[11px] text-muted">
+                      Explora, ordena y filtra antes de exportar a Excel
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPreviewData(null);
+                      setPreviewError(null);
+                      setSelectedType(null);
+                    }}
+                    className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-muted hover:text-gray-100 transition-colors"
+                    title="Cerrar"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {previewLoading ? (
+                    <div className="p-6">
+                      <PreviewSkeleton />
+                    </div>
+                  ) : previewError ? (
+                    <div className="flex items-center gap-3 bg-neon-red/10 border border-neon-red/40 rounded-2xl mx-5 my-4 px-5 py-4 text-sm text-gray-100">
+                      <AlertTriangle className="h-5 w-5 text-neon-red shrink-0" />
+                      <span className="flex-1">{previewError}</span>
+                    </div>
+                  ) : previewData ? (
+                    <ReportsPreviewTable data={previewData} />
+                  ) : null}
+                </div>
               </motion.div>
-            ) : previewData ? (
-              <motion.div
-                key="table"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-              >
-                <ReportsPreviewTable data={previewData} />
-              </motion.div>
-            ) : (
-              <div
-                key="hint"
-                className="flex flex-col items-center justify-center py-12 rounded-2xl border border-dashed border-surface-600 text-muted text-sm"
-              >
-                <Eye className="h-8 w-8 mb-2 opacity-30" />
-                Usa &quot;Vista previa&quot; para explorar los datos antes de exportar
-              </div>
-            )}
-          </AnimatePresence>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <p className="mt-6 text-center text-xs text-muted">
+          Usa &quot;Vista previa&quot; en cada tarjeta para explorar los datos en el modal, o
+          &quot;Excel&quot; para descargar el archivo.
+        </p>
       </div>
     </DashboardLayout>
   );

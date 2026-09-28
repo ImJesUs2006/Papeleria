@@ -40,6 +40,21 @@ function rangoFecha(desde?: string | null, hasta?: string | null) {
   return where;
 }
 
+// Auditoría de Caja (Fase 10): los ingresos de sesiones ANULADAS se
+// descartan de los reportes de ventas; los registros permanecen.
+async function cajasAnuladas(): Promise<string[]> {
+  const filas = await prisma.sesionCaja.findMany({
+    where: { estado: "ANULADA" },
+    select: { idCaja: true },
+  });
+  return filas.map((s) => s.idCaja);
+}
+
+async function excluirAnuladas(): Promise<Record<string, unknown>> {
+  const ids = await cajasAnuladas();
+  return ids.length ? { idCaja: { notIn: ids } } : {};
+}
+
 export async function getReporteData(
   tipo: string,
   params: ReporteParams
@@ -68,12 +83,12 @@ export async function getReporteData(
           p.codigoItem,
           p.descripcion,
           Number(p.precioUnitario),
-          p.stockActual,
-          p.stockMinimo,
+          Number(p.stockActual),
+          Number(p.stockMinimo),
           p.ubicacionEstante || "",
           p.proveedor || "",
           p.tipoImpresion || "",
-          p.stockActual <= p.stockMinimo ? "SÍ" : "",
+          Number(p.stockActual) <= Number(p.stockMinimo) ? "SÍ" : "",
         ]),
       };
     }
@@ -81,8 +96,8 @@ export async function getReporteData(
     case "reabastecimiento": {
       const todos = await prisma.producto.findMany({ where: { activo: true } });
       const bajos = todos
-        .filter((p) => p.stockActual <= p.stockMinimo)
-        .sort((a, b) => a.stockActual - b.stockActual);
+        .filter((p) => Number(p.stockActual) <= Number(p.stockMinimo))
+        .sort((a, b) => Number(a.stockActual) - Number(b.stockActual));
       return {
         title: "Productos por reabastecer",
         sheetName: "Reabastecimiento",
@@ -98,9 +113,9 @@ export async function getReporteData(
         rows: bajos.map((p) => [
           p.codigoItem,
           p.descripcion,
-          p.stockActual,
-          p.stockMinimo,
-          p.stockMinimo - p.stockActual,
+          Number(p.stockActual),
+          Number(p.stockMinimo),
+          Number(p.stockMinimo) - Number(p.stockActual),
           p.proveedor || "Sin proveedor",
           p.ubicacionEstante || "",
         ]),
@@ -109,7 +124,7 @@ export async function getReporteData(
 
     case "ventas": {
       const ventas = await prisma.venta.findMany({
-        where: rangoFecha(params.desde, params.hasta),
+        where: { ...rangoFecha(params.desde, params.hasta), ...(await excluirAnuladas()) },
         include: { lineasDetalle: true, usuario: true },
         orderBy: { fechaHora: "desc" },
       });
@@ -138,7 +153,7 @@ export async function getReporteData(
           Number(v.iva),
           Number(v.totalNeto),
           v.estado,
-          v.lineasDetalle.reduce((s, l) => s + l.cantidad, 0),
+          v.lineasDetalle.reduce((s, l) => s + Number(l.cantidad), 0),
         ]),
       };
     }
@@ -148,6 +163,10 @@ export async function getReporteData(
       if (params.desde || params.hasta) {
         whereLinea.venta = rangoFecha(params.desde, params.hasta);
       }
+      whereLinea.venta = {
+        ...(whereLinea.venta ?? {}),
+        ...(await excluirAnuladas()),
+      };
       const lineas = await prisma.lineaDetalleVenta.findMany({
         where: whereLinea,
         include: { producto: true },
@@ -156,12 +175,12 @@ export async function getReporteData(
       for (const l of lineas) {
         const e = agg.get(l.codigoItem);
         if (e) {
-          e.cantidad += l.cantidad;
+          e.cantidad += Number(l.cantidad);
           e.total += Number(l.subtotalLinea);
         } else {
           agg.set(l.codigoItem, {
             descripcion: l.producto.descripcion,
-            cantidad: l.cantidad,
+            cantidad: Number(l.cantidad),
             total: Number(l.subtotalLinea),
           });
         }
@@ -183,17 +202,18 @@ export async function getReporteData(
     case "top-mas-vendidos": {
       const lineas = await prisma.lineaDetalleVenta.findMany({
         include: { producto: true },
+        where: { venta: { ...(await excluirAnuladas()) } },
       });
       const agg = new Map<string, { descripcion: string; cantidad: number; total: number }>();
       for (const l of lineas) {
         const e = agg.get(l.codigoItem);
         if (e) {
-          e.cantidad += l.cantidad;
+          e.cantidad += Number(l.cantidad);
           e.total += Number(l.subtotalLinea);
         } else {
           agg.set(l.codigoItem, {
             descripcion: l.producto.descripcion,
-            cantidad: l.cantidad,
+            cantidad: Number(l.cantidad),
             total: Number(l.subtotalLinea),
           });
         }

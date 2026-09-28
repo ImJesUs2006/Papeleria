@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart,
@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   X,
   WifiOff,
+  PackagePlus,
 } from "lucide-react";
 import { useCartStore, CartItem } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 
 function CartItemRow({ item, index }: { item: CartItem; index: number }) {
   const { removeItem, updateQuantity } = useCartStore();
+  const decimales = item.permiteDecimales === true || item.esServicio === true;
 
   return (
     <motion.div
@@ -43,30 +45,52 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
         </p>
         <p className="text-xs text-muted">
           {item.codigoItem} &middot; ${item.precioUnitario.toFixed(2)} c/u
+          {item.esServicio && (
+            <span className="text-neon-purple font-bold"> &middot; Servicio</span>
+          )}
         </p>
       </div>
 
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => updateQuantity(item.codigoItem, item.cantidad - 1)}
-          className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
-        >
-          <Minus className="h-3 w-3" />
-        </button>
-        <span className="w-8 text-center text-sm font-bold">{item.cantidad}</span>
-        <button
-          onClick={() => updateQuantity(item.codigoItem, item.cantidad + 1)}
-          className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
-        >
-          <Plus className="h-3 w-3" />
-        </button>
-      </div>
+      {decimales ? (
+        <input
+          type="number"
+          value={item.cantidad}
+          step="0.001"
+          min="0"
+          inputMode="decimal"
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (!Number.isFinite(v)) return;
+            updateQuantity(item.codigoItem, Math.round(v * 1000) / 1000);
+          }}
+          className="w-20 text-center text-sm font-bold bg-surface-600 border border-surface-500 rounded-lg px-2 py-1.5 text-gray-100 focus:border-neon-cyan focus:outline-none transition-all"
+        />
+      ) : (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => updateQuantity(item.codigoItem, item.cantidad - 1)}
+            className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
+          >
+            <Minus className="h-3 w-3" />
+          </button>
+          <span className="w-8 text-center text-sm font-bold">{item.cantidad}</span>
+          <button
+            type="button"
+            onClick={() => updateQuantity(item.codigoItem, item.cantidad + 1)}
+            className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
       <span className="text-sm font-bold text-neon-green w-20 text-right">
         ${item.subtotalLinea.toFixed(2)}
       </span>
 
       <button
+        type="button"
         onClick={() => removeItem(item.codigoItem)}
         className="opacity-0 group-hover:opacity-100 h-7 w-7 rounded-md bg-neon-red/10 hover:bg-neon-red/20 flex items-center justify-center transition-all"
       >
@@ -81,6 +105,253 @@ interface VentaResult {
   totalNeto: number;
   cambio: number | null;
   offline: boolean;
+}
+
+function ApartadoModal({
+  open,
+  onClose,
+  items,
+  total,
+  idCliente,
+  nombreCliente,
+  onCambiarCliente,
+  onCreado,
+}: {
+  open: boolean;
+  onClose: () => void;
+  items: CartItem[];
+  total: number;
+  idCliente: string | null;
+  nombreCliente: string | null;
+  onCambiarCliente: () => void;
+  onCreado: () => void;
+}) {
+  const [anticipo, setAnticipo] = useState("");
+  const [metodoAnticipo, setMetodoAnticipo] = useState("EFECTIVO");
+  const [notas, setNotas] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [creado, setCreado] = useState<{ folio: string; saldoPendiente: number } | null>(null);
+
+  const monto = anticipo ? parseFloat(anticipo) : 0;
+  const valido = !Number.isNaN(monto) && monto >= 0 && monto <= total;
+
+  const crear = async () => {
+    if (!valido || !idCliente || guardando) return;
+    setGuardando(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/apartados", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map((i) => ({ codigoItem: i.codigoItem, cantidad: i.cantidad })),
+          idCliente,
+          anticipo: monto,
+          metodoAnticipo,
+          notas: notas.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo crear el apartado");
+      setCreado({ folio: data.folio, saldoPendiente: data.saldoPendiente });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      setAnticipo("");
+      setMetodoAnticipo("EFECTIVO");
+      setNotas("");
+      setError(null);
+      setCreado(null);
+      setGuardando(false);
+    }
+  }, [open]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => {
+            if (!guardando && !creado) onClose();
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 16 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 16 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-surface-800 border border-surface-600 rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto"
+          >
+            {creado ? (
+              <div className="text-center py-4">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                  className="h-16 w-16 mx-auto rounded-full bg-neon-blue/10 flex items-center justify-center mb-4"
+                >
+                  <CheckCircle2 className="h-9 w-9 text-neon-blue" />
+                </motion.div>
+                <h3 className="text-xl font-black text-gray-100 mb-1">¡Apartado creado!</h3>
+                <p className="text-sm text-muted mb-2">
+                  Folio: <span className="text-gray-100 font-bold">{creado.folio}</span>
+                </p>
+                <p className="text-sm text-muted mb-4">
+                  El stock quedó reservado. Saldo por liquidar:
+                </p>
+                <p className="text-3xl font-black text-neon-blue mb-5">
+                  ${creado.saldoPendiente.toFixed(2)}
+                </p>
+                <button
+                  onClick={onCreado}
+                  className="w-full py-3 rounded-xl font-bold bg-neon-blue text-btn-ink"
+                >
+                  Entendido
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-4">
+                  <PackagePlus className="h-5 w-5 text-neon-blue" />
+                  <h3 className="font-black text-gray-100">Crear apartado</h3>
+                </div>
+
+                <div className="flex items-center justify-between bg-neon-blue/10 border border-neon-blue/40 rounded-xl px-4 py-3 mb-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Users className="h-4 w-4 text-neon-blue shrink-0" />
+                    <span className="text-sm font-bold text-gray-100 truncate">
+                      {nombreCliente}
+                    </span>
+                  </div>
+                  <button
+                    onClick={onCambiarCliente}
+                    className="text-xs text-neon-blue font-bold hover:text-neon-cyan shrink-0"
+                  >
+                    Cambiar
+                  </button>
+                </div>
+
+                <p className="text-xs text-muted mb-4">
+                  El stock se reserva de inmediato (sale del inventario) y el anticipo ingresa
+                  a la caja. La venta se materializa al liquidar el saldo.
+                </p>
+
+                <div className="flex items-center gap-3 mb-1">
+                  <label className="block flex-1">
+                    <span className="text-xs text-muted mb-1 block">Anticipo ($)</span>
+                    <input
+                      type="number"
+                      value={anticipo}
+                      onChange={(e) => setAnticipo(e.target.value)}
+                      placeholder="0.00"
+                      min={0}
+                      max={total}
+                      className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-lg text-neon-blue font-bold focus:border-neon-blue focus:outline-none transition-all"
+                    />
+                  </label>
+                  <label className="block flex-1">
+                    <span className="text-xs text-muted mb-1 block">Recibe en</span>
+                    <select
+                      value={metodoAnticipo}
+                      onChange={(e) => setMetodoAnticipo(e.target.value)}
+                      className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-sm text-gray-100 focus:border-neon-blue focus:outline-none transition-all"
+                    >
+                      <option value="EFECTIVO">Efectivo</option>
+                      <option value="DIGITAL">Transferencia</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex gap-1.5 mb-3">
+                  {[10, 25, 50].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setAnticipo(String(Math.round(total * (p / 100) * 100) / 100))}
+                      className="px-3 py-1.5 rounded-lg bg-surface-700 border border-surface-500 text-[11px] font-bold text-muted hover:text-neon-blue hover:border-neon-blue/40 transition-colors"
+                    >
+                      {p}%
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAnticipo(String(total))}
+                    className="px-3 py-1.5 rounded-lg bg-surface-700 border border-surface-500 text-[11px] font-bold text-muted hover:text-neon-blue hover:border-neon-blue/40 transition-colors"
+                  >
+                    100%
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted mb-3">
+                  Total {items.length} artículos · <b className="text-gray-100">${total.toFixed(2)}</b>.
+                  {monto > 0 && monto <= total && (
+                    <span className="text-neon-blue">
+                      {" "}
+                      Saldo pendiente: ${(total - monto).toFixed(2)}
+                    </span>
+                  )}
+                </p>
+
+                <label className="block mb-4">
+                  <span className="text-xs text-muted mb-1 block">Notas (opcional)</span>
+                  <textarea
+                    value={notas}
+                    onChange={(e) => setNotas(e.target.value)}
+                    rows={2}
+                    maxLength={300}
+                    placeholder="Ej. Se entrega el sábado"
+                    className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-sm text-gray-100 focus:border-neon-blue focus:outline-none transition-all resize-none"
+                  />
+                </label>
+
+                {error && (
+                  <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100 mb-4">
+                    <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" />
+                    <span className="flex-1">{error}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={onClose}
+                    disabled={guardando}
+                    className="py-3 rounded-xl bg-surface-700 text-muted text-sm font-bold hover:bg-surface-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={crear}
+                    disabled={guardando || !valido}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm transition-all",
+                      guardando || !valido
+                        ? "bg-surface-600 text-muted cursor-not-allowed"
+                        : "bg-neon-blue text-btn-ink"
+                    )}
+                  >
+                    {guardando ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PackagePlus className="h-4 w-4" />
+                    )}
+                    Crear apartado
+                  </button>
+                </div>
+              </>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }
 
 export function CartPanel() {
@@ -110,6 +381,8 @@ export function CartPanel() {
   const [showTransferencia, setShowTransferencia] = useState(false);
   const [referenciaInput, setReferenciaInput] = useState("");
   const [clienteModalOpen, setClienteModalOpen] = useState(false);
+  const [modoApartado, setModoApartado] = useState(false);
+  const [apartadoModalOpen, setApartadoModalOpen] = useState(false);
 
   const datosBancarios = config?.datosBancarios;
 
@@ -183,6 +456,17 @@ export function CartPanel() {
     setShowTransferencia(false);
     setReferenciaInput("");
     await cobrar();
+  };
+
+  const abrirApartado = () => {
+    if (!items.length) return;
+    setModoApartado(true);
+    // El apartado siempre exige cliente: sin uno asignado, se busca primero.
+    if (!idCliente) {
+      setClienteModalOpen(true);
+    } else {
+      setApartadoModalOpen(true);
+    }
   };
 
   // Atajos: Ctrl+P cobra, Enter en efectivo cobra, Esc cierra el comprobante.
@@ -368,6 +652,15 @@ export function CartPanel() {
         </motion.button>
 
         <button
+          onClick={abrirApartado}
+          disabled={items.length === 0}
+          className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border border-neon-blue/40 text-neon-blue hover:bg-neon-blue/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <PackagePlus className="h-4 w-4" />
+          Crear apartado
+        </button>
+
+        <button
           onClick={clearCart}
           disabled={items.length === 0}
           className="w-full py-2 text-sm text-muted hover:text-neon-red transition-colors"
@@ -533,11 +826,36 @@ export function CartPanel() {
         )}
       </AnimatePresence>
 
-      {/* Modal de selección/alta de cliente (crédito de tienda) */}
+      {/* Modal de selección/alta de cliente (crédito de tienda / apartado) */}
       <ClientSelectModal
         open={clienteModalOpen}
-        onClose={() => setClienteModalOpen(false)}
-        onSelect={(c) => setCliente(c.idCliente, c.nombre)}
+        onClose={() => {
+          setClienteModalOpen(false);
+          setModoApartado(false);
+        }}
+        onSelect={(c) => {
+          setCliente(c.idCliente, c.nombre);
+          if (modoApartado) setApartadoModalOpen(true);
+          setModoApartado(false);
+        }}
+      />
+
+      <ApartadoModal
+        open={apartadoModalOpen}
+        onClose={() => setApartadoModalOpen(false)}
+        items={items}
+        total={total}
+        idCliente={idCliente}
+        nombreCliente={nombreCliente}
+        onCambiarCliente={() => {
+          setApartadoModalOpen(false);
+          setModoApartado(true);
+          setClienteModalOpen(true);
+        }}
+        onCreado={() => {
+          setApartadoModalOpen(false);
+          clearCart();
+        }}
       />
     </div>
   );

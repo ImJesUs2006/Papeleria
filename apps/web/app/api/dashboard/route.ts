@@ -14,13 +14,34 @@ export async function GET(request: Request) {
   const hasta = searchParams.get("hasta") ? new Date(searchParams.get("hasta")!) : hoy;
 
   try {
+    // Auditoría de Caja (Fase 10): los ingresos de sesiones ANULADAS se
+    // descartan del dashboard; los registros permanecen para auditoría.
+    const anuladas = await prisma.sesionCaja.findMany({
+      where: { estado: "ANULADA" },
+      select: { idCaja: true },
+    });
+    const cajasAnuladas = anuladas.map((s) => s.idCaja);
+    const excluirAnuladas = cajasAnuladas.length
+      ? { idCaja: { notIn: cajasAnuladas } }
+      : {};
+
     const [ventas, lineas, productos, sesionAbierta] = await Promise.all([
       prisma.venta.findMany({
-        where: { fechaHora: { gte: desde, lte: hasta }, estado: "COMPLETADA" },
+        where: {
+          fechaHora: { gte: desde, lte: hasta },
+          estado: "COMPLETADA",
+          ...excluirAnuladas,
+        },
         select: { totalNeto: true, fechaHora: true },
       }),
       prisma.lineaDetalleVenta.findMany({
-        where: { venta: { fechaHora: { gte: desde, lte: hasta }, estado: "COMPLETADA" } },
+        where: {
+          venta: {
+            fechaHora: { gte: desde, lte: hasta },
+            estado: "COMPLETADA",
+            ...excluirAnuladas,
+          },
+        },
         include: { producto: { select: { descripcion: true } } },
       }),
       prisma.producto.findMany({
@@ -49,7 +70,7 @@ export async function GET(request: Request) {
     for (const l of lineas) {
       const k = l.codigoItem;
       const cur = agrupado.get(k) ?? { descripcion: l.producto.descripcion, cantidad: 0, monto: 0 };
-      cur.cantidad += l.cantidad;
+      cur.cantidad += Number(l.cantidad);
       cur.monto += Number(l.subtotalLinea);
       agrupado.set(k, cur);
     }
@@ -60,11 +81,11 @@ export async function GET(request: Request) {
 
     // Alertas de stock
     const alertasStock = productos
-      .filter((p) => p.stockActual <= p.stockMinimo)
-      .sort((a, b) => a.stockActual - b.stockActual)
+      .filter((p) => Number(p.stockActual) <= Number(p.stockMinimo))
+      .sort((a, b) => Number(a.stockActual) - Number(b.stockActual))
       .slice(0, 10);
-    const agotados = productos.filter((p) => p.stockActual === 0).length;
-    const alertaBaja = alertasStock.filter((p) => p.stockActual > 0).length;
+    const agotados = productos.filter((p) => Number(p.stockActual) === 0).length;
+    const alertaBaja = alertasStock.filter((p) => Number(p.stockActual) > 0).length;
 
     const totalVentas = Math.round(ventas.reduce((a, v) => a + Number(v.totalNeto), 0) * 100) / 100;
 

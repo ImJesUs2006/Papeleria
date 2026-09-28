@@ -17,8 +17,6 @@ export interface ItemStockLocal {
   precioUnitario: number;
   stockActual: number;
   stockMinimo: number;
-  imagenMime?: string | null;
-  imagenBase64?: string | null;
 }
 
 interface InventoryState {
@@ -52,6 +50,7 @@ export const useInventoryStore = create<InventoryState>()(
         set((s) => {
           const next = { ...s.items };
           for (const item of cart) {
+            if (item.esServicio) continue;
             const actual = next[item.codigoItem];
             if (actual) {
               next[item.codigoItem] = {

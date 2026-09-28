@@ -20,7 +20,13 @@ function makeTx(venta: any = makeVenta(), sesionEstado = "ABIERTA") {
       findUnique: vi.fn().mockResolvedValue(venta),
       update: vi.fn().mockResolvedValue({}),
     },
-    producto: { update: vi.fn().mockResolvedValue({}) },
+    producto: {
+      findMany: vi.fn().mockResolvedValue([
+        { codigoItem: "P001", esServicio: false },
+        { codigoItem: "P002", esServicio: false },
+      ]),
+      update: vi.fn().mockResolvedValue({}),
+    },
     sesionCaja: {
       findUnique: vi.fn().mockResolvedValue({ estado: sesionEstado }),
       update: vi.fn().mockResolvedValue({}),

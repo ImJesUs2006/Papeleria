@@ -39,6 +39,7 @@ export function UserManagement() {
   const [modalNuevo, setModalNuevo] = useState(false);
   const [modalPass, setModalPass] = useState<Usuario | null>(null);
   const [modalEliminar, setModalEliminar] = useState<Usuario | null>(null);
+  const [modalPermisos, setModalPermisos] = useState<Usuario | null>(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -194,11 +195,24 @@ export function UserManagement() {
                     </select>
                   </td>
                   <td className="px-4 py-3">
-                    <PermisoSwitches
-                      usuario={u}
-                      accionando={accionando}
-                      onCambiar={cambiar}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setModalPermisos(u)}
+                      disabled={accionando === u.idPersona}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-700 border border-surface-500 text-[11px] font-bold text-muted hover:border-acento/40 hover:text-acento transition-colors"
+                      title="Editar permisos de módulo"
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Permisos
+                      <span
+                        className="ml-1 h-4 min-w-4 px-1 rounded bg-acento/10 text-acento flex items-center justify-center"
+                        title={u.rol === "ADMINISTRADORA" ? "Acceso total por rol" : "Permisos activos"}
+                      >
+                        {u.rol === "ADMINISTRADORA"
+                          ? 3
+                          : [u.permisoCobrar, u.permisoInventario, u.permisoReportes].filter(Boolean).length}
+                      </span>
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <span
@@ -276,6 +290,13 @@ export function UserManagement() {
           aviso("Contraseña actualizada");
         }}
         onError={setError}
+      />
+
+      <PermisosModal
+        usuario={modalPermisos}
+        accionando={accionando}
+        onCambiar={cambiar}
+        onClose={() => setModalPermisos(null)}
       />
 
       <Modal
@@ -391,29 +412,44 @@ function NuevoUsuarioModal({
           />
         </Campo>
         <Campo label="Rol">
-          <select value={rol} onChange={(e) => setRol(e.target.value as any)} className="input-dark">
+          <select
+            value={rol}
+            onChange={(e) => {
+              setRol(e.target.value as any);
+              // Fase 10 · Admin Override: una administradora accede a todo;
+              // sus flags se fuerzan a true y no se pueden apagar.
+              if (e.target.value === "ADMINISTRADORA") {
+                setPermisoCobrar(true);
+                setPermisoInventario(true);
+                setPermisoReportes(true);
+              }
+            }}
+            className="input-dark"
+          >
             <option value="CAJERA">CAJERA</option>
             <option value="ADMINISTRADORA">ADMINISTRADORA</option>
           </select>
         </Campo>
         <div>
           <span className="text-xs text-muted mb-1.5 block">
-            Permisos de módulo
+            {rol === "ADMINISTRADORA"
+              ? "Permisos de módulo — acceso total por rol (no editable)"
+              : "Permisos de módulo"}
           </span>
           <div className="flex flex-wrap gap-4">
             {[
               {
-                value: permisoCobrar,
+                value: rol === "ADMINISTRADORA" ? true : permisoCobrar,
                 set: setPermisoCobrar,
                 label: "Cobrar (Punto de Venta)",
               },
               {
-                value: permisoInventario,
+                value: rol === "ADMINISTRADORA" ? true : permisoInventario,
                 set: setPermisoInventario,
                 label: "Inventario",
               },
               {
-                value: permisoReportes,
+                value: rol === "ADMINISTRADORA" ? true : permisoReportes,
                 set: setPermisoReportes,
                 label: "Reportes",
               },
@@ -422,8 +458,9 @@ function NuevoUsuarioModal({
                 <input
                   type="checkbox"
                   checked={p.value}
+                  disabled={rol === "ADMINISTRADORA"}
                   onChange={(e) => p.set(e.target.checked)}
-                  className="h-4 w-4 rounded border-surface-500 bg-surface-700 accent-[var(--color-accento)]"
+                  className="h-4 w-4 rounded border-surface-500 bg-surface-700 accent-[var(--color-accento)] disabled:opacity-50"
                 />
                 {p.label}
               </label>
@@ -522,55 +559,131 @@ function CambiarPasswordModal({
   );
 }
 
-function PermisoSwitches({
+function PermisosModal({
   usuario,
   accionando,
   onCambiar,
+  onClose,
 }: {
-  usuario: Usuario;
+  usuario: Usuario | null;
   accionando: string | null;
   onCambiar: (u: Usuario, cambios: Partial<Usuario>) => void;
+  onClose: () => void;
 }) {
+  const [pendiente, setPendiente] = useState<Partial<Usuario> | null>(null);
+  const esAdmin = usuario?.rol === "ADMINISTRADORA";
+
+  useEffect(() => {
+    if (usuario) setPendiente(null);
+  }, [usuario]);
+
   const items: Array<{
     key: "permisoCobrar" | "permisoInventario" | "permisoReportes";
     label: string;
-    title: string;
+    desc: string;
   }> = [
-    { key: "permisoCobrar", label: "Cobrar", title: "Permite usar el Punto de Venta / Cobro" },
-    { key: "permisoInventario", label: "Inventario", title: "Permite ver y editar inventario, proveedores y pedidos" },
-    { key: "permisoReportes", label: "Reportes", title: "Permite ver reportes, bitácora y facturación" },
+    {
+      key: "permisoCobrar",
+      label: "Cobrar (Punto de Venta)",
+      desc: "Permite registrar ventas, devoluciones y operar el POS.",
+    },
+    {
+      key: "permisoInventario",
+      label: "Inventario",
+      desc: "Permite ver y editar inventario, proveedores y pedidos.",
+    },
+    {
+      key: "permisoReportes",
+      label: "Reportes y bitácora",
+      desc: "Permite ver reportes, exportar Excel y auditar la bitácora.",
+    },
   ];
 
+  const guardar = () => {
+    if (!usuario || !pendiente) return;
+    onCambiar(usuario, pendiente);
+    onClose();
+  };
+
+  const valor = (key: "permisoCobrar" | "permisoInventario" | "permisoReportes") =>
+    esAdmin ? true : pendiente?.[key] ?? Boolean(usuario?.[key]);
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map(({ key, label, title }) => {
-        const activo = usuario[key];
-        return (
+    <Modal
+      open={!!usuario}
+      onClose={onClose}
+      title="Editar permisos de módulo"
+      subtitle={usuario ? `Para @${usuario.username}` : undefined}
+    >
+      {esAdmin && (
+        <div className="flex items-start gap-2 bg-neon-purple/10 border border-neon-purple/40 rounded-xl px-3 py-2.5 text-xs text-gray-100 mb-3">
+          <ShieldCheck className="h-4 w-4 text-neon-purple shrink-0 mt-0.5" />
+          <span>
+            Acceso total por rol: la administradora tiene lectura, escritura y
+            actualización en todos los módulos. Los checkboxes están bloqueados.
+          </span>
+        </div>
+      )}
+      <div className="space-y-3">
+        {items.map(({ key, label, desc }) => {
+          const activo = valor(key);
+          return (
+            <label
+              key={key}
+              className={cn(
+                "flex items-start gap-3 border rounded-xl px-4 py-3 transition-colors",
+                esAdmin ? "cursor-not-allowed" : "cursor-pointer",
+                activo
+                  ? "border-acento/40 bg-acento/5"
+                  : "border-surface-500 bg-surface-700"
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={activo}
+                disabled={esAdmin}
+                onChange={(e) => {
+                  const cambios: Partial<Usuario> = {
+                    ...pendiente,
+                    [key]: e.target.checked,
+                  };
+                  setPendiente(cambios);
+                }}
+                className="mt-0.5 h-4 w-4 rounded accent-[var(--color-accento)] disabled:opacity-50"
+              />
+              <span>
+                <span className="block text-sm font-bold text-gray-100">{label}</span>
+                <span className="block text-[11px] text-muted">{desc}</span>
+              </span>
+            </label>
+          );
+        })}
+        <div className="flex gap-3 pt-2">
           <button
-            key={key}
             type="button"
-            title={title}
-            disabled={accionando === usuario.idPersona}
-            onClick={() => {
-              let cambios: Partial<Usuario> = {};
-              if (key === "permisoCobrar") cambios = { permisoCobrar: !usuario.permisoCobrar };
-              else if (key === "permisoInventario")
-                cambios = { permisoInventario: !usuario.permisoInventario };
-              else cambios = { permisoReportes: !usuario.permisoReportes };
-              onCambiar(usuario, cambios);
-            }}
-            className={cn(
-              "px-2 py-1 rounded-md text-[11px] font-bold border transition-colors",
-              activo
-                ? "bg-acento/10 border-acento/40 text-acento hover:bg-acento/20"
-                : "bg-surface-700 border-surface-500 text-muted hover:text-gray-100"
-            )}
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-surface-500 text-muted hover:text-gray-100 transition-colors"
           >
-            {label}
+            Cerrar
           </button>
-        );
-      })}
-    </div>
+          {!esAdmin && (
+            <button
+              type="button"
+              onClick={guardar}
+              disabled={!pendiente || accionando === usuario?.idPersona}
+              className={cn(
+                "flex-1 py-2.5 rounded-xl font-bold transition-all",
+                pendiente && accionando !== usuario?.idPersona
+                  ? "bg-neon-cyan text-btn-ink shadow-neon-cyan"
+                  : "bg-surface-600 text-muted cursor-not-allowed"
+              )}
+            >
+              {accionando === usuario?.idPersona ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Guardar permisos"}
+            </button>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

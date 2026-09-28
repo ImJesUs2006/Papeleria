@@ -20,6 +20,7 @@ import { HistorialCaja } from "@/components/caja/historial";
 import { TicketsSesion } from "@/components/caja/tickets-sesion";
 import { AccionesSesion } from "@/components/caja/abono-retiro";
 import { useAuthStore } from "@/store/auth";
+import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 interface SesionCaja {
@@ -49,6 +50,11 @@ export default function CajaPage() {
   const [tab, setTab] = useState<"sesion" | "tickets" | "historial">("sesion");
   const rol = useAuthStore((s) => s.rol);
   const esAdmin = rol === "ADMINISTRADORA";
+  // Configuración personalizable (Fase 10): el negocio decide si el fondo
+  // inicial es obligatorio al abrir la caja.
+  const requerirFondoInicial = useConfigStore(
+    (s) => s.config?.requerirFondoInicial ?? true
+  );
 
   useEffect(() => {
     // Restaura la sesión vigente (incl. un corte EN_CIERRE a medias).
@@ -70,12 +76,13 @@ export default function CajaPage() {
 
   const handleAbrirCaja = async () => {
     const fondo = parseFloat(fondoInicial);
-    if (isNaN(fondo) || fondo < 0) return;
+    if (requerirFondoInicial && (isNaN(fondo) || fondo < 0)) return;
+    const fondoFinal = isNaN(fondo) || fondo < 0 ? 0 : fondo;
 
     const res = await fetch("/api/caja/abrir", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fondoInicial: fondo }),
+      body: JSON.stringify({ fondoInicial: fondoFinal }),
     });
 
     if (res.ok) {
@@ -214,7 +221,9 @@ export default function CajaPage() {
                     Abrir Caja
                   </h3>
                   <p className="text-xs text-muted">
-                    Registra el fondo inicial del día
+                    {requerirFondoInicial
+                      ? "Registra el fondo inicial del día"
+                      : "Fondo inicial opcional (puedes dejar 0)"}
                   </p>
                 </div>
               </div>
@@ -236,12 +245,14 @@ export default function CajaPage() {
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={handleAbrirCaja}
-                disabled={!fondoInicial}
+                disabled={requerirFondoInicial ? !fondoInicial : false}
                 className={cn(
                   "w-full py-3 rounded-xl font-bold transition-all",
-                  fondoInicial
-                    ? "bg-acento text-btn-ink shadow-neon"
-                    : "bg-surface-600 text-muted cursor-not-allowed"
+                  requerirFondoInicial
+                    ? fondoInicial
+                      ? "bg-acento text-btn-ink shadow-neon"
+                      : "bg-surface-600 text-muted cursor-not-allowed"
+                    : "bg-acento text-btn-ink shadow-neon"
                 )}
               >
                 Abrir Caja

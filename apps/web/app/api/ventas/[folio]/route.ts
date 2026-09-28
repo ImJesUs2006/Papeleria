@@ -44,11 +44,11 @@ export async function GET(
         return {
           codigoItem: l.codigoItem,
           descripcion: l.producto.descripcion,
-          cantidad: l.cantidad,
+          cantidad: Number(l.cantidad),
           precioUnitario: Number(l.precioMomento),
           subtotalLinea: Number(l.subtotalLinea),
           devuelto: yaDevuelto,
-          disponible: Math.max(0, l.cantidad - yaDevuelto),
+          disponible: Math.max(0, Number(l.cantidad) - yaDevuelto),
         };
       }),
       devoluciones: venta.devoluciones.map((d) => ({

@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { getBusinessConfig } from "@/lib/feature-flags";
 
 // ============================================================
 // POST /api/caja/abrir  (autenticado; usa el usuario real del JWT)
+// Configuración personalizable (Fase 10): si el negocio exige fondo
+// inicial (requerirFondoInicial), el body debe traerlo; en caso
+// contrario se tolera su ausencia y arranca con $0.
 // ============================================================
 
 export async function POST(request: Request) {
@@ -20,10 +24,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const fondoInicial = Number(body.fondoInicial);
-  if (!Number.isFinite(fondoInicial) || fondoInicial < 0) {
-    return NextResponse.json({ error: "Fondo inicial inválido" }, { status: 400 });
+  const config = await getBusinessConfig();
+  const fondoBruto = Number(body?.fondoInicial);
+  const trajoFondo =
+    typeof body?.fondoInicial !== "undefined" &&
+    Number.isFinite(fondoBruto) &&
+    fondoBruto >= 0;
+  if (config.requerirFondoInicial && !trajoFondo) {
+    return NextResponse.json(
+      { error: "El negocio exige un fondo inicial válido para abrir caja" },
+      { status: 400 }
+    );
   }
+  const fondoInicial = trajoFondo ? fondoBruto : 0;
 
   try {
     const existingOpen = await prisma.sesionCaja.findFirst({

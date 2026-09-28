@@ -24,7 +24,6 @@ function makeConfigRow(overrides: any = {}) {
     temaBase: "NEON",
     colorAcento: "#10b981",
     datosBancarios: null,
-    usarImagenesProductos: true,
     mensajeTicket: "¡Gracias por su compra!",
     anchoTicket: "58mm",
     vistaDefectoPOS: "CATALOGO_TACTIL",
@@ -85,7 +84,6 @@ describe("buildResetJson", () => {
     expect(json.configuracion.configVersion).toBe(5);
     expect(json.configuracion.anchoTicket).toBe("58mm");
     expect(json.configuracion.vistaDefectoPOS).toBe("CATALOGO_TACTIL");
-    expect(json.configuracion.usarImagenesProductos).toBe(true);
     expect(json.configuracion.mensajeTicket).toBe("¡Gracias por su compra!");
     expect(json.configuracion.datosFiscales).toEqual({
       rfc: "XAXX010101000",
@@ -102,12 +100,15 @@ describe("buildResetJson", () => {
     expect(json.configuracion.tipoNegocio).toBe("PAPELERIA_RETAIL");
     expect(json.configuracion.temaBase).toBe("NEON");
     expect(json.configuracion.colorAcento).toBe("#10b981");
-    expect(json.configuracion.usarImagenesProductos).toBe(true);
     expect(json.configuracion.anchoTicket).toBe("80mm");
     expect(json.configuracion.vistaDefectoPOS).toBe("ESCANER");
     expect(json.configuracion.mensajeTicket).toBeNull();
     expect(json.configuracion.datosFiscales).toBeNull();
     expect(json.totales.ventas.conteo).toBe(0);
+    // Configuración personalizable (Fase 10): defaults seguros.
+    expect(json.configuracion.usarCaducidad).toBe(false);
+    expect(json.configuracion.usarUbicaciones).toBe(true);
+    expect(json.configuracion.requerirFondoInicial).toBe(true);
   });
 });
 
@@ -187,7 +188,6 @@ describe("restoreFromSnapshot", () => {
         logo: "data:image/png;base64,AAAA",
         temaBase: "BRUTALISTA",
         colorAcento: "#38bdf8",
-        usarImagenesProductos: true,
         mensajeTicket: "Gracias por visitarnos",
         anchoTicket: "80mm",
         vistaDefectoPOS: "ESCANER",
@@ -231,7 +231,6 @@ describe("restoreFromSnapshot", () => {
         temaBase: "BRUTALISTA",
         colorAcento: "#38bdf8",
         metodosPago: ["EFECTIVO"],
-        usarImagenesProductos: true,
         mensajeTicket: "Gracias por visitarnos",
         anchoTicket: "80mm",
         vistaDefectoPOS: "ESCANER",

@@ -23,6 +23,7 @@ import {
   Loader2,
   RotateCcw,
   Users,
+  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,9 @@ import { useConfigStore } from "@/store/config";
 import { RecoveryHistory } from "@/components/setup/recovery-history";
 import {
   PRESETS_POR_NEGOCIO,
+  DEFAULT_USAR_CADUCIDAD,
+  DEFAULT_USAR_UBICACIONES,
+  DEFAULT_REQUERIR_FONDO_INICIAL,
   type TipoNegocio,
   type MetodoPagoConfig,
   type FeatureFlags,
@@ -62,6 +66,24 @@ const TIPO_UI: Record<
     desc: "Productos y servicios; todos los módulos activos",
     icon: Shuffle,
     cls: "border-neon-purple/40 hover:border-neon-purple",
+  },
+  FERRETERIA: {
+    label: "Ferretería",
+    desc: "Herramientas y materiales por pieza o a granel (kg/metros)",
+    icon: Wrench,
+    cls: "border-neon-cyan/40 hover:border-neon-cyan",
+  },
+  FARMACIA: {
+    label: "Farmacia",
+    desc: "Medicamentos con stock estricto y crédito a clientes",
+    icon: Boxes,
+    cls: "border-neon-green/40 hover:border-neon-green",
+  },
+  BOUTIQUE: {
+    label: "Boutique",
+    desc: "Ropa y accesorios; control por talla/color e inventario fino",
+    icon: Sparkles,
+    cls: "border-neon-magenta/40 hover:border-neon-magenta",
   },
 };
 
@@ -158,6 +180,10 @@ export function SetupWizard() {
           ivaRate: 16,
           featureFlags: flags,
           metodosPago: metodos,
+          // Configuración personalizable (Fase 10): preset por giro.
+          usarCaducidad: preset?.usarCaducidad ?? DEFAULT_USAR_CADUCIDAD,
+          usarUbicaciones: preset?.usarUbicaciones ?? DEFAULT_USAR_UBICACIONES,
+          requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
         }),
       });
       const data = await res.json();

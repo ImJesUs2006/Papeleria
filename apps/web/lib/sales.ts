@@ -146,11 +146,13 @@ export async function executeSale(
     cantidad: number;
     precioUnitario: number;
     subtotalLinea: number;
+    esServicio: boolean;
   }> = [];
 
   for (const item of input.items) {
-    const cantidad = Math.round(Number(item.cantidad));
-    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+    // Granel (permiteDecimales) soporta hasta 3 decimales; lo demás es entero.
+    const cantidad = Math.round(Number(item.cantidad) * 1000) / 1000;
+    if (!Number.isFinite(cantidad) || cantidad <= 0 || cantidad > 999) {
       throw new SaleError(`Cantidad inválida para el producto ${item.codigoItem}`);
     }
 
@@ -161,7 +163,15 @@ export async function executeSale(
     if (!producto || !producto.activo) {
       throw new SaleError(`Producto no encontrado: ${item.codigoItem}`, 404);
     }
-    if (producto.stockActual < cantidad) {
+
+    // Un servicio no lleva inventario: no se valida ni descuenta stock.
+    const esServicio = producto.esServicio;
+    if (!esServicio && !producto.permiteDecimales && !Number.isInteger(cantidad)) {
+      throw new SaleError(
+        `La cantidad de "${producto.descripcion}" debe ser un número entero`
+      );
+    }
+    if (!esServicio && Number(producto.stockActual) < cantidad) {
       throw new SaleError(
         `Stock insuficiente para "${producto.descripcion}": disponible ${producto.stockActual}, solicitado ${cantidad}`
       );
@@ -177,6 +187,7 @@ export async function executeSale(
       cantidad,
       precioUnitario: precio,
       subtotalLinea,
+      esServicio,
     });
   }
 
@@ -225,8 +236,10 @@ export async function executeSale(
     });
   }
 
-  // 3. Descuento de stock + Kardex inmutable (SALIDA por línea)
+  // 3. Descuento de stock + Kardex inmutable (SALIDA por línea).
+  //    Los servicios (esServicio) no tocan inventario ni kardex.
   for (const l of lineas) {
+    if (l.esServicio) continue;
     await tx.producto.update({
       where: { codigoItem: l.codigoItem },
       data: { stockActual: { decrement: l.cantidad } },
@@ -234,13 +247,15 @@ export async function executeSale(
   }
   await registrarMovimientosKardex(
     tx,
-    lineas.map((l) => ({
-      codigoItem: l.codigoItem,
-      tipo: "SALIDA",
-      cantidad: l.cantidad,
-      motivo: `Venta ${folioVenta}`,
-      idUsuario: ctx.idUsuario,
-    }))
+    lineas
+      .filter((l) => !l.esServicio)
+      .map((l) => ({
+        codigoItem: l.codigoItem,
+        tipo: "SALIDA",
+        cantidad: l.cantidad,
+        motivo: `Venta ${folioVenta}`,
+        idUsuario: ctx.idUsuario,
+      }))
   );
 
   // 4. Asignación financiera

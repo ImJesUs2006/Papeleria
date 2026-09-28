@@ -8,6 +8,9 @@ import {
   VISTAS_POS,
   DEFAULT_TEMA_BASE,
   DEFAULT_COLOR_ACENTO,
+  DEFAULT_USAR_CADUCIDAD,
+  DEFAULT_USAR_UBICACIONES,
+  DEFAULT_REQUERIR_FONDO_INICIAL,
   type AnchoTicket,
   type TemaBase,
   type VistaPOS,
@@ -76,7 +79,6 @@ export const CONFIG_INPUT_SCHEMA = z
       .default(DEFAULT_COLOR_ACENTO),
     datosBancarios: DATOS_BANCARIOS_SCHEMA.nullable().optional(),
     // Hiper-personalización (Fase de Pulido).
-    usarImagenesProductos: z.boolean().default(true),
     mensajeTicket: z.string().trim().max(500).nullable().optional(),
     anchoTicket: z
       .enum(ANCHOS_TICKET as unknown as [AnchoTicket, ...AnchoTicket[]])
@@ -85,6 +87,12 @@ export const CONFIG_INPUT_SCHEMA = z
       .enum(VISTAS_POS as unknown as [VistaPOS, ...VistaPOS[]])
       .default("ESCANER"),
     datosFiscales: DATOS_FISCALES_SCHEMA.nullable().optional(),
+    // Configuración personalizable (Fase 10): el negocio decide si su
+    // inventario exige caducidad, si muestra ubicaciones y si la caja
+    // solicita fondo inicial. Con default: un cliente viejo no los rompe.
+    usarCaducidad: z.boolean().default(DEFAULT_USAR_CADUCIDAD),
+    usarUbicaciones: z.boolean().default(DEFAULT_USAR_UBICACIONES),
+    requerirFondoInicial: z.boolean().default(DEFAULT_REQUERIR_FONDO_INICIAL),
   })
   .strict();
 

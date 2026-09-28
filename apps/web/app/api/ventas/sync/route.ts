@@ -117,11 +117,12 @@ export async function POST(request: Request) {
             cantidad: number;
             precioMomento: number;
             subtotalLinea: number;
+            esServicio: boolean;
           }> = [];
 
           for (const item of items) {
             const codigo = item.codigoItem;
-            const cantidad = Math.round(Number(item.cantidad));
+            const cantidad = Math.round(Number(item.cantidad) * 1000) / 1000;
             if (!Number.isFinite(cantidad) || cantidad <= 0 || cantidad > 999) {
               out.push({
                 ...resumenBase,
@@ -136,6 +137,15 @@ export async function POST(request: Request) {
                 ...resumenBase,
                 estado: "rechazada",
                 error: `Producto inexistente o desactivado: ${codigo}`,
+              });
+              break;
+            }
+            const esServicio = producto.esServicio;
+            if (!esServicio && !producto.permiteDecimales && !Number.isInteger(cantidad)) {
+              out.push({
+                ...resumenBase,
+                estado: "rechazada",
+                error: `Cantidad entera requerida para ${codigo}`,
               });
               break;
             }
@@ -157,21 +167,24 @@ export async function POST(request: Request) {
             }
 
             // Stock simulado con el estado ya aplicado en este batch.
-            const stockPrevio = inventarioSimulado.get(codigo) ?? producto.stockActual;
-            const stockFinal = stockPrevio - cantidad;
-            inventarioSimulado.set(codigo, stockFinal);
-            if (stockFinal < 0 && politicaStockOffline === "RECHAZAR") {
-              out.push({
-                ...resumenBase,
-                estado: "rechazada",
-                error: `Existencia insuficiente (política RECHAZAR) para ${codigo}`,
-              });
-              break;
-            }
-            if (stockFinal < 0) {
-              alertas.push(
-                `Inventario negativo simulado para ${codigo}: ${stockPrevio} → ${stockFinal}`
-              );
+            // Los servicios (esServicio) no participan del inventario.
+            if (!esServicio) {
+              const stockPrevio = inventarioSimulado.get(codigo) ?? Number(producto.stockActual);
+              const stockFinal = stockPrevio - cantidad;
+              inventarioSimulado.set(codigo, stockFinal);
+              if (stockFinal < 0 && politicaStockOffline === "RECHAZAR") {
+                out.push({
+                  ...resumenBase,
+                  estado: "rechazada",
+                  error: `Existencia insuficiente (política RECHAZAR) para ${codigo}`,
+                });
+                break;
+              }
+              if (stockFinal < 0) {
+                alertas.push(
+                  `Inventario negativo simulado para ${codigo}: ${stockPrevio} → ${stockFinal}`
+                );
+              }
             }
 
             const precioMomento = precioServidor; // se liquida a precio vigente
@@ -182,6 +195,7 @@ export async function POST(request: Request) {
               cantidad,
               precioMomento,
               subtotalLinea,
+              esServicio,
             });
           }
 
@@ -245,22 +259,27 @@ export async function POST(request: Request) {
                 subtotalLinea: l.subtotalLinea,
               },
             });
-            await tx.producto.update({
-              where: { codigoItem: l.codigoItem },
-              data: { stockActual: { decrement: l.cantidad } },
-            });
+            if (!l.esServicio) {
+              await tx.producto.update({
+                where: { codigoItem: l.codigoItem },
+                data: { stockActual: { decrement: l.cantidad } },
+              });
+            }
           }
 
           // 7b. Kardex inmutable de la venta sincronizada (SALIDA por línea).
+          //    Los servicios no generan movimientos de inventario.
           await registrarMovimientosKardex(
             tx,
-            lineas.map((l) => ({
-              codigoItem: l.codigoItem,
-              tipo: "SALIDA",
-              cantidad: l.cantidad,
-              motivo: `Venta offline ${folioVenta}`,
-              idUsuario: cajero.idPersona,
-            }))
+            lineas
+              .filter((l) => !l.esServicio)
+              .map((l) => ({
+                codigoItem: l.codigoItem,
+                tipo: "SALIDA",
+                cantidad: l.cantidad,
+                motivo: `Venta offline ${folioVenta}`,
+                idUsuario: cajero.idPersona,
+              }))
           );
 
           // 8. Impacto financiero en caja (efectivo vs digital vs recargas).

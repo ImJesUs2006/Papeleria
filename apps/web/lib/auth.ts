@@ -46,5 +46,8 @@ const PERMISSIONS: Record<string, string[]> = {
 };
 
 export function hasPermission(rol: string, permission: string): boolean {
+  // Fase 10 · Admin Override: la ADMINISTRADORA tiene acceso de lectura,
+  // escritura y actualización a TODO, sin importar los checkboxes granulares.
+  if (rol === "ADMINISTRADORA") return true;
   return PERMISSIONS[rol]?.includes(permission) ?? false;
 }

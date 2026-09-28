@@ -11,9 +11,13 @@ import {
   User,
   FileSpreadsheet,
   CalendarDays,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth";
+import { Modal } from "@/components/ui/modal";
 
 interface LogEntry {
   idLog: string;
@@ -37,6 +41,9 @@ const MODULOS = [
   "CONFIGURACION",
   "BITACORA",
   "CARGA_MASIVA",
+  "SEGURIDAD",
+  "SETUP",
+  "SYNC",
 ] as const;
 
 const MODULO_COLORS: Record<string, string> = {
@@ -47,6 +54,9 @@ const MODULO_COLORS: Record<string, string> = {
   CONFIGURACION: "text-gray-300 border-surface-400 bg-surface-600/40",
   BITACORA: "text-neon-magenta border-neon-magenta/40 bg-neon-magenta/10",
   CARGA_MASIVA: "text-neon-cyan border-neon-cyan/40 bg-neon-cyan/10",
+  SEGURIDAD: "text-neon-red border-neon-red/40 bg-neon-red/10",
+  SETUP: "text-gray-300 border-surface-400 bg-surface-600/40",
+  SYNC: "text-warning border-neon-yellow/40 bg-neon-yellow/10",
 };
 
 export default function BitacoraPage() {
@@ -60,6 +70,8 @@ export default function BitacoraPage() {
   const [hasta, setHasta] = useState("");
   const [modulo, setModulo] = useState<string>("TODOS");
   const [exportando, setExportando] = useState(false);
+  const canPurge = useAuthStore((s) => s.canPurge);
+  const [modalPurga, setModalPurga] = useState(false);
 
   const paramsFiltros = useCallback(() => {
     const params = new URLSearchParams();
@@ -226,7 +238,19 @@ export default function BitacoraPage() {
                 </span>
               </span>
             </div>
-            {loading && <Loader2 className="h-4 w-4 text-muted animate-spin" />}
+            <div className="flex items-center gap-2">
+              {canPurge && (
+                <button
+                  onClick={() => setModalPurga(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-700 border border-neon-red/40 text-[11px] font-bold text-neon-red hover:bg-neon-red/10 transition-colors"
+                  title="Genera un respaldo JSON y elimina registros antiguos"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Purgar registros antiguos
+                </button>
+              )}
+              {loading && <Loader2 className="h-4 w-4 text-muted animate-spin" />}
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
@@ -363,7 +387,146 @@ export default function BitacoraPage() {
           )}
           Exportar filtrados
         </motion.button>
+
+        <PurgaModal
+          open={modalPurga}
+          onClose={() => setModalPurga(false)}
+          onDone={() => {
+            setModalPurga(false);
+            cargar();
+          }}
+        />
       </div>
     </DashboardLayout>
+  );
+}
+
+function PurgaModal({
+  open,
+  onClose,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [meses, setMeses] = useState<number>(6);
+  const [purgando, setPurgando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setPassword("");
+      setMeses(6);
+      setError(null);
+      setPurgando(false);
+    }
+  }, [open]);
+
+  const purgar = async () => {
+    setPurgando(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/bitacora/purgar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, meses }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo purgar la bitácora");
+
+      if (data.backup) {
+        const blob = new Blob([data.backup], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `respaldo-bitacora-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      onDone();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setPurgando(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Purgar registros antiguos"
+      subtitle="Genera un respaldo JSON antes de eliminar"
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          Se eliminarán los registros anteriores a la antigüedad elegida. El sistema
+          genera un{" "}
+          <span className="text-gray-100 font-bold">respaldo JSON descargable</span>{" "}
+          antes de borrar y deja constancia de la purga en la bitácora.
+        </p>
+        <label className="block">
+          <span className="text-xs text-muted mb-1 block">Antigüedad a purgar</span>
+          <select
+            value={meses}
+            onChange={(e) => setMeses(Number(e.target.value))}
+            className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-sm text-gray-100 focus:border-neon-red focus:shadow-neon-red focus:outline-none transition-all"
+          >
+            <option value={3}>Más de 3 meses</option>
+            <option value={6}>Más de 6 meses</option>
+            <option value={12}>Más de 12 meses</option>
+            <option value={24}>Más de 24 meses</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-xs text-muted mb-1 block">
+            Contraseña para confirmar
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-sm text-gray-100 focus:border-neon-red focus:shadow-neon-red focus:outline-none transition-all"
+            placeholder="••••••••"
+            autoComplete="current-password"
+          />
+        </label>
+        {error && (
+          <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
+            <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-surface-500 text-muted hover:text-gray-100 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={purgar}
+            disabled={purgando || password.length < 8}
+            className={cn(
+              "flex-1 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all",
+              !purgando && password.length >= 8
+                ? "bg-neon-red text-white shadow-neon-magenta"
+                : "bg-surface-600 text-muted cursor-not-allowed"
+            )}
+          >
+            {purgando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            Purgar y descargar respaldo
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }

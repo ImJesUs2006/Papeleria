@@ -72,12 +72,14 @@ function generarFolioDevolucion(): string {
 
 /** Cantidad ya devuelta por código de artículo para una venta. */
 export function calcularDevuelto(
-  devoluciones: Array<{ lineas: Array<{ codigoItem: string; cantidad: number }> }>
+  devoluciones: Array<{
+    lineas: Array<{ codigoItem: string; cantidad: number | Prisma.Decimal }>;
+  }>
 ): Map<string, number> {
   const mapa = new Map<string, number>();
   for (const d of devoluciones) {
     for (const l of d.lineas) {
-      mapa.set(l.codigoItem, (mapa.get(l.codigoItem) ?? 0) + l.cantidad);
+      mapa.set(l.codigoItem, (mapa.get(l.codigoItem) ?? 0) + Number(l.cantidad));
     }
   }
   return mapa;
@@ -136,13 +138,28 @@ export async function executeReturn(
   // CRM: si la venta original fue a crédito, el reembolso abona a la deuda.
   const ventaCredito = venta.metodoPago === "CREDITO_TIENDA" && venta.idCliente != null;
 
-  const originales = new Map<string, { cantidad: number; precio: number; descripcion: string }>();
+  const originales = new Map<string, {
+    cantidad: number;
+    precio: number;
+    descripcion: string;
+    esServicio: boolean;
+  }>();
+
+  // Identifica los servicios (esServicio) para NO reingresar stock.
+  const codigosVenta = venta.lineasDetalle.map((l) => l.codigoItem);
+  const productosVenta = await tx.producto.findMany({
+    where: { codigoItem: { in: codigosVenta } },
+    select: { codigoItem: true, esServicio: true },
+  });
+  const serviciosMap = new Map(productosVenta.map((p) => [p.codigoItem, p.esServicio]));
+
   for (const l of venta.lineasDetalle) {
     const actual = originales.get(l.codigoItem);
     originales.set(l.codigoItem, {
-      cantidad: (actual?.cantidad ?? 0) + l.cantidad,
+      cantidad: (actual?.cantidad ?? 0) + Number(l.cantidad),
       precio: Number(l.precioMomento),
       descripcion: l.codigoItem,
+      esServicio: serviciosMap.get(l.codigoItem) === true,
     });
   }
 
@@ -153,7 +170,7 @@ export async function executeReturn(
   const cantidades: Array<{ codigoItem: string; cantidad: number }> = [];
 
   for (const item of input.items) {
-    const cantidad = Math.round(Number(item.cantidad));
+    const cantidad = Math.round(Number(item.cantidad) * 1000) / 1000;
     if (!Number.isFinite(cantidad) || cantidad <= 0) {
       throw new ReturnError(`Cantidad inválida para el producto ${item.codigoItem}`);
     }
@@ -161,10 +178,10 @@ export async function executeReturn(
     if (!original) {
       throw new ReturnError(`El producto ${item.codigoItem} no pertenece a esta venta`);
     }
-    const disponible = original.cantidad - (yaDevuelto.get(item.codigoItem) ?? 0);
+    const disponible = Math.round((original.cantidad - (yaDevuelto.get(item.codigoItem) ?? 0)) * 1000) / 1000;
     if (cantidad > disponible) {
       throw new ReturnError(
-        `Solo puedes devolver ${disponible} unidad(es) de ${item.codigoItem}`
+        `Solo puedes devolver ${disponible} de ${item.codigoItem}`
       );
     }
 
@@ -184,8 +201,11 @@ export async function executeReturn(
   const totalNeto = round2(subtotal + iva);
   const folioDevolucion = generarFolioDevolucion();
 
-  // Reingreso de stock
-  for (const c of cantidades) {
+  // Reingreso de stock (nunca para servicios).
+  const cantidadesReales = cantidades.filter(
+    (c) => originales.get(c.codigoItem)?.esServicio !== true
+  );
+  for (const c of cantidadesReales) {
     await tx.producto.update({
       where: { codigoItem: c.codigoItem },
       data: { stockActual: { increment: c.cantidad } },
@@ -195,7 +215,7 @@ export async function executeReturn(
   // Kardex inmutable (ENTRADA por línea).
   await registrarMovimientosKardex(
     tx,
-    cantidades.map((c) => ({
+    cantidadesReales.map((c) => ({
       codigoItem: c.codigoItem,
       tipo: "ENTRADA",
       cantidad: c.cantidad,

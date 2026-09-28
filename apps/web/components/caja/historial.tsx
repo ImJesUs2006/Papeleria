@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   History,
   Printer,
@@ -10,8 +10,12 @@ import {
   CheckCircle2,
   Clock,
   User,
+  Ban,
+  ShieldCheck,
+  RotateCcw,
 } from "lucide-react";
 import { useConfigStore } from "@/store/config";
+import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
 
 interface ArqueoHistorial {
@@ -32,12 +36,16 @@ interface ArqueoHistorial {
 
 interface SesionHistorial {
   idCaja: string;
+  folioCaja: string;
   horaApertura: string;
   horaCierre: string;
   cajero: string;
   fondoInicial: number;
   retirosEfectivo: number;
   retiros: Array<{ monto: number; motivo: string; fechaHora: string }>;
+  estado: "CERRADA" | "ANULADA";
+  anulada: boolean;
+  motivoAnulacion: string | null;
   descuadre: boolean;
   notasCierre: string | null;
   arqueo: ArqueoHistorial;
@@ -128,23 +136,31 @@ export function HistorialCaja() {
   const [error, setError] = useState("");
   const [imprimiendo, setImprimiendo] = useState<string | null>(null);
   const [ticketParaImprimir, setTicketParaImprimir] = useState<SesionHistorial | null>(null);
+  const [anularObjetivo, setAnularObjetivo] = useState<SesionHistorial | null>(null);
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
+  const [anulando, setAnulando] = useState(false);
+  const [anulacionHecha, setAnulacionHecha] = useState(false);
   const negocio = useConfigStore((s) => s.config?.nombreNegocio ?? "Mi Negocio");
+  const rol = useAuthStore((s) => s.rol);
+  const esAdmin = rol === "ADMINISTRADORA";
   const configCaja = useConfigStore((s) => ({
     anchoTicket: s.config?.anchoTicket ?? "80mm",
     mensajeTicket: s.config?.mensajeTicket ?? null,
   }));
 
+  const cargar = async () => {
+    try {
+      const res = await fetch("/api/caja/historial", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al cargar el historial");
+      setSesiones(data.historial);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/caja/historial", { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Error al cargar el historial");
-        setSesiones(data.historial);
-      } catch (e: any) {
-        setError(e.message);
-      }
-    })();
+    cargar();
   }, []);
 
   const reimprimir = (s: SesionHistorial) => {
@@ -156,6 +172,33 @@ export function HistorialCaja() {
       setImprimiendo(null);
       setTimeout(() => setTicketParaImprimir(null), 300);
     }, 120);
+  };
+
+  const ejecutarAnulacion = async () => {
+    if (!anularObjetivo || motivoAnulacion.trim().length < 4) return;
+    setAnulando(true);
+    setError("");
+    try {
+      const res = await fetch("/api/caja/anular", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idCaja: anularObjetivo.idCaja, motivo: motivoAnulacion.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo anular la sesión");
+      setAnulacionHecha(true);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setAnulando(false);
+    }
+  };
+
+  const cerrarAnulacion = async () => {
+    setAnularObjetivo(null);
+    setMotivoAnulacion("");
+    setAnulacionHecha(false);
+    await cargar();
   };
 
   return (
@@ -197,33 +240,38 @@ export function HistorialCaja() {
                 <span
                   className={cn(
                     "h-2.5 w-2.5 rounded-full",
-                    s.descuadre ? "bg-neon-red animate-pulse" : "bg-acento"
+                    s.anulada ? "bg-neon-red" : s.descuadre ? "bg-neon-red animate-pulse" : "bg-acento"
                   )}
                 />
                 <div>
-                  <p className="text-sm font-bold text-gray-100">
-                    {s.descuadre ? "Corte con descuadre" : "Corte cuadrada"}
+                  <p className="text-sm font-bold text-gray-100 flex items-center gap-2">
+                    {s.anulada && (
+                      <span className="inline-flex items-center gap-1 bg-neon-red/10 border border-neon-red/40 text-neon-red text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide">
+                        <Ban className="h-3 w-3" /> Anulada
+                      </span>
+                    )}
+                    {s.anulada ? "Sesión anulada (ingresos descartados)" : s.descuadre ? "Corte con descuadre" : "Corte cuadrada"}
                   </p>
                   <p className="text-xs text-muted flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {new Date(s.horaCierre).toLocaleString("es-MX")} ·{" "}
+                    {s.folioCaja} · {new Date(s.horaCierre).toLocaleString("es-MX")} ·{" "}
                     <User className="h-3 w-3" /> {s.cajero}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <span
                   className={cn(
                     "text-sm font-black",
-                    s.descuadre ? "text-neon-red" : "text-acento"
+                    s.anulada ? "text-neon-red" : s.descuadre ? "text-neon-red" : "text-acento"
                   )}
                 >
-                  {s.descuadre
-                    ? `${a.diferenciaTotal > 0 ? "Faltante" : "Sobrante"} $${Math.abs(
-                        a.diferenciaTotal
-                      ).toFixed(2)}`
-                    : "Cuadrada"}
+                  {s.anulada
+                    ? "—"
+                    : s.descuadre
+                      ? `${a.diferenciaTotal > 0 ? "Faltante" : "Sobrante"} $${Math.abs(a.diferenciaTotal).toFixed(2)}`
+                      : "Cuadrada"}
                 </span>
                 <button
                   onClick={() => reimprimir(s)}
@@ -237,8 +285,28 @@ export function HistorialCaja() {
                   )}
                   Reimprimir
                 </button>
+                {esAdmin && !s.anulada && (
+                  <button
+                    onClick={() => {
+                      setAnularObjetivo(s);
+                      setAnulacionHecha(false);
+                      setMotivoAnulacion("");
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neon-red/10 border border-neon-red/40 hover:bg-neon-red/20 text-neon-red text-xs font-bold transition-colors"
+                  >
+                    <Ban className="h-3.5 w-3.5" />
+                    Anular
+                  </button>
+                )}
               </div>
             </div>
+
+            {s.anulada && s.motivoAnulacion && (
+              <p className="mt-3 text-[11px] text-neon-red flex items-center gap-1.5 bg-neon-red/5 border border-neon-red/20 rounded-lg px-3 py-2">
+                <ShieldCheck className="h-3 w-3 shrink-0" />
+                Motivo de anulación: {s.motivoAnulacion}
+              </p>
+            )}
 
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div className="bg-surface-700 border border-surface-600 rounded-lg p-3">
@@ -311,9 +379,99 @@ export function HistorialCaja() {
       {sesiones && (
         <p className="text-[11px] text-muted flex items-center gap-1.5">
           <CheckCircle2 className="h-3 w-3 text-acento" />
-          Mostrando las últimas {sesiones.length} sesiones cerradas
+          Mostrando las últimas {sesiones.length} sesiones cerradas / anuladas
         </p>
       )}
+
+      {/* Modal: anular sesión de caja (solo administradora) */}
+      <AnimatePresence>
+        {anularObjetivo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+            onClick={() => !anulando && !anulacionHecha && setAnularObjetivo(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-surface-800 border border-neon-red/40 rounded-3xl p-6 max-w-md w-full"
+            >
+              {anulacionHecha ? (
+                <div className="text-center py-2">
+                  <CheckCircle2 className="h-10 w-10 text-neon-green mx-auto mb-3" />
+                  <h3 className="font-black text-gray-100 mb-1">Sesión anulada</h3>
+                  <p className="text-sm text-muted mb-5">
+                    The session was permanently cancelled and excluded from reports.
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cerrarAnulacion}
+                      className="px-5 py-2.5 rounded-xl bg-neon-green text-btn-ink font-bold text-sm shadow-neon"
+                    >
+                      Hecho
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Ban className="h-5 w-5 text-neon-red" />
+                    <h3 className="font-black text-gray-100">Anular sesión de caja</h3>
+                  </div>
+                  <p className="text-sm text-muted mb-4">
+                    La sesión <strong className="text-gray-100">{anularObjetivo.folioCaja}</strong> dejará
+                    de contar en ingresos y reportes, pero su registro y ventas se{" "}
+                    <strong className="text-gray-100">conservan</strong> para auditoría. Escribe el motivo.
+                  </p>
+                  <label className="block mb-1">
+                    <span className="text-xs text-muted mb-1 block">Motivo de la anulación</span>
+                    <textarea
+                      value={motivoAnulacion}
+                      onChange={(e) => setMotivoAnulacion(e.target.value)}
+                      placeholder="Ej: sesión duplicada, error de arqueo, fraude detectado"
+                      rows={3}
+                      disabled={anulando}
+                      className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-red focus:outline-none transition-all resize-none"
+                    />
+                  </label>
+                  {motivoAnulacion.trim().length > 0 && motivoAnulacion.trim().length < 4 && (
+                    <p className="text-[11px] text-neon-red mb-1">El motivo debe tener al menos 4 caracteres</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={cerrarAnulacion}
+                      disabled={anulando}
+                      className="py-3 rounded-xl bg-surface-700 text-muted text-sm font-bold hover:bg-surface-600 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={ejecutarAnulacion}
+                      disabled={anulando || motivoAnulacion.trim().length < 4}
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm transition-all",
+                        !anulando && motivoAnulacion.trim().length >= 4
+                          ? "bg-neon-red text-btn-ink shadow-neon-red"
+                          : "bg-surface-600 text-muted cursor-not-allowed"
+                      )}
+                    >
+                      {anulando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                      Anular sesión
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Área imprimible del ticket térmico (oculta en pantalla). */}
       {ticketParaImprimir && (

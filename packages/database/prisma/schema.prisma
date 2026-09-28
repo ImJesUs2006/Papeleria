@@ -29,17 +29,35 @@ enum TipoImpresion {
   PLOTTER
 }
 
+// Plantilla Universal (Fase 10): el motor ya no es exclusivo de papelerías.
+// PAPELERIA_RETAIL / ABARROTES / SERVICIOS / MIXTO coexistían; se suman las
+// verticales comerciales típicas de la plantilla agnóstica.
 enum TipoNegocio {
   PAPELERIA_RETAIL
   ABARROTES
   SERVICIOS
   MIXTO
+  FERRETERIA
+  FARMACIA
+  BOUTIQUE
+}
+
+// Sistema de Apartados (Fase 10): el cliente reserva mercancía con un
+// anticipo y la liquidación cierra la venta.
+enum EstadoApartado {
+  PENDIENTE
+  LIQUIDADO
+  CANCELADO
 }
 
 enum EstadoSesionCaja {
   ABIERTA
   EN_CIERRE
   CERRADA
+  // Fase 10 · Auditoría de Caja: la sesión se invalida SIN borrar el registro.
+  // Se conservan la pista de auditoría y los totales; los reportes de
+  // ingresos excluyen las sesiones ANULADA.
+  ANULADA
 }
 
 enum ModuloSistema {
@@ -103,6 +121,7 @@ model Usuario {
   snapshotsSeguridad SnapshotSeguridad[]    @relation("SnapshotCreadoPor")
   retirosAutorizados RetiroEfectivo[]       @relation("RetiroAutorizadoPor")
   movimientosKardex  MovimientoKardex[]
+  apartadosCreados   Apartado[]
 
   @@map("usuarios")
 }
@@ -112,9 +131,25 @@ model Producto {
   descripcion        String
   precioUnitario     Decimal        @db.Decimal(10, 2)
   precioCompra       Decimal?       @db.Decimal(10, 2)
-  stockActual        Int            @default(0)
-  stockMinimo        Int            @default(5)
+  // ---- Fase 10 · Plantilla Universal ----
+  // Ventas a granel: el carrito y el ticket aceptan fracciones (0.5 kg, 8 m).
+  // El stock se modela en Decimal(10,3) para poder rastrear kilos/metros.
+  stockActual        Decimal        @default(0) @db.Decimal(10, 3)
+  stockMinimo        Decimal        @default(5) @db.Decimal(10, 3)
+  // true = se vende por kilo/metro/litro (permitido decimal) o por unidad
+  // fraccionable; false = solo unidades enteras (comportamiento Fase 1-9).
+  permiteDecimales   Boolean        @default(false)
+  // true = servicio: se vende SIN exigir ni descontar stock (recargas,
+  // consultas, copias, instalaciones) y NO genera movimiento físico Kardex.
+  esServicio         Boolean        @default(false)
+  // Categoría del negocio (plantilla universal); nulo = "Sin categoría".
+  idCategoria        String?
   ubicacionEstante   String?
+  // ---- Configuración Personalizable del Inventario (Fase 10) ----
+  // Fecha de caducidad (lotes de corta vida: farmacia/abarrotes). Solo
+  // visible/editable cuando el toggle `usarCaducidad` está activo en
+  // Configuración → Inventario.
+  fechaCaducidad     DateTime?
   tipoImpresion      TipoImpresion?
   proveedor          String?
   codigoBarras       String?        @unique
@@ -123,15 +158,31 @@ model Producto {
   favorito           Boolean        @default(false)
   fechaCreacion      DateTime       @default(now())
   fechaActualizacion DateTime       @updatedAt
-  imagenMime         String?
-  imagenBase64       String?        @db.Text
 
+  categoria         Categoria?            @relation(fields: [idCategoria], references: [id])
   lineasDetalle     LineaDetalleVenta[]
   itemsPedido       ItemPedidoProveedor[]
   devolucionLineas  DevolucionLinea[]
   kardexMovimientos MovimientoKardex[]
+  apartadoLineas    ApartadoLinea[]
 
+  @@index([idCategoria])
   @@map("productos")
+}
+
+// Catálogo de categorías por negocio (Fase 10). `idNegocio` es la llave de
+// arrendatario (multi-tenant) para el futuro multiedición SaaS; hoy siempre
+// "default".
+model Categoria {
+  id        String @id @default(uuid())
+  nombre    String
+  color     String @default("#6366f1")
+  idNegocio String @default("default")
+
+  productos Producto[]
+
+  @@index([idNegocio])
+  @@map("categorias")
 }
 
 model Proveedor {
@@ -220,7 +271,9 @@ model LineaDetalleVenta {
   idLinea        String  @id @default(uuid())
   folioVenta     String
   codigoItem     String
-  cantidad       Int
+  // Fase 10: Decimal para ventas a granel (0.5 kg); las unidades enteras
+  // se siguen escribiendo como 1, 2, 3...
+  cantidad       Decimal @db.Decimal(10, 3)
   precioMomento  Decimal @db.Decimal(10, 2)
   descuentoLinea Decimal @default(0) @db.Decimal(10, 2)
   subtotalLinea  Decimal @db.Decimal(10, 2)
@@ -250,6 +303,10 @@ model SesionCaja {
   horaCierre          DateTime?
   estado              EstadoSesionCaja @default(ABIERTA)
   notasCierre         String?
+  // ---- Auditoría de Caja (Fase 10) ----
+  // Motivo obligatorio al anular una sesión (estado ANULADA); el registro,
+  // las ventas y los totales se conservan intactos para la pista de auditoría.
+  motivoAnulacion     String?
   // ---- Corte ciego (máquina de estados anti-evasión) ----
   cierreToken         String?
   cierreInicioEn      DateTime?
@@ -265,6 +322,7 @@ model SesionCaja {
   ventas         Venta[]
   devoluciones   Devolucion[]
   retiros        RetiroEfectivo[]
+  apartados      Apartado[]
 
   @@map("sesiones_caja")
 }
@@ -291,9 +349,6 @@ model ConfiguracionNegocio {
   // Color de acento (hex #rrggbb) para botones principales y acentos (antes temaColor).
   colorAcento           String      @default("#10b981")
   // ---- Hiper-personalización (Fase de Pulido / Fase 4) ----
-  // Si false, el sistema oculta la subida de imágenes de producto en el
-  // formulario y la columna de imagen en el grid del POS/Inventario.
-  usarImagenesProductos Boolean     @default(true)
   // Texto opcional al final del ticket (políticas de devolución, gracias, etc.).
   mensajeTicket         String?
   // Ancho del ticket térmico: "58mm" | "80mm" (clase CSS del recibo).
@@ -310,6 +365,16 @@ model ConfiguracionNegocio {
   // el modal de pago "Transferencia" exigiendo los últimos 4 dígitos de
   // la referencia/rastreo.
   datosBancarios        Json?
+  // ---- Configuración Personalizable del Inventario (Fase 10) ----
+  // Toggles para el Inventario: caducidad (lotes) y ubicaciones de estante.
+  // Apagar una opción oculta su columna/campo en la UI sin perder datos
+  // históricos de los productos.
+  usarCaducidad         Boolean     @default(false)
+  usarUbicaciones       Boolean     @default(true)
+  // ---- Configuración de Caja (Fase 10) ----
+  // true = la apertura de caja exige capturar el fondo inicial (por defecto).
+  // false = la caja puede abrirse sin fondo (caja de puesto rápido en ferias).
+  requerirFondoInicial  Boolean     @default(true)
   configVersion         Int         @default(1)
   setupPendiente        Boolean     @default(true)
   updatedById           String?
@@ -383,7 +448,8 @@ model DevolucionLinea {
   idLineaDevolucion String  @id @default(uuid())
   idDevolucion      String
   codigoItem        String
-  cantidad          Int
+  // Fase 10: Decimal para devolver fracciones de granel.
+  cantidad          Decimal @db.Decimal(10, 3)
   precioMomento     Decimal @db.Decimal(10, 2)
   subtotalLinea     Decimal @db.Decimal(10, 2)
 
@@ -426,9 +492,62 @@ model Cliente {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  ventas Venta[]
+  ventas    Venta[]
+  apartados Apartado[]
 
   @@map("clientes")
+}
+
+// ============================================================
+// FASE 10 — Sistema de Apartados (Layaways)
+// ============================================================
+
+// El cliente "aparta" mercancía que aún no paga: deja un anticipo (que
+// ingresa a la SesionCaja como efectivo/digital) y el stock queda reservado
+// (descuento físico inmediato). La venta se materializa al liquidar.
+model Apartado {
+  idApartado       String         @id @default(uuid())
+  // Folio legible para operación e impresión (ej. "APT-0001").
+  folio            String         @unique
+  idCliente        String
+  // Caja donde ingresó el anticipo (puede ser null si se crea sin caja).
+  idCaja           String?
+  // Anticipo inicial (entra a la caja) y saldo pendiente por monitorización.
+  anticipo         Decimal        @db.Decimal(10, 2)
+  total            Decimal        @db.Decimal(10, 2)
+  estado           EstadoApartado @default(PENDIENTE)
+  fechaCreado      DateTime       @default(now())
+  fechaLiquidacion DateTime?
+  notas            String?
+  idUsuario        String
+  createdAt        DateTime       @default(now())
+
+  cliente    Cliente         @relation(fields: [idCliente], references: [idCliente])
+  sesionCaja SesionCaja?     @relation(fields: [idCaja], references: [idCaja])
+  usuario    Usuario         @relation(fields: [idUsuario], references: [idPersona])
+  lineas     ApartadoLinea[]
+
+  @@index([idCliente])
+  @@index([estado])
+  @@map("apartados")
+}
+
+// Líneas del apartado: mismas reglas que la venta (Producto + cantidad
+// Decimal para granel), pero el subtotal guarda el precio acordado.
+model ApartadoLinea {
+  idLineaApartado String  @id @default(uuid())
+  idApartado      String
+  codigoItem      String
+  cantidad        Decimal @db.Decimal(10, 3)
+  precioMomento   Decimal @db.Decimal(10, 2)
+  descuentoLinea  Decimal @default(0) @db.Decimal(10, 2)
+  subtotalLinea   Decimal @db.Decimal(10, 2)
+
+  apartado Apartado @relation(fields: [idApartado], references: [idApartado])
+  producto Producto @relation(fields: [codigoItem], references: [codigoItem])
+
+  @@index([idApartado])
+  @@map("apartado_lineas")
 }
 
 // Kardex de inventario INMUTABLE: toda variación de stock (venta,
@@ -438,7 +557,9 @@ model MovimientoKardex {
   idMovimiento   String               @id @default(uuid())
   fecha          DateTime             @default(now())
   codigoItem     String
-  cantidadCambio Int
+  // Fase 10: Decimal para trazar salidas/entradas de granel (0.5 kg),
+  // recuentos con fracción y ajustes parciales.
+  cantidadCambio Decimal              @db.Decimal(10, 3)
   // ENTRADA incrementa el stock, SALIDA lo decrementa; AJUSTE corrige
   // inventarios (recuento físico) con signo según la diferencia real.
   tipo           TipoMovimientoKardex

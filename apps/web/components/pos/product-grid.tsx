@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PackagePlus, Star, ShoppingCart, TrendingUp } from "lucide-react";
 import { useCartStore } from "@/store/cart";
-import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 interface GridProducto {
@@ -16,6 +15,10 @@ interface GridProducto {
   codigoBarras?: string | null;
   favorito?: boolean;
   vendidos?: number;
+  /** Fase 10: se vende a granel (fracciones). */
+  permiteDecimales?: boolean;
+  /** Fase 10: servicio puro, disponible sin importar el stock. */
+  esServicio?: boolean;
 }
 
 // ============================================================
@@ -25,11 +28,9 @@ interface GridProducto {
 
 export function ProductGrid() {
   const addItem = useCartStore((s) => s.addItem);
-  const usarImagenes = useConfigStore((s) => s.config?.usarImagenesProductos ?? true);
   const [productos, setProductos] = useState<GridProducto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [imagenes, setImagenes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let viva = true;
@@ -41,23 +42,6 @@ export function ProductGrid() {
         const lista: GridProducto[] = data.data ?? [];
         if (!viva) return;
         setProductos(lista);
-        if (!usarImagenes) return;
-        const imgs: Record<string, string> = {};
-        await Promise.all(
-          lista.map(async (p) => {
-            try {
-              const det = await fetch(`/api/productos/${encodeURIComponent(p.codigoItem)}`);
-              if (!det.ok) return;
-              const d = await det.json();
-              if (d?.imagenBase64) {
-                imgs[p.codigoItem] = `data:${d.imagenMime};base64,${d.imagenBase64}`;
-                if (viva) setImagenes((prev) => ({ ...prev, [p.codigoItem]: imgs[p.codigoItem] }));
-              }
-            } catch {
-              /* sin imagen */
-            }
-          })
-        );
       } catch {
         if (viva) setError("No se pudo cargar el catálogo");
       } finally {
@@ -67,16 +51,19 @@ export function ProductGrid() {
     return () => {
       viva = false;
     };
-  }, [usarImagenes]);
+  }, []);
 
   const agregar = (p: GridProducto) => {
-    if (p.stockActual <= 0) return;
+    // Un servicio está siempre disponible (no hay inventario que validar).
+    if (!p.esServicio && p.stockActual <= 0) return;
     addItem({
       codigoItem: p.codigoItem,
       descripcion: p.descripcion,
       precioUnitario: p.precioUnitario,
       cantidad: 1,
       tipoImpresion: p.tipoImpresion ?? undefined,
+      permiteDecimales: p.permiteDecimales,
+      esServicio: p.esServicio,
     });
   };
 
@@ -136,27 +123,20 @@ export function ProductGrid() {
               }}
               whileTap={{ scale: 0.94 }}
               onClick={() => agregar(p)}
-              disabled={p.stockActual <= 0}
+              disabled={!p.esServicio && p.stockActual <= 0}
               className={cn(
                 "bg-surface-700 border border-surface-500 rounded-xl p-3 text-left transition-colors min-h-[110px] flex flex-col justify-between",
-                p.stockActual > 0
+                !p.esServicio && p.stockActual > 0
                   ? "hover:border-neon-green/50 hover:bg-surface-600"
-                  : "opacity-40 cursor-not-allowed"
+                  : p.esServicio
+                    ? "hover:border-neon-purple/50 hover:bg-surface-600"
+                    : "opacity-40 cursor-not-allowed"
               )}
             >
               <div className="flex items-start justify-between gap-1 mb-2">
-                {imagenes[p.codigoItem] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={imagenes[p.codigoItem]}
-                    alt={p.descripcion}
-                    className="h-12 w-12 rounded-lg object-cover shrink-0"
-                  />
-                ) : (
-                  <div className="h-12 w-12 rounded-lg bg-surface-600 flex items-center justify-center shrink-0">
-                    <ShoppingCart className="h-5 w-5 text-muted" />
-                  </div>
-                )}
+                <div className="h-12 w-12 rounded-lg bg-surface-600 flex items-center justify-center shrink-0">
+                  <ShoppingCart className="h-5 w-5 text-muted" />
+                </div>
                 {p.favorito && (
                   <span className="flex items-center gap-0.5 text-[10px] text-warning font-bold shrink-0">
                     <Star className="h-3 w-3 fill-neon-yellow" /> Fav
@@ -170,9 +150,17 @@ export function ProductGrid() {
                 <span className="text-base font-black text-neon-green text-glow-green">
                   ${p.precioUnitario.toFixed(2)}
                 </span>
-                {p.vendidos != null && p.vendidos > 0 && (
+                {p.esServicio ? (
+                  <span className="text-[10px] font-bold text-neon-purple border border-neon-purple/40 rounded px-1 py-0.5 shrink-0">
+                    Servicio
+                  </span>
+                ) : p.permiteDecimales ? (
+                  <span className="text-[10px] font-bold text-neon-cyan border border-neon-cyan/40 rounded px-1 py-0.5 shrink-0">
+                    Granel
+                  </span>
+                ) : p.vendidos != null && p.vendidos > 0 ? (
                   <span className="text-[10px] text-muted">{p.vendidos} vendidos</span>
-                )}
+                ) : null}
               </span>
             </motion.button>
           ))}

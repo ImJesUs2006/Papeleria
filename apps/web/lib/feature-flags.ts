@@ -14,6 +14,9 @@ import {
   DEFAULT_COLOR_ACENTO,
   DEFAULT_ANCHO_TICKET,
   DEFAULT_VISTA_POS,
+  DEFAULT_USAR_CADUCIDAD,
+  DEFAULT_USAR_UBICACIONES,
+  DEFAULT_REQUERIR_FONDO_INICIAL,
 } from "@/lib/business-types";
 import { buildSignedConfig } from "@/lib/config-signing";
 
@@ -115,11 +118,13 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       temaBase: DEFAULT_TEMA_BASE,
       colorAcento: DEFAULT_COLOR_ACENTO,
       datosBancarios: null,
-      usarImagenesProductos: true,
       mensajeTicket: null,
       anchoTicket: DEFAULT_ANCHO_TICKET,
       vistaDefectoPOS: DEFAULT_VISTA_POS,
       datosFiscales: null,
+      usarCaducidad: DEFAULT_USAR_CADUCIDAD,
+      usarUbicaciones: DEFAULT_USAR_UBICACIONES,
+      requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
       configVersion: 1,
       setupPendiente: true,
     };
@@ -141,11 +146,18 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
     temaBase: temaRaw in TEMAS_BASE ? temaRaw : DEFAULT_TEMA_BASE,
     colorAcento: row.colorAcento || DEFAULT_COLOR_ACENTO,
     datosBancarios: normalizeDatosBancarios(row.datosBancarios),
-    usarImagenesProductos: row.usarImagenesProductos !== false,
     mensajeTicket: typeof row.mensajeTicket === "string" && row.mensajeTicket.trim() ? row.mensajeTicket : null,
     anchoTicket: anchoRaw === "58mm" || anchoRaw === "80mm" ? anchoRaw : DEFAULT_ANCHO_TICKET,
     vistaDefectoPOS: vistaRaw === "ESCANER" || vistaRaw === "CATALOGO_TACTIL" ? vistaRaw : DEFAULT_VISTA_POS,
     datosFiscales: normalizeDatosFiscales(row.datosFiscales),
+    usarCaducidad:
+      typeof row.usarCaducidad === "boolean" ? row.usarCaducidad : DEFAULT_USAR_CADUCIDAD,
+    usarUbicaciones:
+      typeof row.usarUbicaciones === "boolean" ? row.usarUbicaciones : DEFAULT_USAR_UBICACIONES,
+    requerirFondoInicial:
+      typeof row.requerirFondoInicial === "boolean"
+        ? row.requerirFondoInicial
+        : DEFAULT_REQUERIR_FONDO_INICIAL,
     configVersion: row.configVersion,
     setupPendiente: row.setupPendiente,
   };

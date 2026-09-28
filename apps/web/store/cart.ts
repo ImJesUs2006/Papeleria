@@ -7,6 +7,10 @@ export interface CartItem {
   cantidad: number;
   subtotalLinea: number;
   tipoImpresion?: string;
+  /** Fase 10: el producto se vende a granel (cantidades fraccionarias). */
+  permiteDecimales?: boolean;
+  /** Fase 10: servicio puro; no descuenta stock ni genera Kardex. */
+  esServicio?: boolean;
 }
 
 interface CartState {

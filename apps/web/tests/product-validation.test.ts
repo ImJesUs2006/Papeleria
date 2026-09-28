@@ -3,7 +3,6 @@ import {
   PRODUCTO_INPUT_SCHEMA,
   PRODUCTO_PATCH_SCHEMA,
   sanitizeText,
-  IMAGEN_BASE64_MAX,
 } from "@/lib/validate-product";
 
 const base = {
@@ -48,9 +47,14 @@ describe("PRODUCTO_INPUT_SCHEMA", () => {
     expect(r.success).toBe(false);
   });
 
-  it("rechaza stock negativo o no entero", () => {
+  it("rechaza stock negativo y con más de 3 decimales; permite fracciones (granel)", () => {
+    // Fase 10 (C2): el stock es Decimal(10,3); 1.5 kg es válido.
     expect(PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, stockActual: -1 }).success).toBe(false);
-    expect(PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, stockActual: 1.5 }).success).toBe(false);
+    expect(PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, stockActual: 1.5 }).success).toBe(true);
+    // Más de 3 decimales se rechaza (la BD lo limita).
+    expect(PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, stockActual: 1.0005 }).success).toBe(
+      false
+    );
   });
 
   it("aplica valores por defecto de stock cuando faltan", () => {
@@ -66,22 +70,25 @@ describe("PRODUCTO_INPUT_SCHEMA", () => {
     }
   });
 
-  it("rechaza imágenes base64 por encima del límite", () => {
-    const r = PRODUCTO_INPUT_SCHEMA.safeParse({
-      ...base,
-      imagenMime: "image/png",
-      imagenBase64: "A".repeat(IMAGEN_BASE64_MAX + 1),
-    });
-    expect(r.success).toBe(false);
-  });
-
-  it("rechaza mime de imagen no permitido", () => {
-    const r = PRODUCTO_INPUT_SCHEMA.safeParse({
-      ...base,
-      imagenMime: "image/gif",
-      imagenBase64: "AAAA",
-    });
-    expect(r.success).toBe(false);
+  it("acepta y valida la fecha de caducidad (Configuracion personalizable)", () => {
+    expect(
+      PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, fechaCaducidad: "2027-03-15" }).success
+    ).toBe(true);
+    // Fecha imposible → rechaza.
+    expect(
+      PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, fechaCaducidad: "fecha-no-valida" }).success
+    ).toBe(false);
+    // Vacío o null se tolera (giras sin vigencia).
+    expect(
+      PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, fechaCaducidad: "" }).success
+    ).toBe(true);
+    expect(
+      PRODUCTO_INPUT_SCHEMA.safeParse({ ...base, fechaCaducidad: null }).success
+    ).toBe(true);
+    // PATCH parcial con caducidad válida/inválida.
+    expect(PRODUCTO_PATCH_SCHEMA.safeParse({ fechaCaducidad: "2027-01-01" }).success).toBe(true);
+    expect(PRODUCTO_PATCH_SCHEMA.safeParse({ fechaCaducidad: "abc" }).success).toBe(false);
+    expect(PRODUCTO_PATCH_SCHEMA.safeParse({ fechaCaducidad: null }).success).toBe(true);
   });
 });
 

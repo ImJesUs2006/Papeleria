@@ -63,7 +63,7 @@ export async function GET(request: Request) {
             m.codigoItem,
             m.producto?.descripcion ?? "",
             m.tipo,
-            m.cantidadCambio,
+            Number(m.cantidadCambio),
             m.motivo,
             m.usuario?.nombre ?? "Sistema",
           ]),

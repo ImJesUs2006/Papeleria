@@ -77,7 +77,6 @@ function FacturacionDatosFiscales() {
           temaBase: config.temaBase,
           colorAcento: config.colorAcento,
           datosBancarios: config.datosBancarios ?? null,
-          usarImagenesProductos: config.usarImagenesProductos,
           mensajeTicket: config.mensajeTicket ?? null,
           anchoTicket: config.anchoTicket,
           vistaDefectoPOS: config.vistaDefectoPOS,
@@ -217,13 +216,15 @@ function extractConfig(raw: any): BusinessConfig {
     temaBase: raw?.temaBase ?? "NEON",
     colorAcento: raw?.colorAcento ?? "#10b981",
     datosBancarios: raw?.datosBancarios ?? null,
-    usarImagenesProductos: raw?.usarImagenesProductos !== false,
     mensajeTicket:
       typeof raw?.mensajeTicket === "string" && raw.mensajeTicket.trim() ? raw.mensajeTicket : null,
     anchoTicket: anchoRaw === "58mm" || anchoRaw === "80mm" ? anchoRaw : "80mm",
     vistaDefectoPOS:
       vistaRaw === "ESCANER" || vistaRaw === "CATALOGO_TACTIL" ? vistaRaw : "ESCANER",
     datosFiscales: tieneFiscales ? datosFiscales : null,
+    usarCaducidad: raw?.usarCaducidad === true,
+    usarUbicaciones: raw?.usarUbicaciones !== false,
+    requerirFondoInicial: raw?.requerirFondoInicial !== false,
     configVersion: raw?.configVersion ?? 1,
     setupPendiente: raw?.setupPendiente ?? false,
   };

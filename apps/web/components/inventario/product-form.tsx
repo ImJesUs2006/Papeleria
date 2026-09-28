@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,12 +11,9 @@ import {
   Barcode,
   Sparkles,
   ScanLine,
-  ImagePlus,
-  Trash2,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
-import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 const TIPO_IMPRESION_LABELS: Record<(typeof TIPO_IMPRESION_OPCIONES)[number], string> = {
@@ -36,8 +33,9 @@ export interface ProductFormData {
   proveedor?: string | null;
   tipoImpresion?: string | null;
   codigoBarras?: string | null;
-  imagenMime?: string | null;
-  imagenBase64?: string | null;
+  permiteDecimales?: boolean;
+  esServicio?: boolean;
+  fechaCaducidad?: string | null;
 }
 
 interface Props {
@@ -46,6 +44,9 @@ interface Props {
   onSaved?: (producto: ProductFormData) => void;
   /** Si se indica, el formulario entra en modo edición. */
   producto?: ProductFormData | null;
+  /** Configuración personalizable (Fase 10): campos según el giro del negocio. */
+  usarCaducidad?: boolean;
+  usarUbicaciones?: boolean;
 }
 
 const textoOpcional = (max: number) =>
@@ -62,6 +63,16 @@ const numeroRequerido = (campo: string) =>
     .min(0, `El ${campo.toLowerCase()} no puede ser negativo`)
     .max(9_999_999, `${campo} demasiado alto`)
     .refine((v) => Number.isFinite(v), { message: `${campo} es obligatorio` });
+
+const stockFormSchema = (campo: string) =>
+  z
+    .number({ invalid_type_error: `${campo} inválido` })
+    .min(0, `El ${campo.toLowerCase()} no puede ser negativo`)
+    .max(1_000_000, `${campo} demasiado alto`)
+    .refine((v) => Number.isFinite(v), { message: `${campo} inválido` })
+    .refine((v) => Math.round(v * 1000) / 1000 === v, {
+      message: `El ${campo.toLowerCase()} admite hasta 3 decimales`,
+    });
 
 const formSchema = z
   .object({
@@ -82,20 +93,20 @@ const formSchema = z
       .min(0, "El precio de compra no puede ser negativo")
       .max(9_999_999, "Precio de compra demasiado alto")
       .optional(),
-    stockActual: z
-      .number({ invalid_type_error: "Stock inválido" })
-      .int("El stock debe ser entero")
-      .min(0, "El stock no puede ser negativo")
-      .max(1_000_000, "Stock demasiado alto"),
-    stockMinimo: z
-      .number({ invalid_type_error: "Stock mínimo inválido" })
-      .int("El stock mínimo debe ser entero")
-      .min(0, "El stock mínimo no puede ser negativo")
-      .max(1_000_000, "Stock mínimo demasiado alto"),
+    stockActual: stockFormSchema("Stock actual"),
+    stockMinimo: stockFormSchema("Stock mínimo"),
     codigoBarras: textoOpcional(64),
     ubicacionEstante: textoOpcional(60),
     proveedor: textoOpcional(120),
     tipoImpresion: z.enum(TIPO_IMPRESION_OPCIONES).optional().or(z.literal("")),
+    fechaCaducidad: z
+      .string()
+      .trim()
+      .max(10, "Fecha inválida")
+      .optional()
+      .or(z.literal("")),
+    permiteDecimales: z.boolean().optional(),
+    esServicio: z.boolean().optional(),
   })
   .refine(
     (d) => d.precioCompra == null || d.precioUnitario >= d.precioCompra,
@@ -136,31 +147,10 @@ function generarEAN13(seed: string): string {
   return base + check;
 }
 
-async function comprimirImagen(file: File): Promise<{ mime: string; base64: string }> {
-  const bitmap = await createImageBitmap(file);
-  const MAX = 800;
-  const escala = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * escala);
-  canvas.height = Math.round(bitmap.height * escala);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas no disponible");
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-  const base64 = dataUrl.split(",")[1] ?? "";
-  return { mime: "image/jpeg", base64 };
-}
-
-export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
+export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducidad = true, usarUbicaciones = true }: Props) {
   const editando = Boolean(producto);
-  const usarImagenes = useConfigStore((s) => s.config?.usarImagenesProductos ?? true);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [serverError, setServerError] = useState<string | null>(null);
-  const [imagen, setImagen] = useState<{ mime: string; base64: string; preview: string } | null>(
-    null
-  );
-  const [imagenError, setImagenError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
   const {
@@ -184,6 +174,9 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
       ubicacionEstante: "",
       proveedor: "",
       tipoImpresion: "",
+      fechaCaducidad: "",
+      permiteDecimales: false,
+      esServicio: false,
     },
   });
 
@@ -195,7 +188,6 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
   useEffect(() => {
     if (!open) return;
     setServerError(null);
-    setImagenError(null);
 
     if (producto) {
       setCargando(true);
@@ -213,16 +205,10 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
             ubicacionEstante: p.ubicacionEstante ?? "",
             proveedor: p.proveedor ?? "",
             tipoImpresion: p.tipoImpresion ?? "",
+            fechaCaducidad: p.fechaCaducidad ? p.fechaCaducidad.slice(0, 10) : "",
+            permiteDecimales: Boolean(p.permiteDecimales),
+            esServicio: Boolean(p.esServicio),
           });
-          setImagen(
-            p.imagenBase64
-              ? {
-                  mime: p.imagenMime ?? "image/jpeg",
-                  base64: p.imagenBase64,
-                  preview: `data:${p.imagenMime ?? "image/jpeg"};base64,${p.imagenBase64}`,
-                }
-              : null
-          );
         })
         .catch((e) => setServerError(e.message))
         .finally(() => setCargando(false));
@@ -238,28 +224,12 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
         ubicacionEstante: "",
         proveedor: "",
         tipoImpresion: "",
+        fechaCaducidad: "",
+        permiteDecimales: false,
+        esServicio: false,
       });
-      setImagen(null);
     }
   }, [open, producto, reset]);
-
-  const handleFile = async (file: File) => {
-    setImagenError(null);
-    if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type)) {
-      setImagenError("Formato no permitido (png, jpg, webp)");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setImagenError("La imagen supera los 2 MB");
-      return;
-    }
-    try {
-      const { mime, base64 } = await comprimirImagen(file);
-      setImagen({ mime, base64, preview: `data:${mime};base64,${base64}` });
-    } catch {
-      setImagenError("No se pudo procesar la imagen");
-    }
-  };
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
@@ -274,8 +244,9 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
       ubicacionEstante: values.ubicacionEstante?.trim() || null,
       proveedor: values.proveedor?.trim() || null,
       tipoImpresion: values.tipoImpresion || null,
-      imagenMime: imagen?.mime ?? null,
-      imagenBase64: imagen?.base64 ?? null,
+      fechaCaducidad: values.fechaCaducidad?.trim() || null,
+      permiteDecimales: values.permiteDecimales === true,
+      esServicio: values.esServicio === true,
     };
 
     try {
@@ -319,10 +290,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
         )}
 
         <div
-          className={cn(
-            "grid gap-4",
-            usarImagenes ? "grid-cols-1 md:grid-cols-[1fr_auto]" : "grid-cols-1"
-          )}
+          className="grid gap-4"
         >
           <div className="space-y-4">
             <label className="block">
@@ -453,11 +421,13 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <label className="block">
-                <span className="text-xs text-muted mb-1 block">Ubicación</span>
-                <input {...register("ubicacionEstante")} className="input-dark" placeholder="Estante A-1" />
-                {err("ubicacionEstante")}
-              </label>
+              {usarUbicaciones && (
+                <label className="block">
+                  <span className="text-xs text-muted mb-1 block">Ubicación</span>
+                  <input {...register("ubicacionEstante")} className="input-dark" placeholder="Estante A-1" />
+                  {err("ubicacionEstante")}
+                </label>
+              )}
               <label className="block">
                 <span className="text-xs text-muted mb-1 block">Proveedor</span>
                 <input {...register("proveedor")} className="input-dark" placeholder="Nombre" />
@@ -474,63 +444,49 @@ export function ProductFormModal({ open, onClose, onSaved, producto }: Props) {
                   ))}
                 </select>
               </label>
+              {usarCaducidad && (
+                <label className="block">
+                  <span className="text-xs text-muted mb-1 block">Fecha de caducidad</span>
+                  <input
+                    type="date"
+                    {...register("fechaCaducidad")}
+                    className="input-dark"
+                  />
+                  {err("fechaCaducidad")}
+                </label>
+              )}
             </div>
-          </div>
 
-          {usarImagenes && (
-          <div className="flex flex-col items-center gap-2 md:pt-6">
-            <span className="text-xs text-muted">Imagen</span>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="relative h-32 w-32 rounded-2xl bg-surface-700 border border-surface-500 overflow-hidden flex items-center justify-center hover:border-neon-green transition-colors"
-            >
-              {imagen ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={imagen.preview} alt="Producto" className="w-full h-full object-cover" />
-              ) : (
-                <ImagePlus className="h-6 w-6 text-muted" />
-              )}
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="text-[11px] text-muted hover:text-neon-green transition-colors"
-              >
-                {imagen ? "Cambiar" : "Subir"}
-              </button>
-              {imagen && (
-                <button
-                  type="button"
-                  onClick={() => setImagen(null)}
-                  className="text-[11px] text-muted hover:text-neon-red transition-colors flex items-center gap-1"
-                >
-                  <Trash2 className="h-3 w-3" /> Quitar
-                </button>
-              )}
+            {/* Sellos de Fase 10: granel y servicios */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-neon-cyan/40 transition-colors">
+                <input
+                  type="checkbox"
+                  {...register("permiteDecimales")}
+                  className="mt-0.5 rounded accent-neon-cyan"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-gray-100">Se vende a granel</span>
+                  <span className="block text-[11px] text-muted">
+                    Admite cantidades fraccionarias (kg, metros, litros)
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-neon-purple/40 transition-colors">
+                <input
+                  type="checkbox"
+                  {...register("esServicio")}
+                  className="mt-0.5 rounded accent-neon-purple"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-gray-100">Es un servicio</span>
+                  <span className="block text-[11px] text-muted">
+                    No usa inventario ni Kardex; se cobra directamente
+                  </span>
+                </span>
+              </label>
             </div>
-            <span className="text-[10px] text-muted text-center max-w-[128px]">
-              png/jpg/webp · máx 2 MB
-            </span>
-            {imagenError && (
-              <span className="text-[10px] text-neon-red flex items-center gap-1 text-center">
-                <AlertTriangle className="h-3 w-3 shrink-0" /> {imagenError}
-              </span>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-                e.target.value = "";
-              }}
-            />
           </div>
-        )}
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-2">

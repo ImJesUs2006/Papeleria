@@ -55,20 +55,41 @@ export default function LoginScreen() {
       >
         <div className="text-center mb-8">
           <motion.h1
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
             transition={{ type: "spring", damping: 10, delay: 0.2 }}
             className="text-4xl font-black tracking-tight"
           >
             <span className="text-neon-green">Pape</span>
             <span className="text-gray-100">lería</span>
           </motion.h1>
-          <p className="text-muted mt-2">Sistema de Gestión</p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="text-muted mt-2"
+          >
+            Sistema de Gestión · Plantilla Universal
+          </motion.p>
         </div>
 
-        <div className="bg-surface-800 border border-surface-600 rounded-2xl p-8">
+        <motion.div
+          variants={{
+            hidden: {},
+            show: { transition: { staggerChildren: 0.09, delayChildren: 0.15 } },
+          }}
+          initial="hidden"
+          animate="show"
+          className="bg-surface-800 border border-surface-600 rounded-2xl p-8"
+        >
           <form onSubmit={handleLogin} className="space-y-5">
-            <label className="block">
+            <motion.label
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+              }}
+              className="block"
+            >
               <span className="text-sm text-muted mb-1 block">Usuario</span>
               <input
                 type="text"
@@ -76,22 +97,30 @@ export default function LoginScreen() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Tu usuario"
                 autoFocus
+                disabled={isLoading}
                 autoComplete="username"
-                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all"
+                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all disabled:opacity-50"
               />
-            </label>
+            </motion.label>
 
-            <label className="block">
+            <motion.label
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+              }}
+              className="block"
+            >
               <span className="text-sm text-muted mb-1 block">Contraseña</span>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
+                disabled={isLoading}
                 autoComplete="current-password"
-                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all"
+                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all disabled:opacity-50"
               />
-            </label>
+            </motion.label>
 
             {error && (
               <motion.p
@@ -103,26 +132,43 @@ export default function LoginScreen() {
               </motion.p>
             )}
 
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.97 }}
-              type="submit"
-              disabled={isLoading || !username || !password}
-              className={cn(
-                "w-full py-3 rounded-xl font-bold text-lg transition-all",
-                username && password
-                  ? "bg-neon-green text-btn-ink shadow-neon"
-                  : "bg-surface-600 text-muted cursor-not-allowed"
-              )}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+              }}
             >
-              {isLoading ? (
-                <div className="h-5 w-5 border-2 border-surface-900 border-t-transparent rounded-full animate-spin mx-auto" />
-              ) : (
-                "Ingresar"
-              )}
-            </motion.button>
+              <motion.button
+                whileHover={isLoading ? undefined : { scale: 1.01 }}
+                whileTap={isLoading ? undefined : { scale: 0.97 }}
+                type="submit"
+                disabled={isLoading || !username || !password}
+                aria-busy={isLoading}
+                className={cn(
+                  "w-full py-3 rounded-xl font-bold text-lg transition-all",
+                  username && password
+                    ? "bg-neon-green text-btn-ink shadow-neon"
+                    : "bg-surface-600 text-muted cursor-not-allowed"
+                )}
+              >
+                {isLoading ? (
+                  <span className="inline-flex items-center justify-center gap-1.5 h-9">
+                    {[0, 1, 2].map((i) => (
+                      <motion.span
+                        key={i}
+                        className="h-2.5 w-2.5 rounded-full bg-btn-ink"
+                        animate={{ opacity: [0.3, 1, 0.3], y: [0, -4, 0] }}
+                        transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }}
+                      />
+                    ))}
+                  </span>
+                ) : (
+                  "Ingresar"
+                )}
+              </motion.button>
+            </motion.div>
           </form>
-        </div>
+        </motion.div>
 
         <p className="text-center text-xs text-muted mt-4">
           Contacta al administrador para obtener credenciales

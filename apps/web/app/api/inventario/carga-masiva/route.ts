@@ -39,6 +39,11 @@ const COLUMN_MAP: Record<string, string> = {
   tipoimpresion: "tipoImpresion",
   "tipo impresión": "tipoImpresion",
   impresion: "tipoImpresion",
+  caducidad: "fechaCaducidad",
+  "fecha caducidad": "fechaCaducidad",
+  fechacaducidad: "fechaCaducidad",
+  vencimiento: "fechaCaducidad",
+  "fecha vencimiento": "fechaCaducidad",
 };
 
 function mapColumns(
@@ -93,9 +98,9 @@ function validateRow(
   }
   values.precioUnitario = precio;
 
-  // Parse stock
+  // Parse stock (admite francciones para granel, hasta 3 decimales).
   const stockRaw = values.stockActual;
-  const stock = parseInt(String(stockRaw), 10);
+  const stock = Math.round(parseFloat(String(stockRaw)) * 1000) / 1000;
   if (isNaN(stock) || stock < 0) {
     errors.push({
       row: rowNum,
@@ -115,6 +120,15 @@ function validateRow(
   const tiposValidos = ["BLANCO_NEGRO", "COLOR", "PLOTTER"];
   const tipoRaw = String(values.tipoImpresion || "").trim().toUpperCase().replace(/\s+/g, "_");
   values.tipoImpresion = tiposValidos.includes(tipoRaw) ? tipoRaw : null;
+
+  // Fase 10: caducidad opcional (fecha de Excel o texto ISO).
+  const cadRaw = values.fechaCaducidad;
+  if (cadRaw != null && String(cadRaw).trim() !== "") {
+    const f = cadRaw instanceof Date ? cadRaw : new Date(String(cadRaw).trim());
+    values.fechaCaducidad = isNaN(f.getTime()) ? null : f;
+  } else {
+    values.fechaCaducidad = null;
+  }
 
   return { errors, values };
 }
@@ -221,6 +235,7 @@ export async function POST(request: Request) {
               proveedor: p.proveedor,
               codigoBarras: p.codigoBarras,
               tipoImpresion: p.tipoImpresion,
+              fechaCaducidad: p.fechaCaducidad,
             },
             create: {
               codigoItem: p.codigoItem,
@@ -232,6 +247,7 @@ export async function POST(request: Request) {
               proveedor: p.proveedor,
               codigoBarras: p.codigoBarras,
               tipoImpresion: p.tipoImpresion,
+              fechaCaducidad: p.fechaCaducidad,
             },
           })
         )

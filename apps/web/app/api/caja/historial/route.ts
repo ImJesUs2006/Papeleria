@@ -5,12 +5,14 @@ import { calcularArqueo } from "@/lib/cash";
 
 // ============================================================
 // GET /api/caja/historial
-// Historial de sesiones CERRADAS (últimas 50).
+// Historial de sesiones CERRADAS y ANULADAS (últimas 50).
 // Recalcula el arqueo a partir de las cantidades PERSISTIDAS en el
 // cierre (contado vs esperado) para presentar el descuadre real,
 // incluyendo el cajero y los datos necesarios para re-imprimir el
 // ticket térmico del corte. El esperado de efectivo se recalcula
-// restando los retiros autorizados de la sesión (Fase 3).
+// restando los retiros autorizados de la sesión (Fase 3). Las
+// sesiones ANULADAS conservan su registro (motivo incluido) para la
+// pista de auditoría (Fase 10).
 // ============================================================
 
 export async function GET() {
@@ -20,7 +22,7 @@ export async function GET() {
   }
 
   const sesiones = await prisma.sesionCaja.findMany({
-    where: { estado: "CERRADA" },
+    where: { estado: { in: ["CERRADA", "ANULADA"] } },
     orderBy: { horaCierre: "desc" },
     take: 50,
     include: {
@@ -48,6 +50,7 @@ export async function GET() {
 
     return {
       idCaja: s.idCaja,
+      folioCaja: s.folioCaja ?? s.idCaja,
       horaApertura: s.horaApertura,
       horaCierre: s.horaCierre,
       cajero: s.usuario?.nombre ?? "Sistema",
@@ -58,6 +61,9 @@ export async function GET() {
         motivo: r.motivo ?? "Sin motivo",
         fechaHora: r.fechaHora,
       })),
+      estado: s.estado,
+      anulada: s.estado === "ANULADA",
+      motivoAnulacion: s.motivoAnulacion ?? null,
       descuadre: Boolean(s.descuadre),
       notasCierre: s.notasCierre ?? null,
       arqueo,

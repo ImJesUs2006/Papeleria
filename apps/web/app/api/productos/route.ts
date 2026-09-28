@@ -5,8 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import {
   validateProductoInput,
   sanitizeText,
-  IMAGEN_MIMES_PERMITIDOS,
-  IMAGEN_BASE64_MAX,
+  normalizarFechaCaducidad,
 } from "@/lib/validate-product";
 
 const ALLOWED_SORT = [
@@ -34,6 +33,8 @@ export async function GET(request: Request) {
     const proveedor = searchParams.get("proveedor");
     const ubicacion = searchParams.get("ubicacion");
     const tipoImpresion = searchParams.get("tipoImpresion");
+    const esServicio = searchParams.get("esServicio");
+    const permiteDecimales = searchParams.get("permiteDecimales");
     const soloBajoStock = searchParams.get("bajoStock") === "true";
     const soloSinStock = searchParams.get("sinStock") === "true";
 
@@ -108,6 +109,12 @@ export async function GET(request: Request) {
       AND.push({ stockActual: 0 });
     }
 
+    // Fase 10: filtros por sello
+    if (esServicio === "true") AND.push({ esServicio: true });
+    if (esServicio === "false") AND.push({ esServicio: false });
+    if (permiteDecimales === "true") AND.push({ permiteDecimales: true });
+    if (permiteDecimales === "false") AND.push({ permiteDecimales: false });
+
     const where: Prisma.ProductoWhereInput = {
       activo: true,
       ...(AND.length > 0 ? { AND } : {}),
@@ -136,10 +143,14 @@ export async function GET(request: Request) {
         precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
         stockActual: p.stockActual,
         stockMinimo: p.stockMinimo,
+        permiteDecimales: p.permiteDecimales,
+        esServicio: p.esServicio,
+        idCategoria: p.idCategoria,
         ubicacionEstante: p.ubicacionEstante,
         proveedor: p.proveedor,
         tipoImpresion: p.tipoImpresion,
         codigoBarras: p.codigoBarras,
+        fechaCaducidad: p.fechaCaducidad?.toISOString() ?? null,
         favorito: p.favorito,
         fechaCreacion: p.fechaCreacion,
       })),
@@ -179,33 +190,6 @@ export async function POST(request: Request) {
   }
   const data = validacion.data;
 
-  // Normaliza la imagen (acepta data URL o base64 crudo).
-  let imagenMime: string | null = null;
-  let imagenBase64: string | null = null;
-  if (data.imagenBase64) {
-    let base64: string = data.imagenBase64;
-    let mime: string | null = data.imagenMime ?? null;
-    const match = base64.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      mime = match[1];
-      base64 = match[2];
-    }
-    if (!mime || !(IMAGEN_MIMES_PERMITIDOS as readonly string[]).includes(mime)) {
-      return NextResponse.json(
-        { error: "Formato de imagen no permitido (png, jpg, webp)" },
-        { status: 400 }
-      );
-    }
-    if (base64.length > IMAGEN_BASE64_MAX) {
-      return NextResponse.json(
-        { error: "Imagen demasiado grande (máx ~2 MB)" },
-        { status: 413 }
-      );
-    }
-    imagenMime = mime;
-    imagenBase64 = base64;
-  }
-
   try {
     const existente = await prisma.producto.findUnique({
       where: { codigoItem: data.codigoItem },
@@ -239,12 +223,19 @@ export async function POST(request: Request) {
             data.precioCompra != null ? new Prisma.Decimal(data.precioCompra) : null,
           stockActual: data.stockActual,
           stockMinimo: data.stockMinimo,
+          permiteDecimales: data.permiteDecimales === true,
+          esServicio: data.esServicio === true,
           codigoBarras: data.codigoBarras || null,
           ubicacionEstante: data.ubicacionEstante || null,
           proveedor: data.proveedor || null,
           tipoImpresion: data.tipoImpresion ?? null,
-          imagenMime,
-          imagenBase64,
+          fechaCaducidad: normalizarFechaCaducidad(data.fechaCaducidad),
+          idCategoria:
+            data.idCategoria != null && data.idCategoria !== ""
+              ? await prisma.categoria
+                  .findUnique({ where: { id: data.idCategoria } })
+                  .then((c) => c?.id ?? null)
+              : null,
         },
       });
 
@@ -267,16 +258,22 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        codigoItem: creado.codigoItem,
-        descripcion: creado.descripcion,
-        precioUnitario: Number(creado.precioUnitario),
-        precioCompra: creado.precioCompra != null ? Number(creado.precioCompra) : null,
-        stockActual: creado.stockActual,
-        stockMinimo: creado.stockMinimo,
-        ubicacionEstante: creado.ubicacionEstante,
-        proveedor: creado.proveedor,
-        tipoImpresion: creado.tipoImpresion,
-        codigoBarras: creado.codigoBarras,
+        producto: {
+          codigoItem: creado.codigoItem,
+          descripcion: creado.descripcion,
+          precioUnitario: Number(creado.precioUnitario),
+          precioCompra: creado.precioCompra != null ? Number(creado.precioCompra) : null,
+          stockActual: creado.stockActual,
+          stockMinimo: creado.stockMinimo,
+          permiteDecimales: creado.permiteDecimales,
+          esServicio: creado.esServicio,
+          idCategoria: creado.idCategoria,
+          ubicacionEstante: creado.ubicacionEstante,
+          proveedor: creado.proveedor,
+          tipoImpresion: creado.tipoImpresion,
+          codigoBarras: creado.codigoBarras,
+          fechaCaducidad: creado.fechaCaducidad?.toISOString() ?? null,
+        },
       },
       { status: 201 }
     );

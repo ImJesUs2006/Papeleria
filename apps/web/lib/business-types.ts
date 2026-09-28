@@ -7,6 +7,9 @@ export const TIPO_NEGOCIO = {
   ABARROTES: "Abarrotes",
   SERVICIOS: "Servicios",
   MIXTO: "Mixto",
+  FERRETERIA: "Ferretería",
+  FARMACIA: "Farmacia",
+  BOUTIQUE: "Boutique",
 } as const;
 
 export type TipoNegocio = keyof typeof TIPO_NEGOCIO;
@@ -100,10 +103,7 @@ export interface BusinessConfig {
   colorAcento: string;
   // Blindaje Financiero: cuenta bancaria para cobros por transferencia.
   datosBancarios: DatosBancarios | null;
-  // Hiper-personalización (Fase de Pulido) ----------------------------------
-  // Si false, se ocultan la subida de imágenes de producto en el formulario
-  // y la columna de imagen en el grid del POS / inventario.
-  usarImagenesProductos: boolean;
+  // Hiper-personalización (Fase de Pulido) -------------------------------
   // Mensaje opcional que se imprime al final del ticket (políticas, gracias).
   mensajeTicket: string | null;
   // Ancho de papel del ticket térmico: "58mm" | "80mm".
@@ -112,6 +112,12 @@ export interface BusinessConfig {
   vistaDefectoPOS: VistaPOS;
   // Datos fiscales (RFC, razón social, régimen y CP) para Facturación.
   datosFiscales: DatosFiscales | null;
+  // ---- Configuración Personalizable (Fase 10) ----
+  // El negocio decide si su inventario usa fechas de caducidad (farmacias,
+  // abarrotes) y/o ubicaciones en estante; y si la caja exige fondo inicial.
+  usarCaducidad: boolean;
+  usarUbicaciones: boolean;
+  requerirFondoInicial: boolean;
   configVersion: number;
   setupPendiente: boolean;
 }
@@ -121,23 +127,38 @@ export const DEFAULT_COLOR_ACENTO = "#10b981";
 export const DEFAULT_ANCHO_TICKET: AnchoTicket = "80mm";
 export const DEFAULT_VISTA_POS: VistaPOS = "ESCANER";
 
+// Configuración personalizable (Fase 10): la caducidad apagada es la pauta
+// (papelería), la ubicación se muestra por defecto y la caja pide fondo.
+export const DEFAULT_USAR_CADUCIDAD = false;
+export const DEFAULT_USAR_UBICACIONES = true;
+export const DEFAULT_REQUERIR_FONDO_INICIAL = true;
+
 /** Pre-configuración por tipo de negocio (Marca Blanca). */
 export const PRESETS_POR_NEGOCIO: Record<
   TipoNegocio,
   Pick<
     BusinessConfig,
-    "featureFlags" | "metodosPago" | "politicaStockOffline"
+    | "featureFlags"
+    | "metodosPago"
+    | "politicaStockOffline"
+    | "usarCaducidad"
+    | "usarUbicaciones"
   >
 > = {
   PAPELERIA_RETAIL: {
     featureFlags: { ...DEFAULT_FEATURE_FLAGS },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
+    usarCaducidad: false,
+    usarUbicaciones: true,
   },
   ABARROTES: {
     featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
+    // Abarrotes: la vigencia de comestibles es crítica.
+    usarCaducidad: true,
+    usarUbicaciones: true,
   },
   SERVICIOS: {
     featureFlags: {
@@ -149,6 +170,8 @@ export const PRESETS_POR_NEGOCIO: Record<
     },
     metodosPago: ["TRANSFERENCIA", "TARJETA_TERMINAL"],
     politicaStockOffline: "RECHAZAR",
+    usarCaducidad: false,
+    usarUbicaciones: false,
   },
   MIXTO: {
     featureFlags: {
@@ -160,6 +183,51 @@ export const PRESETS_POR_NEGOCIO: Record<
     },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
+    usarCaducidad: false,
+    usarUbicaciones: true,
+  },
+  FERRETERIA: {
+    featureFlags: {
+      inventario: true,
+      facturacion: true,
+      dashboard: true,
+      proveedores: true,
+      bitacora: true,
+    },
+    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
+    politicaStockOffline: "PERMITIR_NEGATIVO",
+    usarCaducidad: false,
+    usarUbicaciones: true,
+  },
+  FARMACIA: {
+    featureFlags: {
+      inventario: true,
+      facturacion: true,
+      dashboard: true,
+      proveedores: true,
+      bitacora: true,
+    },
+    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"],
+    // La farmacia exige registros de lote/vigencia: no se permite vender
+    // con stock negativo y la caducidad se muestra por defecto.
+    politicaStockOffline: "RECHAZAR",
+    usarCaducidad: true,
+    usarUbicaciones: true,
+  },
+  BOUTIQUE: {
+    featureFlags: {
+      inventario: true,
+      facturacion: true,
+      dashboard: true,
+      proveedores: true,
+      bitacora: true,
+    },
+    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"],
+    // Moda/prendas: el inventario por talla/color es clave, pero la plantilla
+    // no bloquea una venta si el artículo aún no fue cargado.
+    politicaStockOffline: "PERMITIR_NEGATIVO",
+    usarCaducidad: false,
+    usarUbicaciones: true,
   },
 };
 

@@ -3,16 +3,6 @@ import { z } from "zod";
 export const TIPO_IMPRESION_OPCIONES = ["BLANCO_NEGRO", "COLOR", "PLOTTER"] as const;
 export type TipoImpresion = (typeof TIPO_IMPRESION_OPCIONES)[number];
 
-export const IMAGEN_MIMES_PERMITIDOS = [
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-] as const;
-
-// Límite del string base64 (≈2 MB de imagen real, holgura por el encoding).
-export const IMAGEN_BASE64_MAX = 2_800_000;
-
 /**
  * Limpia texto proveniente del usuario para prevenir XSS almacenado.
  * Elimina etiquetas HTML, ángulos sueltos y caracteres de control.
@@ -45,6 +35,20 @@ const enteroSchema = (campo: string) =>
     .min(0, `El ${campo.toLowerCase()} no puede ser negativo`)
     .max(1_000_000, `${campo} demasiado alto`);
 
+/**
+ * Cantidad de stock. Permite fracciones para productos a granel
+ * (permiteDecimales), exactamente 3 decimales como limita la BD.
+ */
+const stockSchema = (campo: string) =>
+  z
+    .number({ invalid_type_error: `${campo} inválido` })
+    .min(0, `El ${campo.toLowerCase()} no puede ser negativo`)
+    .max(1_000_000, `${campo} demasiado alto`)
+    .refine((v) => Number.isFinite(v), { message: `${campo} inválido` })
+    .refine((v) => Math.round(v * 1000) / 1000 === v, {
+      message: `El ${campo.toLowerCase()} admite hasta 3 decimales`,
+    });
+
 const BASE_PRODUCTO = z.object({
   codigoItem: z
     .string()
@@ -59,18 +63,26 @@ const BASE_PRODUCTO = z.object({
     .max(120, "Máximo 120 caracteres"),
   precioUnitario: precioSchema("Precio de venta"),
   precioCompra: precioSchema("Precio de compra").nullable().optional(),
-  stockActual: enteroSchema("Stock actual").default(0),
-  stockMinimo: enteroSchema("Stock mínimo").default(5),
+  stockActual: stockSchema("Stock actual").default(0),
+  stockMinimo: stockSchema("Stock mínimo").default(5),
+  // Granel (permiteDecimales) y servicios no son exclusivos: un servicio
+  // puede vender fracciones de tiempo; un producto a granel jamás es servicio.
+  permiteDecimales: z.boolean().optional(),
+  esServicio: z.boolean().optional(),
+  // Categoría opcional (Fase 10); se valida contra la BD al crear/editar.
+  idCategoria: z.string().trim().max(40).nullable().optional(),
   codigoBarras: textoOpcional(64),
   ubicacionEstante: textoOpcional(60),
   proveedor: textoOpcional(120),
   tipoImpresion: z.enum(TIPO_IMPRESION_OPCIONES).nullable().optional(),
-  imagenMime: z.enum(IMAGEN_MIMES_PERMITIDOS).nullable().optional(),
-  imagenBase64: z
+  // Configuración personalizable (Fase 10): caducidad opcional por producto.
+  fechaCaducidad: z
     .string()
-    .max(IMAGEN_BASE64_MAX, "Imagen demasiado grande (máx ~2 MB)")
-    .nullable()
-    .optional(),
+    .trim()
+    .max(10, "Fecha de caducidad inválida")
+    .optional()
+    .or(z.literal(""))
+    .or(z.null()),
 });
 
 const ventaMayorOIgualCompra = (d: {
@@ -78,15 +90,45 @@ const ventaMayorOIgualCompra = (d: {
   precioCompra?: number | null;
 }) => d.precioCompra == null || d.precioUnitario == null || d.precioUnitario >= d.precioCompra;
 
+const caducidadValida = (v?: string | null) => {
+  if (v == null || v === "") return true;
+  const fecha = new Date(v);
+  return !isNaN(fecha.getTime());
+};
+
+const reglasProducto = (d: {
+  precioUnitario?: number;
+  precioCompra?: number | null;
+  fechaCaducidad?: string | null;
+}) =>
+  ventaMayorOIgualCompra(d) &&
+  caducidadValida(d.fechaCaducidad ?? null);
+
 export const PRODUCTO_INPUT_SCHEMA = BASE_PRODUCTO.refine(ventaMayorOIgualCompra, {
   message: "El precio de venta no puede ser menor al de compra",
   path: ["precioUnitario"],
+}).refine((d) => caducidadValida(d.fechaCaducidad ?? null), {
+  message: "Fecha de caducidad inválida",
+  path: ["fechaCaducidad"],
 });
 
 export const PRODUCTO_PATCH_SCHEMA = BASE_PRODUCTO.partial().refine(ventaMayorOIgualCompra, {
   message: "El precio de venta no puede ser menor al de compra",
   path: ["precioUnitario"],
+}).refine((d) => caducidadValida(d.fechaCaducidad ?? null), {
+  message: "Fecha de caducidad inválida",
+  path: ["fechaCaducidad"],
 });
+
+/** Normaliza "yyyy-mm-dd" (o vacío/null) a un Date para la BD. */
+export function normalizarFechaCaducidad(
+  v?: string | null
+): Date | null {
+  if (v == null || v === "") return null;
+  const fecha = new Date(v);
+  if (isNaN(fecha.getTime())) return null;
+  return fecha;
+}
 
 export type ProductoInput = z.infer<typeof PRODUCTO_INPUT_SCHEMA>;
 

@@ -236,7 +236,17 @@ button:focus-visible {
  * aquí sólo evitamos desbordes y forzamos blanco/negro legible.
  */
 @media print {
+  /* Páginas nombradas: el ancho real del rodillo se aplica según la clase
+     del ticket. Si el navegador no soporta `page`, cae al margen 3mm. */
   @page {
+    margin: 3mm;
+  }
+  @page ticket57 {
+    size: 58mm auto;
+    margin: 2mm;
+  }
+  @page ticket80 {
+    size: 80mm auto;
     margin: 3mm;
   }
 
@@ -275,12 +285,36 @@ button:focus-visible {
   }
 
   .print-ticket-57 {
-    width: 50mm !important;
-    max-width: 50mm !important;
+    page: ticket57;
+    width: 54mm !important;
+    max-width: 54mm !important;
+    min-height: auto !important;
   }
   .print-ticket-80 {
-    width: 72mm !important;
-    max-width: 72mm !important;
+    page: ticket80;
+    width: 74mm !important;
+    max-width: 74mm !important;
+    min-height: auto !important;
+  }
+
+  /* Reglas estrictas de rodillo térmico: sin recorte de columnas, sin
+     desborde y sin partir el ticket entre hojas. */
+  .print-label-area,
+  .print-ticket-57,
+  .print-ticket-80 {
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    white-space: normal !important;
+  }
+  .print-ticket-57 *,
+  .print-ticket-80 * {
+    box-sizing: border-box !important;
+    max-width: 100% !important;
+    overflow-wrap: break-word !important;
   }
 
   /* La impresión térmica no reproduce neón: todo a negro legible. */

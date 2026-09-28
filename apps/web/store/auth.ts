@@ -10,6 +10,7 @@ interface AuthState {
   permisoCobrar: boolean;
   permisoInventario: boolean;
   permisoReportes: boolean;
+  canPurge: boolean;
   isAuthenticated: boolean;
 
   login: (user: {
@@ -19,6 +20,7 @@ interface AuthState {
     permisoCobrar?: boolean;
     permisoInventario?: boolean;
     permisoReportes?: boolean;
+    canPurge?: boolean;
   }) => void;
   logout: () => Promise<void>;
   hydrateFromServer: () => Promise<void>;
@@ -77,6 +79,7 @@ export const useAuthStore = create<AuthState>()(
       permisoCobrar: true,
       permisoInventario: true,
       permisoReportes: true,
+      canPurge: false,
       isAuthenticated: false,
 
       login: (user) =>
@@ -87,6 +90,7 @@ export const useAuthStore = create<AuthState>()(
           permisoCobrar: user.permisoCobrar ?? true,
           permisoInventario: user.permisoInventario ?? true,
           permisoReportes: user.permisoReportes ?? true,
+          canPurge: user.canPurge ?? false,
           isAuthenticated: true,
         }),
 
@@ -103,6 +107,7 @@ export const useAuthStore = create<AuthState>()(
           permisoCobrar: true,
           permisoInventario: true,
           permisoReportes: true,
+          canPurge: false,
           isAuthenticated: false,
         });
       },
@@ -119,6 +124,7 @@ export const useAuthStore = create<AuthState>()(
               permisoCobrar: user.permisoCobrar ?? true,
               permisoInventario: user.permisoInventario ?? true,
               permisoReportes: user.permisoReportes ?? true,
+              canPurge: user.canPurge ?? false,
               isAuthenticated: true,
             });
           } else {
@@ -129,6 +135,7 @@ export const useAuthStore = create<AuthState>()(
               permisoCobrar: true,
               permisoInventario: true,
               permisoReportes: true,
+              canPurge: false,
               isAuthenticated: false,
             });
           }
@@ -140,9 +147,13 @@ export const useAuthStore = create<AuthState>()(
       hasPermission: (permission: string) => {
         const state = get();
         if (!state.rol) return false;
+        // Fase 10 · Admin Override: la ADMINISTRADORA tiene acceso a todo por
+        // rol; los flags granulares aplican SOLO a cajeras (por defecto tienen
+        // todo activo si el negocio no los restringe).
+        if (state.rol === "ADMINISTRADORA") return true;
         const base = PERMISSIONS[state.rol]?.includes(permission) ?? false;
         if (!base) return false;
-        // Fase 9: si el permiso está gobernado por un flag granular, éste manda.
+        // Fase 9 + Fase 10: el flag granular manda únicamente en cajeras.
         const flag = GRANULAR_PERMISOS[permission];
         if (!flag) return true;
         return state[flag];
@@ -158,6 +169,7 @@ export const useAuthStore = create<AuthState>()(
         permisoCobrar: state.permisoCobrar,
         permisoInventario: state.permisoInventario,
         permisoReportes: state.permisoReportes,
+        canPurge: state.canPurge,
         isAuthenticated: state.isAuthenticated,
       }),
     }

@@ -61,6 +61,13 @@ export async function POST(request: Request) {
       select: { setupPendiente: true },
     });
 
+    const canPurge =
+      user.isRoot === true ||
+      (user.rol === "ADMINISTRADORA" &&
+        user.permisoCobrar === true &&
+        user.permisoInventario === true &&
+        user.permisoReportes === true);
+
     const response = NextResponse.json({
       idPersona: user.idPersona,
       nombre: user.nombre,
@@ -68,6 +75,7 @@ export async function POST(request: Request) {
       permisoCobrar: user.permisoCobrar ?? true,
       permisoInventario: user.permisoInventario ?? true,
       permisoReportes: user.permisoReportes ?? true,
+      canPurge,
       setupPendiente: config?.setupPendiente ?? true,
     });
 

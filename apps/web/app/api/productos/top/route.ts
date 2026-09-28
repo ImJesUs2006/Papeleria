@@ -26,7 +26,12 @@ export async function GET(request: Request) {
   try {
     const [favoritos, vendidos] = await Promise.all([
       prisma.producto.findMany({
-        where: { activo: true, favorito: true, stockActual: { gt: 0 } },
+        // Los servicios no tienen inventario: se incluyen siempre.
+        where: {
+          activo: true,
+          favorito: true,
+          OR: [{ stockActual: { gt: 0 } }, { esServicio: true }],
+        },
         orderBy: { descripcion: "asc" },
         take: limit,
       }),
@@ -55,7 +60,11 @@ export async function GET(request: Request) {
       const codes = topCodes.filter((c) => !resultado.has(c)).slice(0, faltan);
       if (codes.length > 0) {
         const productos = await prisma.producto.findMany({
-          where: { codigoItem: { in: codes }, activo: true, stockActual: { gt: 0 } },
+          where: {
+            codigoItem: { in: codes },
+            activo: true,
+            OR: [{ stockActual: { gt: 0 } }, { esServicio: true }],
+          },
         });
         for (const p of productos) {
           resultado.set(p.codigoItem, { ...p, vendidos: vendidosMap.get(p.codigoItem) ?? 0 });
@@ -69,7 +78,7 @@ export async function GET(request: Request) {
       const recientes = await prisma.producto.findMany({
         where: {
           activo: true,
-          stockActual: { gt: 0 },
+          OR: [{ stockActual: { gt: 0 } }, { esServicio: true }],
           codigoItem: { notIn: [...resultado.keys()] },
         },
         orderBy: { fechaActualizacion: "desc" },
@@ -89,6 +98,8 @@ export async function GET(request: Request) {
       codigoBarras: p.codigoBarras ?? null,
       favorito: Boolean(p.favorito),
       vendidos: p.vendidos,
+      permiteDecimales: Boolean(p.permiteDecimales),
+      esServicio: Boolean(p.esServicio),
     }));
 
     return NextResponse.json({ data, total: data.length });

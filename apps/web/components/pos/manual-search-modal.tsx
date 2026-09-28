@@ -11,6 +11,8 @@ interface ProductoTactil {
   precioUnitario: number;
   stockActual: number;
   codigoBarras?: string | null;
+  permiteDecimales?: boolean;
+  esServicio?: boolean;
 }
 
 interface Props {
@@ -45,18 +47,20 @@ export function ManualSearchModal({ open, onClose }: Props) {
   };
 
   const agregar = (p: ProductoTactil) => {
-    if (p.stockActual <= 0) return;
+    if (!p.esServicio && p.stockActual <= 0) return;
     addItem({
       codigoItem: p.codigoItem,
       descripcion: p.descripcion,
       precioUnitario: p.precioUnitario,
       cantidad: 1,
       tipoImpresion: (p as any).tipoImpresion,
+      permiteDecimales: p.permiteDecimales,
+      esServicio: p.esServicio,
     });
   };
 
   const mostrarStock = useMemo(
-    () => productos.filter((p) => p.stockActual > 0),
+    () => productos.filter((p) => (p.esServicio || p.stockActual > 0)),
     [productos]
   );
 

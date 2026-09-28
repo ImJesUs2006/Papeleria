@@ -45,11 +45,13 @@ export interface SnapshotJson {
     temaBase: string;
     colorAcento: string;
     datosBancarios: JsonValue | null;
-    usarImagenesProductos: boolean;
     mensajeTicket: string | null;
     anchoTicket: string;
     vistaDefectoPOS: string;
     datosFiscales: JsonValue | null;
+    usarCaducidad: boolean;
+    usarUbicaciones: boolean;
+    requerirFondoInicial: boolean;
     configVersion: number;
     setupPendiente: boolean;
   };
@@ -92,11 +94,13 @@ export function buildResetJson(
       temaBase: configRow?.temaBase ?? "NEON",
       colorAcento: configRow?.colorAcento ?? "#10b981",
       datosBancarios: configRow?.datosBancarios ?? null,
-      usarImagenesProductos: configRow?.usarImagenesProductos !== false,
       mensajeTicket: configRow?.mensajeTicket ?? null,
       anchoTicket: configRow?.anchoTicket ?? "80mm",
       vistaDefectoPOS: configRow?.vistaDefectoPOS ?? "ESCANER",
       datosFiscales: configRow?.datosFiscales ?? null,
+      usarCaducidad: Boolean(configRow?.usarCaducidad ?? false),
+      usarUbicaciones: Boolean(configRow?.usarUbicaciones ?? true),
+      requerirFondoInicial: Boolean(configRow?.requerirFondoInicial ?? true),
       configVersion: Number(configRow?.configVersion ?? 1),
       setupPendiente: Boolean(configRow?.setupPendiente ?? true),
     },
@@ -267,12 +271,15 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
       datosBancarios: (cfg.datosBancarios && typeof cfg.datosBancarios === "object"
         ? cfg.datosBancarios
         : {}) as any,
-      usarImagenesProductos: cfg.usarImagenesProductos !== false,
       mensajeTicket: cfg.mensajeTicket ?? null,
       anchoTicket: cfg.anchoTicket ?? "80mm",
       vistaDefectoPOS: cfg.vistaDefectoPOS ?? "ESCANER",
       datosFiscales:
         cfg.datosFiscales && typeof cfg.datosFiscales === "object" ? cfg.datosFiscales : null,
+      usarCaducidad: typeof cfg.usarCaducidad === "boolean" ? cfg.usarCaducidad : false,
+      usarUbicaciones: typeof cfg.usarUbicaciones === "boolean" ? cfg.usarUbicaciones : true,
+      requerirFondoInicial:
+        typeof cfg.requerirFondoInicial === "boolean" ? cfg.requerirFondoInicial : true,
       setupPendiente: false,
       configVersion: proximaVersion + 1,
       updatedById: input.idUsuario,

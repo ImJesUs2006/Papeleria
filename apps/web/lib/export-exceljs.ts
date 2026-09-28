@@ -49,6 +49,20 @@ export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<B
   wb.creator = "Papelería SaaS";
   wb.created = new Date();
 
+  /** Aplica alineación derecha a celdas de columnas con numFmt. */
+  const alinearNumFmt = (
+    ws: ExcelJS.Worksheet,
+    columns: ExportColumn[],
+    rowIndex: number
+  ) => {
+    for (let i = 0; i < columns.length; i++) {
+      if (columns[i].numFmt) {
+        const celda = ws.getRow(rowIndex).getCell(i + 1);
+        celda.alignment = { horizontal: "right", vertical: "middle" };
+      }
+    }
+  };
+
   const ws = wb.addWorksheet(opts.sheetName, {
     views: [{ state: "frozen", ySplit: 1 }],
   });
@@ -88,6 +102,18 @@ export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<B
   for (const row of opts.rows) {
     const fila = ws.addRow(row);
 
+    // Alineación derecha en columnas con formato numérico (moneda/cantidades):
+    // el cierre de caja y los reportes financieros alinean sus montos.
+    opts.columns.forEach((col, i) => {
+      if (col.numFmt) {
+        const celda = fila.getCell(i + 1);
+        celda.alignment = { horizontal: "right", vertical: "middle" };
+        if (typeof row[i] === "number") {
+          celda.numFmt = col.numFmt;
+        }
+      }
+    });
+
     // Formato condicional: alerta en rojo cuando stockActual <= stockMinimo.
     for (const cond of opts.conditionals ?? []) {
       const v = row[cond.col];
@@ -122,6 +148,7 @@ export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<B
       if (col?.numFmt) cell.numFmt = col.numFmt;
       cell.border = { top: { style: "double", color: { argb: "FF111827" } } };
     });
+    alinearNumFmt(ws, opts.columns, totalRow.number);
   }
 
   ws.autoFilter = {
@@ -158,7 +185,15 @@ export async function buildStyledWorkbook(opts: BuildWorkbookOptions): Promise<B
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
     for (const row of extra.rows) {
-      wsExtra.addRow(row);
+      const fila = wsExtra.addRow(row);
+      for (let i = 0; i < extra.columns.length; i++) {
+        if (extra.columns[i].numFmt) {
+          fila.getCell(i + 1).alignment = { horizontal: "right", vertical: "middle" };
+          if (typeof row[i] === "number") {
+            fila.getCell(i + 1).numFmt = extra.columns[i].numFmt as string;
+          }
+        }
+      }
     }
     wsExtra.autoFilter = {
       from: { row: 1, column: 1 },

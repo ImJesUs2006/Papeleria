@@ -17,6 +17,8 @@ interface ProductoRapido {
   descripcion: string;
   precioUnitario: number;
   stockActual: number;
+  permiteDecimales?: boolean;
+  esServicio?: boolean;
 }
 
 export default function CobroPage() {
@@ -97,7 +99,7 @@ export default function CobroPage() {
       if (!res.ok) throw new Error("error");
       const data = await res.json();
       const match: ProductoRapido[] = (data.data ?? []).filter(
-        (p: ProductoRapido) => p.stockActual > 0
+        (p: ProductoRapido) => (p.esServicio || p.stockActual > 0)
       );
       if (match.length === 0) {
         setCodigoError(
@@ -111,6 +113,8 @@ export default function CobroPage() {
         descripcion: p.descripcion,
         precioUnitario: p.precioUnitario,
         cantidad: 1,
+        permiteDecimales: p.permiteDecimales,
+        esServicio: p.esServicio,
       });
     } catch {
       setCodigoError("No se pudo conectar con el servidor");

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { UserManagement } from "@/components/configuracion/user-management";
+import { MiCuentaPanel } from "@/components/configuracion/mi-cuenta";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -122,7 +123,6 @@ function normalizeConfig(raw: any): BusinessConfig {
       typeof raw?.colorAcento === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.colorAcento)
         ? raw.colorAcento
         : DEFAULT_COLOR_ACENTO,
-    usarImagenesProductos: raw?.usarImagenesProductos !== false,
     mensajeTicket:
       typeof raw?.mensajeTicket === "string" && raw.mensajeTicket.trim()
         ? raw.mensajeTicket
@@ -148,6 +148,12 @@ function normalizeConfig(raw: any): BusinessConfig {
       return tieneAlgo ? fiscales : null;
     })(),
     datosBancarios,
+    usarCaducidad:
+      typeof raw?.usarCaducidad === "boolean" ? raw.usarCaducidad : false,
+    usarUbicaciones:
+      typeof raw?.usarUbicaciones === "boolean" ? raw.usarUbicaciones : true,
+    requerirFondoInicial:
+      typeof raw?.requerirFondoInicial === "boolean" ? raw.requerirFondoInicial : true,
     configVersion: Number.isFinite(Number(raw?.configVersion)) ? Number(raw.configVersion) : 1,
     setupPendiente: Boolean(raw?.setupPendiente),
   };
@@ -209,6 +215,7 @@ export default function ConfiguracionPage() {
                   {rol}
                 </span>
               </div>
+              <MiCuentaPanel />
               <ErrorBoundary label="la gestión de usuarios">
                 <UserManagement />
               </ErrorBoundary>
@@ -326,11 +333,13 @@ const guardar = async () => {
           temaBase: config.temaBase,
           colorAcento: config.colorAcento,
           datosBancarios: config.datosBancarios ?? null,
-          usarImagenesProductos: config.usarImagenesProductos,
           mensajeTicket: config.mensajeTicket ?? null,
           anchoTicket: config.anchoTicket,
           vistaDefectoPOS: config.vistaDefectoPOS,
           datosFiscales: config.datosFiscales ?? null,
+          usarCaducidad: config.usarCaducidad,
+          usarUbicaciones: config.usarUbicaciones,
+          requerirFondoInicial: config.requerirFondoInicial,
         }),
       });
       const data = await res.json();
@@ -372,6 +381,13 @@ const guardar = async () => {
         : [...c.metodosPago, m];
       return { ...c, metodosPago: metodos };
     });
+  };
+
+  const togglePreferencia = (
+    key: "usarCaducidad" | "usarUbicaciones" | "requerirFondoInicial"
+  ) => {
+    if (guardando) return; // UI bloqueada mientras el PUT está en vuelo
+    setConfig((c) => (c ? { ...c, [key]: !c[key] } : c));
   };
 
   if (loading) {
@@ -750,7 +766,7 @@ const guardar = async () => {
           <div>
             <span className="text-xs text-muted mb-1 block">Ancho de impresión del ticket</span>
             <div className="flex gap-2">
-              {(Object.keys(ANCHOS_TICKET) as AnchoTicket[]).map((anc) => (
+              {ANCHOS_TICKET.map((anc) => (
                 <button
                   key={anc}
                   type="button"
@@ -789,34 +805,6 @@ const guardar = async () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            setConfig({ ...config, usarImagenesProductos: !config.usarImagenesProductos })
-          }
-          className={cn(
-            "flex items-center gap-3 px-4 py-3 rounded-xl border w-full text-sm font-semibold transition-all",
-            config.usarImagenesProductos
-              ? "bg-neon-green/10 border-neon-green/40 text-gray-100"
-              : "bg-surface-700 border-surface-500 text-muted"
-          )}
-        >
-          <span
-            className={cn(
-              "h-4 w-4 rounded-md border flex items-center justify-center shrink-0",
-              config.usarImagenesProductos
-                ? "bg-neon-green border-neon-green"
-                : "border-surface-400"
-            )}
-          >
-            {config.usarImagenesProductos && <Check className="h-3 w-3 text-btn-ink" />}
-          </span>
-          Mostrar imágenes de productos en el POS
-          <span className="ml-auto text-[11px] text-muted font-normal hidden md:inline">
-            Desactivar acelera la red en equipos modestos
-          </span>
-        </button>
-
         <label className="block">
           <span className="text-xs text-muted mb-1 block">Mensaje al pie del ticket</span>
           <textarea
@@ -831,6 +819,61 @@ const guardar = async () => {
             Hasta 500 caracteres · aparece al final de tickets y cortes de caja.
           </span>
         </label>
+
+      <div>
+        <span className="text-xs text-muted mb-2 block">
+          Preferencias del negocio (Configuración personalizable)
+        </span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {(
+            [
+              {
+                key: "usarCaducidad",
+                label: "Fechas de caducidad",
+                desc: "Vigencia y lote por producto (farmacias, abarrotes)",
+                activo: config.usarCaducidad,
+              },
+              {
+                key: "usarUbicaciones",
+                label: "Ubicaciones en estante",
+                desc: "Campo de ubicación del almacén en cada producto",
+                activo: config.usarUbicaciones,
+              },
+              {
+                key: "requerirFondoInicial",
+                label: "Fondo inicial obligatorio",
+                desc: "Solicitar el fondo inicial al abrir la caja",
+                activo: config.requerirFondoInicial,
+              },
+            ] as const
+          ).map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => togglePreferencia(p.key)}
+              className={cn(
+                "flex flex-col items-start gap-1 px-3 py-2.5 rounded-xl border text-left transition-all",
+                p.activo
+                  ? "bg-neon-cyan/10 border-neon-cyan/40"
+                  : "bg-surface-700 border-surface-500 opacity-60"
+              )}
+            >
+              <span className="flex items-center gap-2 text-sm font-bold text-gray-100">
+                <span
+                  className={cn(
+                    "h-4 w-4 rounded-md border flex items-center justify-center shrink-0",
+                    p.activo ? "bg-neon-cyan border-neon-cyan" : "border-surface-400"
+                  )}
+                >
+                  {p.activo && <Check className="h-3 w-3 text-btn-ink" />}
+                </span>
+                {p.label}
+              </span>
+              <span className="text-[11px] text-muted leading-snug">{p.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div>
         <span className="text-xs text-muted mb-2 block">Métodos de pago aceptados</span>

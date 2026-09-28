@@ -32,6 +32,7 @@ import {
 } from "@/components/inventario/product-form";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useLabelModal } from "@/components/inventario/label-modal";
+import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 
 interface Product {
@@ -46,6 +47,9 @@ interface Product {
   tipoImpresion: string | null;
   codigoBarras?: string | null;
   favorito?: boolean;
+  permiteDecimales?: boolean;
+  esServicio?: boolean;
+  fechaCaducidad?: string | null;
 }
 
 interface UploadResult {
@@ -67,6 +71,11 @@ const SORT_OPTIONS: { value: SortField; label: string }[] = [
 ];
 
 export default function InventarioPage() {
+  // Configuración personalizable (Fase 10): columnas y sellos de inventario
+  // según el giro del negocio.
+  const usarCaducidad = useConfigStore((s) => s.config?.usarCaducidad ?? false);
+  const usarUbicaciones = useConfigStore((s) => s.config?.usarUbicaciones ?? true);
+
   // Upload state
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -101,6 +110,101 @@ export default function InventarioPage() {
   const [filterStockMax, setFilterStockMax] = useState("");
   const [filterBajoStock, setFilterBajoStock] = useState(false);
   const [filterSinStock, setFilterSinStock] = useState(false);
+
+  // Fase 10: selección múltiple para operaciones masivas
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMensaje, setBulkMensaje] = useState<string | null>(null);
+  const [ajusteOpen, setAjusteOpen] = useState(false);
+  const [ajusteTipo, setAjusteTipo] = useState<"PORCENTAJE" | "MONTO_FIJO">("PORCENTAJE");
+  const [ajusteValor, setAjusteValor] = useState("");
+  const [borrarOpen, setBorrarOpen] = useState(false);
+
+  const toggleSeleccion = (codigo: string) =>
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      if (next.has(codigo)) next.delete(codigo);
+      else next.add(codigo);
+      return next;
+    });
+
+  const seleccionarTodosPagina = () => {
+    const todosDePagina = products.map((p) => p.codigoItem);
+    const todosSeleccionados = todosDePagina.every((c) => seleccion.has(c));
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      for (const c of todosDePagina) {
+        if (todosSeleccionados) next.delete(c);
+        else next.add(c);
+      }
+      return next;
+    });
+  };
+
+  const clearSeleccion = () => setSeleccion(new Set());
+
+  const ejecutarAjuste = async () => {
+    const valor = Number(ajusteValor);
+    if (!Number.isFinite(valor) || seleccion.size === 0) return;
+    setBulkBusy(true);
+    setBulkMensaje(null);
+    try {
+      const res = await fetch("/api/productos/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "ajustarPrecio",
+          tipo: ajusteTipo,
+          valor,
+          codigos: [...seleccion],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al ajustar precios");
+      setBulkMensaje(
+        ajusteTipo === "MONTO_FIJO"
+          ? `Precios ajustados (${valor > 0 ? "+$" : "-$"}${Math.abs(valor).toFixed(2)}): ${data.aplicados.length} aplicados` +
+              (data.omitidos?.length ? `, ${data.omitidos.length} omitidos` : "")
+          : `Precios ajustados (${valor > 0 ? "+" : ""}${valor}%): ${data.aplicados.length} aplicados` +
+              (data.omitidos?.length ? `, ${data.omitidos.length} omitidos` : "")
+      );
+      setAjusteOpen(false);
+      setAjusteValor("");
+      clearSeleccion();
+      fetchProducts();
+    } catch (e: any) {
+      setBulkMensaje(e?.message || "Error al ajustar precios");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const ejecutarBorrado = async () => {
+    if (seleccion.size === 0) return;
+    setBulkBusy(true);
+    setBulkMensaje(null);
+    try {
+      const res = await fetch("/api/productos/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "borrar",
+          codigos: [...seleccion],
+          confirmar: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al dar de baja");
+      setBulkMensaje(`Baja masiva completada: ${data.bajados} productos`);
+      setBorrarOpen(false);
+      clearSeleccion();
+      fetchProducts();
+    } catch (e: any) {
+      setBulkMensaje(e?.message || "Error al dar de baja");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const fetchProducts = useCallback(async () => {
     setIsLoadingProducts(true);
@@ -391,6 +495,56 @@ export default function InventarioPage() {
             <span>Página {page} de {totalPages}</span>
           </div>
 
+          {/* Toolbar de operaciones masivas (Fase 10) */}
+          {seleccion.size > 0 && (
+            <div className="flex items-center justify-between gap-3 bg-neon-blue/10 border border-neon-blue/40 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-neon-blue">
+                  {seleccion.size} seleccionados
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSeleccion}
+                  className="text-xs text-muted hover:text-gray-100 transition-colors"
+                >
+                  Limpiar selección
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAjusteOpen(true)}
+                  disabled={bulkBusy}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neon-green/10 border border-neon-green/40 text-neon-green text-xs font-bold hover:bg-neon-green/20 transition-all disabled:opacity-50"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5" /> Ajustar precio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBorrarOpen(true)}
+                  disabled={bulkBusy}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neon-red/10 border border-neon-red/40 text-neon-red text-xs font-bold hover:bg-neon-red/20 transition-all disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" /> Borrar seleccionados
+                </button>
+              </div>
+            </div>
+          )}
+
+          {bulkMensaje && (
+            <div className="flex items-center gap-2 bg-neon-green/10 border border-neon-green/40 rounded-xl px-4 py-2.5 text-xs text-gray-100">
+              <Check className="h-3.5 w-3.5 text-neon-green shrink-0" />
+              {bulkMensaje}
+              <button
+                type="button"
+                onClick={() => setBulkMensaje(null)}
+                className="ml-auto text-muted hover:text-gray-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Products table */}
           <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
             {isLoadingProducts ? (
@@ -406,11 +560,25 @@ export default function InventarioPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-surface-600">
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        onChange={seleccionarTodosPagina}
+                        checked={
+                          products.length > 0 &&
+                          products.every((p) => seleccion.has(p.codigoItem))
+                        }
+                        aria-label="Seleccionar todos los de esta página"
+                        className="rounded accent-neon-blue"
+                      />
+                    </th>
                     {[
                       { field: "descripcion" as SortField, label: "Producto" },
                       { field: "precioUnitario" as SortField, label: "Precio" },
                       { field: "stockActual" as SortField, label: "Stock" },
-                      { field: "ubicacionEstante" as SortField, label: "Ubicación" },
+                      ...(usarUbicaciones
+                        ? [{ field: "ubicacionEstante" as SortField, label: "Ubicación" }]
+                        : []),
                       { field: "proveedor" as SortField, label: "Proveedor" },
                     ].map(({ field, label }) => (
                       <th
@@ -426,6 +594,11 @@ export default function InventarioPage() {
                         </span>
                       </th>
                     ))}
+                    {usarCaducidad && (
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                        Caducidad
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                       Etiqueta
                     </th>
@@ -435,9 +608,32 @@ export default function InventarioPage() {
                   {products.map((p) => (
                     <tr key={p.codigoItem} className="border-b border-surface-700 hover:bg-surface-700/50 transition-colors">
                       <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={seleccion.has(p.codigoItem)}
+                          onChange={() => toggleSeleccion(p.codigoItem)}
+                          aria-label={`Seleccionar ${p.descripcion}`}
+                          className="rounded accent-neon-blue"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
                         <div>
                           <span className="text-sm font-medium text-gray-100">{p.descripcion}</span>
                           <span className="text-xs text-muted ml-2">{p.codigoItem}</span>
+                          {(p.esServicio || p.permiteDecimales) && (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              {p.esServicio && (
+                                <span className="text-[10px] font-bold text-neon-purple border border-neon-purple/40 rounded px-1 py-0.5">
+                                  Servicio
+                                </span>
+                              )}
+                              {p.permiteDecimales && (
+                                <span className="text-[10px] font-bold text-neon-cyan border border-neon-cyan/40 rounded px-1 py-0.5">
+                                  Granel
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-neon-green font-bold">
@@ -456,7 +652,36 @@ export default function InventarioPage() {
                           <span className="text-[10px] text-warning ml-2">MIN: {p.stockMinimo}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted">{p.ubicacionEstante || "—"}</td>
+                      {usarCaducidad && (
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {p.fechaCaducidad
+                            ? (() => {
+                                const f = new Date(p.fechaCaducidad);
+                                const vencido =
+                                  !isNaN(f.getTime()) &&
+                                  f.getTime() < Date.now() - 24 * 60 * 60 * 1000;
+                                return (
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center gap-1 font-medium",
+                                      vencido ? "text-neon-red" : "text-gray-100"
+                                    )}
+                                    title={
+                                      vencido
+                                        ? "Producto vencido"
+                                        : "Fecha de caducidad"
+                                    }
+                                  >
+                                    {p.fechaCaducidad.slice(0, 10)}
+                                  </span>
+                                );
+                              })()
+                            : "—"}
+                        </td>
+                      )}
+                      {usarUbicaciones && (
+                        <td className="px-4 py-3 text-sm text-muted">{p.ubicacionEstante || "—"}</td>
+                      )}
                       <td className="px-4 py-3 text-sm text-muted">{p.proveedor || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -620,11 +845,156 @@ export default function InventarioPage() {
 
         {labelNode}
 
+        {/* Modal: ajuste de precio en lote */}
+        <AnimatePresence>
+          {ajusteOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+              onClick={() => setAjusteOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 16 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 16 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-surface-800 border border-surface-600 rounded-3xl p-6 max-w-sm w-full"
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <ArrowUpDown className="h-5 w-5 text-neon-cyan" />
+                  <h3 className="font-black text-gray-100">Ajustar precios ({seleccion.size})</h3>
+                </div>
+                <p className="text-xs text-muted mb-4">
+                  El ajuste respeta la regla del negocio: el precio de venta nunca
+                  queda por debajo del de compra. Aplica un porcentaje (+10 o -15)
+                  o un monto fijo en pesos (+5 o -2.50).
+                </p>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {(
+                    [
+                      { tipo: "PORCENTAJE", label: "Porcentaje (%)" },
+                      { tipo: "MONTO_FIJO", label: "Monto fijo ($)" },
+                    ] as const
+                  ).map((op) => (
+                    <button
+                      key={op.tipo}
+                      type="button"
+                      onClick={() => {
+                        setAjusteTipo(op.tipo);
+                        setAjusteValor("");
+                      }}
+                      className={cn(
+                        "py-2.5 rounded-xl text-sm font-bold border transition-all",
+                        ajusteTipo === op.tipo
+                          ? "border-neon-cyan bg-neon-cyan/10 text-neon-cyan"
+                          : "border-surface-500 bg-surface-700 text-muted hover:text-gray-100"
+                      )}
+                    >
+                      {op.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="block mb-1">
+                  <span className="text-xs text-muted mb-1 block">
+                    {ajusteTipo === "MONTO_FIJO" ? "Monto fijo ($)" : "Porcentaje (%)"}
+                  </span>
+                  <input
+                    type="number"
+                    value={ajusteValor}
+                    onChange={(e) => setAjusteValor(e.target.value)}
+                    placeholder={ajusteTipo === "MONTO_FIJO" ? "Ej: 5 o -2.50" : "Ej: 10 o -15"}
+                    min={ajusteTipo === "MONTO_FIJO" ? -999999 : -100}
+                    step="0.1"
+                    autoFocus
+                    className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-lg text-neon-cyan font-bold text-center focus:border-neon-cyan focus:outline-none transition-all"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setAjusteOpen(false)}
+                    disabled={bulkBusy}
+                    className="py-3 rounded-xl bg-surface-700 text-muted text-sm font-bold hover:bg-surface-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={ejecutarAjuste}
+                    disabled={bulkBusy || ajusteValor === ""}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm transition-all",
+                      ajusteValor !== "" && !bulkBusy
+                        ? "bg-neon-cyan text-btn-ink shadow-neon-cyan"
+                        : "bg-surface-600 text-muted cursor-not-allowed"
+                    )}
+                  >
+                    {bulkBusy ? <AlertTriangle className="h-4 w-4 animate-spin" /> : "Aplicar ajuste"}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: confirmación de baja masiva */}
+        <AnimatePresence>
+          {borrarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+              onClick={() => setBorrarOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 16 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 16 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-surface-800 border-2 border-neon-red/40 rounded-3xl p-6 max-w-sm w-full"
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="h-5 w-5 text-neon-red" />
+                  <h3 className="font-black text-gray-100">Baja masiva de productos</h3>
+                </div>
+                <p className="text-sm text-muted mb-4">
+                  Esto dejará <strong className="text-gray-100">{seleccion.size}</strong> producto(s){" "}
+                  <strong className="text-gray-100">inactivo(s)</strong>: dejarán de venderse en el POS,
+                  pero su historial (kardex, ventas, apartados) se conserva. ¿Continuar?
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBorrarOpen(false)}
+                    disabled={bulkBusy}
+                    className="py-3 rounded-xl bg-surface-700 text-muted text-sm font-bold hover:bg-surface-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={ejecutarBorrado}
+                    disabled={bulkBusy}
+                    className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm bg-neon-red text-white hover:brightness-110 transition-all disabled:opacity-50"
+                  >
+                    {bulkBusy ? "Procesando..." : `Dar de baja (${seleccion.size})`}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <ProductFormModal
           open={formOpen}
           onClose={() => setFormOpen(false)}
           onSaved={() => fetchProducts()}
           producto={editing}
+          usarCaducidad={usarCaducidad}
+          usarUbicaciones={usarUbicaciones}
         />
       </div>
     </DashboardLayout>

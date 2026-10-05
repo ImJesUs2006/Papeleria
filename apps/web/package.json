@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "verificar:aislamiento": "tsx scripts/verificar-aislamiento.ts",
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium"
   },

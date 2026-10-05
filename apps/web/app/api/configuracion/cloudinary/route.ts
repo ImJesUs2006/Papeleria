@@ -22,7 +22,7 @@ export async function GET() {
   }
 
   try {
-    const config = await getBusinessConfig();
+    const config = await getBusinessConfig(auth.user.idNegocio);
 
     if (!config.featureFlags?.imagenesCloudinary) {
       return NextResponse.json({

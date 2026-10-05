@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { normalizarFechaCaducidad } from "@/lib/validate-product";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ codigo: string }> }
 ) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const prisma = tenantDb(auth.user.idNegocio);
   try {
     const { codigo } = await params;
     const producto = await prisma.producto.findUnique({
-      where: { codigoItem: codigo },
+      where: claveProducto(codigo),
     });
 
     if (!producto) {
@@ -56,6 +62,7 @@ export async function PATCH(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
   const { codigo } = await params;
 
@@ -68,7 +75,7 @@ export async function PATCH(
 
   try {
     const existente = await prisma.producto.findUnique({
-      where: { codigoItem: codigo },
+      where: claveProducto(codigo),
     });
     if (!existente) {
       return NextResponse.json(
@@ -291,7 +298,7 @@ export async function PATCH(
 
     const actualizado = await prisma.$transaction(async (tx) => {
       const producto = await tx.producto.update({
-        where: { codigoItem: codigo },
+        where: claveProducto(codigo),
         data,
       });
 

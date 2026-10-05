@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA"];
 
@@ -13,6 +14,7 @@ export async function PATCH(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
   const { id } = await params;
 
@@ -87,7 +89,7 @@ export async function PATCH(
         const fisicos = existente.items.filter((i) => !i.producto.esServicio && i.cantidad > 0);
         for (const item of fisicos) {
           await tx.producto.update({
-            where: { codigoItem: item.codigoItem },
+            where: claveProducto(item.codigoItem),
             data: { stockActual: { increment: item.cantidad } },
           });
         }

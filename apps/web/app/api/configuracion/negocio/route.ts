@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@papeleria/database";
 import { getBusinessConfig } from "@/lib/feature-flags";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // RUTA DE CONFIGURACIÓN DE NEGOCIO (Marca Blanca)
@@ -15,7 +16,7 @@ export async function GET() {
   if (!session || session.rol !== "ADMINISTRADORA") {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
-  const config = await getBusinessConfig();
+  const config = await getBusinessConfig(session.idNegocio);
   return NextResponse.json({ config });
 }
 
@@ -25,11 +26,11 @@ export async function PUT(request: Request) {
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+    const prisma = tenantDb(auth.user.idNegocio);
     const user = auth.user;
 
     const { validateConfigInput } = await import("@/lib/validate-config");
-    const { prisma } = await import("@papeleria/database");
-    const { CONFIG_ID } = await import("@/lib/feature-flags");
+    const { CONFIG_PROPIA } = await import("@/lib/feature-flags");
     const { buildSignedConfig } = await import("@/lib/config-signing");
 
     const body = await request.json();
@@ -38,7 +39,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    const previa = await prisma.configuracionNegocio.findUnique({ where: { id: CONFIG_ID } });
+    const previa = await prisma.configuracionNegocio.findUnique({ where: CONFIG_PROPIA });
     const proximaVersion = (previa?.configVersion ?? 0) + 1;
 
     // Fase Pulido (bug de toggles fantasma): deep merge de flags. Aunque un
@@ -51,7 +52,7 @@ export async function PUT(request: Request) {
     );
 
     await prisma.configuracionNegocio.update({
-      where: { id: CONFIG_ID },
+      where: CONFIG_PROPIA,
       data: {
         nombreNegocio: parsed.data.nombreNegocio,
         tipoNegocio: parsed.data.tipoNegocio,
@@ -89,7 +90,7 @@ export async function PUT(request: Request) {
       }),
       // Fase B: la relectura firmada es independiente de la auditoría;
       // se ejecuta en paralelo a la bitácora para recortar latencia.
-      getBusinessConfig(),
+      getBusinessConfig(user.idNegocio),
     ]);
 
     return NextResponse.json({ ok: true, ...buildSignedConfig(config) });

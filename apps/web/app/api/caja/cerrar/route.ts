@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { calcularArqueo, round2 } from "@/lib/cash";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // POST /api/caja/cerrar
@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;

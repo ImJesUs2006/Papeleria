@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { executeReturn, ReturnError } from "@/lib/returns";
+import { tenantDb } from "@/lib/tenant";
 
 const MAPA_REEMBOLSO: Record<string, string> = {
   EFECTIVO: "EFECTIVO",
@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const { searchParams } = new URL(request.url);
   const folioVenta = searchParams.get("folioVenta");
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;
@@ -81,7 +83,7 @@ export async function POST(request: Request) {
   // desactivado, porque una venta pagada con puntos DEBE poder devolverse;
   // `executeReturn` confirma que la venta original fue de puntos.
   if (tipo === "DEVOLUCION" && body.metodoReembolso !== "PUNTOS_MONEDERO") {
-    const config = await getBusinessConfig();
+    const config = await getBusinessConfig(user.idNegocio);
     const requerido = MAPA_REEMBOLSO[body.metodoReembolso as string];
     if (!requerido || !config.metodosPago.includes(requerido as any)) {
       return NextResponse.json(
@@ -97,7 +99,7 @@ export async function POST(request: Request) {
       orderBy: { horaApertura: "desc" },
     });
 
-    const config = await getBusinessConfig();
+    const config = await getBusinessConfig(user.idNegocio);
     const resultado = await prisma.$transaction((tx) =>
       executeReturn(
         tx,

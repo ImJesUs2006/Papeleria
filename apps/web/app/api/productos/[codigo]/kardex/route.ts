@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 // ============================================================
 // GET /api/productos/[codigo]/kardex?limite=100
@@ -17,6 +18,7 @@ export async function GET(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const { codigo } = await params;
   const url = new URL(request.url);
@@ -26,7 +28,7 @@ export async function GET(
     : 100;
 
   const producto = await prisma.producto.findUnique({
-    where: { codigoItem: codigo },
+    where: claveProducto(codigo),
     select: { codigoItem: true, descripcion: true, stockActual: true },
   });
   if (!producto) {

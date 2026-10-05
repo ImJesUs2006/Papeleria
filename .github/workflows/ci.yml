@@ -64,7 +64,7 @@ jobs:
         run: npm run db:generate
       - name: Aplicar esquema y sembrar datos
         run: |
-          npx prisma db push --schema packages/database/prisma/schema.prisma --skip-generate
+          npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
           npm run db:seed
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium

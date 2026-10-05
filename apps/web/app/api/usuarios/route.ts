@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { hash } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
+import { claveUsuario } from "@/lib/tenant-keys";
 
 // ============================================================
 // /api/usuarios  (solo ADMINISTRADORA)
@@ -16,6 +17,7 @@ export async function GET() {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const usuarios = await prisma.usuario.findMany({
     orderBy: [{ activa: "desc" }, { nombre: "asc" }],
@@ -42,6 +44,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
   const permisoReportes = permisos("permisoReportes");
 
   try {
-    const existe = await prisma.usuario.findUnique({ where: { username } });
+    const existe = await prisma.usuario.findUnique({ where: claveUsuario(username) });
     if (existe) {
       return NextResponse.json({ error: "El usuario ya existe" }, { status: 409 });
     }

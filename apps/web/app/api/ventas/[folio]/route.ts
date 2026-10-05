@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { calcularDevuelto } from "@/lib/returns";
+import { tenantDb } from "@/lib/tenant";
 
 // GET /api/ventas/[folio] → venta con cantidades disponibles para devolver.
 export async function GET(
@@ -12,6 +12,7 @@ export async function GET(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const { folio } = await params;
 
   try {

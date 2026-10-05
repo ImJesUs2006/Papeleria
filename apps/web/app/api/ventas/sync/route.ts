@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { prisma, Prisma } from "@papeleria/database";
+import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { puedeCobrar } from "@/lib/permisos";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
 import { elegirPrecioUnitario, ivaFraccion, sufijoFolio, fechaFolio } from "@/lib/sales";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 // Equivalencias entre el método que envía el POS y el catálogo del negocio.
 const MAPA_METODO: Record<string, string> = {
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
   if (!puedeCobrar(user)) {
     return NextResponse.json({ error: "Tu usuario no tiene permiso de cobro" }, { status: 403 });
@@ -69,7 +72,7 @@ export async function POST(request: Request) {
   );
 
   try {
-    const config = await getBusinessConfig();
+    const config = await getBusinessConfig(user.idNegocio);
     const politicaStockOffline = config.politicaStockOffline;
 
     const resultados = await prisma.$transaction(
@@ -293,7 +296,7 @@ export async function POST(request: Request) {
             });
             if (!l.esServicio) {
               await tx.producto.update({
-                where: { codigoItem: l.codigoItem },
+                where: claveProducto(l.codigoItem),
                 data: { stockActual: { decrement: l.cantidad } },
               });
             }

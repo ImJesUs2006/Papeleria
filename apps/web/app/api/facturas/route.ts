@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma, Prisma } from "@papeleria/database";
+import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { CLAVES_USO_CFDI } from "@/lib/validate-config";
 import { tieneDatosFiscales } from "@/lib/cliente-fiscal";
+import { tenantDb } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   try {
     const { searchParams } = new URL(request.url);
@@ -108,6 +110,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: unknown;

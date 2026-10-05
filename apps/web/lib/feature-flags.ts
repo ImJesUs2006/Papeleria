@@ -1,4 +1,3 @@
-import { prisma } from "@papeleria/database";
 import type { Prisma } from "@papeleria/database";
 import type {
   BusinessConfig,
@@ -21,6 +20,8 @@ import {
   DEFAULT_PUNTOS_CONFIG,
 } from "@/lib/business-types";
 import { buildSignedConfig } from "@/lib/config-signing";
+import { tenantDb } from "@/lib/tenant";
+import { CONFIG_PROPIA } from "@/lib/snapshots";
 
 // ============================================================
 // Feature Flags con autoridad SERVIDOR.
@@ -29,7 +30,6 @@ import { buildSignedConfig } from "@/lib/config-signing";
 // queda denegado a nivel API cuando hay conexión.
 // ============================================================
 
-const CONFIG_ID = 1;
 
 /**
  * Normaliza flags crudos a una FeatureFlags completa con TODAS las llaves.
@@ -133,9 +133,9 @@ function normalizeDatosFiscales(raw: Prisma.JsonValue | null): DatosFiscales | n
   return out;
 }
 
-export async function getBusinessConfig(): Promise<BusinessConfig> {
-  const row = await prisma.configuracionNegocio.findUnique({
-    where: { id: CONFIG_ID },
+export async function getBusinessConfig(idNegocio: string): Promise<BusinessConfig> {
+  const row = await tenantDb(idNegocio).configuracionNegocio.findUnique({
+    where: CONFIG_PROPIA,
   });
 
   if (!row) {
@@ -203,14 +203,14 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
   return base;
 }
 
-export async function isSetupPendiente(): Promise<boolean> {
-  const config = await getBusinessConfig();
+export async function isSetupPendiente(idNegocio: string): Promise<boolean> {
+  const config = await getBusinessConfig(idNegocio);
   return config.setupPendiente;
 }
 
 /** Cache firmada para sincronización offline (entrega sessionKey una vez). */
-export async function getSignedBusinessConfig() {
-  const config = await getBusinessConfig();
+export async function getSignedBusinessConfig(idNegocio: string) {
+  const config = await getBusinessConfig(idNegocio);
   return buildSignedConfig(config);
 }
 
@@ -223,8 +223,8 @@ const FLAG_TO_MODULO: Record<string, string> = {
 };
 
 /** Middleware de flag: deniega si el módulo no está habilitado en el negocio. */
-export async function requireFeature(flag: keyof FeatureFlags) {
-  const config = await getBusinessConfig();
+export async function requireFeature(flag: keyof FeatureFlags, idNegocio: string) {
+  const config = await getBusinessConfig(idNegocio);
   if (!config.featureFlags[flag]) {
     return {
       allowed: false as const,
@@ -235,4 +235,4 @@ export async function requireFeature(flag: keyof FeatureFlags) {
   return { allowed: true as const };
 }
 
-export { CONFIG_ID };
+export { CONFIG_PROPIA };

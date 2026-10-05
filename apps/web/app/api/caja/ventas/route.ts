@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/caja/ventas → tickets de la sesión vigente
@@ -12,6 +12,7 @@ export async function GET() {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const sesion = await prisma.sesionCaja.findFirst({
     where: { estado: { in: ["ABIERTA", "EN_CIERRE"] } },

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { buildExcelBuffer } from "@/lib/excel";
+import { tenantDb } from "@/lib/tenant";
 
 const MODULOS_VALIDOS = [
   "PUNTO_VENTA",
@@ -27,6 +27,7 @@ export async function GET(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   try {
     const { searchParams } = new URL(request.url);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { getBusinessConfig } from "@/lib/feature-flags";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // POST /api/caja/abrir  (autenticado; usa el usuario real del JWT)
@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const config = await getBusinessConfig();
+  const config = await getBusinessConfig(user.idNegocio);
   const fondoBruto = Number(body?.fondoInicial);
   const trajoFondo =
     typeof body?.fondoInicial !== "undefined" &&

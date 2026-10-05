@@ -19,6 +19,8 @@ export async function getSession(): Promise<AuthPayload | null> {
     where: { idPersona: payload.idPersona },
     select: {
       activa: true,
+      idNegocio: true,
+      negocio: { select: { activo: true } },
       nombre: true,
       rol: true,
       permisoCobrar: true,
@@ -26,10 +28,13 @@ export async function getSession(): Promise<AuthPayload | null> {
       permisoReportes: true,
     },
   });
-  if (!user || !user.activa) return null;
+  // Negocio suspendido ⇒ nadie de ese negocio opera.
+  if (!user || !user.activa || !user.negocio?.activo) return null;
 
   return {
     ...payload,
+    // El negocio SIEMPRE sale de la BD (nunca del token ni del cliente).
+    idNegocio: user.idNegocio,
     nombre: user.nombre,
     rol: user.rol,
     permisoCobrar: user.permisoCobrar,

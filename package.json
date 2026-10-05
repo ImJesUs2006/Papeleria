@@ -17,6 +17,8 @@
     "tauri:build": "tauri build",
     "db:generate": "turbo db:generate",
     "db:push": "turbo db:push",
+    "db:migrate": "npm run db:migrate -w @papeleria/database",
+    "db:deploy": "npm run db:deploy -w @papeleria/database",
     "db:seed": "turbo db:seed",
     "db:studio": "turbo db:studio"
   },

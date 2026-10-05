@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@papeleria/database";
+import { tenantDb } from "@/lib/tenant";
 
 export async function GET() {
   try {
@@ -9,6 +9,7 @@ export async function GET() {
     if (!session) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
+    const prisma = tenantDb(session.idNegocio);
 
     // canPurge: isRoot ⇒ sí; si no, ADMINISTRADORA con TODOS los permisos
     // de módulo activos (autoritativo desde la base, no del token).

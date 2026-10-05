@@ -4,6 +4,7 @@ import {
   puntosGanadosPorCompra,
   puntosRequeridos,
 } from "./fidelidad";
+import { claveProducto } from "./tenant-keys";
 
 export const METODOS_PAGO = [
   "EFECTIVO",
@@ -240,7 +241,7 @@ export async function executeSale(
     }
 
     const producto = await tx.producto.findUnique({
-      where: { codigoItem: item.codigoItem },
+      where: claveProducto(item.codigoItem),
     });
 
     if (!producto || !producto.activo) {

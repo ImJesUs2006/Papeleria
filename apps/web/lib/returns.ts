@@ -2,6 +2,7 @@ import type { Prisma } from "@papeleria/database";
 import { round2, ivaFraccion, sufijoFolio, fechaFolio } from "./sales";
 import { registrarMovimientosKardex } from "./kardex";
 import { puntosGanadosPorCompra, puntosRequeridos } from "./fidelidad";
+import { claveProducto } from "./tenant-keys";
 
 export const TIPOS_DEVOLUCION = ["DEVOLUCION", "NOTA_CREDITO"] as const;
 export const METODOS_REEMBOLSO = [
@@ -251,7 +252,7 @@ export async function executeReturn(
   );
   for (const c of cantidadesReales) {
     await tx.producto.update({
-      where: { codigoItem: c.codigoItem },
+      where: claveProducto(c.codigoItem),
       data: { stockActual: { increment: c.cantidad } },
     });
   }

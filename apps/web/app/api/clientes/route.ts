@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { round2 } from "@/lib/sales";
 import { calcularNivel } from "@/lib/fidelidad";
 import { RFC_CLIENTE_SCHEMA, RAZON_SOCIAL_SCHEMA } from "@/lib/cliente-fiscal";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/clientes?q=...&limit=...&soloConDeuda=...
@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   let body: unknown;
   try {

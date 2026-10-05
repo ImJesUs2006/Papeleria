@@ -1,6 +1,7 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
 import { ivaFraccion, round2, sufijoFolio, fechaFolio } from "./sales";
+import { claveProducto } from "./tenant-keys";
 
 // ============================================================
 // Sistema de Apartados (Layaways) — Fase 10 / C3.
@@ -112,7 +113,7 @@ export async function crearApartado(
     }
 
     const producto = await tx.producto.findUnique({
-      where: { codigoItem: item.codigoItem },
+      where: claveProducto(item.codigoItem),
     });
     if (!producto || !producto.activo) {
       throw new ApartadoError(`Producto no encontrado: ${item.codigoItem}`, 404);

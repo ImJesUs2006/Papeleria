@@ -27,7 +27,7 @@ docker compose up -d
 
 # 4) Esquema + datos de prueba
 cd packages/database
-npx prisma db push
+npx prisma migrate deploy   # aplica las migraciones versionadas
 npx prisma db seed
 
 # 5) Aplicación

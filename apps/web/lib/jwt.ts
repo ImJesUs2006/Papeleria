@@ -2,6 +2,8 @@ import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 
 export interface AuthPayload extends JWTPayload {
   idPersona: string;
+  /** Negocio (arrendatario) al que pertenece la sesión. */
+  idNegocio: string;
   nombre: string;
   rol: "ADMINISTRADORA" | "CAJERA";
   // Permisos granulares (Fase 9). Ausentes en tokens antiguos ⇒ true.

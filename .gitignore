@@ -20,3 +20,6 @@ playwright/.cache/
 # Tauri
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# Respaldos locales de la base
+backups/

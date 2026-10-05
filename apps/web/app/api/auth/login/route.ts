@@ -3,10 +3,31 @@ import { prisma } from "@papeleria/database";
 import { compare } from "bcryptjs";
 import { signToken } from "@/lib/auth";
 import { limpiarIntentos, registrarFallo, segundosBloqueado } from "@/lib/rate-limit";
+import { tenantDb } from "@/lib/tenant";
+import { claveUsuario } from "@/lib/tenant-keys";
+import { CONFIG_PROPIA } from "@/lib/snapshots";
+
+// ============================================================
+// POST /api/auth/login   { negocio?, username, password }
+//
+// Multi-tenant: el usuario es único POR negocio, así que el login
+// resuelve primero el negocio por su código. Si la instalación tiene
+// un solo negocio, el código es opcional (se asume ese).
+// Único punto donde se usa el cliente global: aún no hay sesión.
+// ============================================================
+
+async function resolverNegocio(codigo: unknown) {
+  const limpio = typeof codigo === "string" ? codigo.trim().toLowerCase() : "";
+  if (limpio) {
+    return prisma.negocio.findUnique({ where: { codigo: limpio } });
+  }
+  const negocios = await prisma.negocio.findMany({ take: 2 });
+  return negocios.length === 1 ? negocios[0] : null;
+}
 
 export async function POST(request: Request) {
   try {
-    const { username, password } = await request.json();
+    const { username, password, negocio: codigoNegocio } = await request.json();
 
     if (!username || !password) {
       return NextResponse.json(
@@ -14,7 +35,6 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
     if (typeof username !== "string" || typeof password !== "string") {
       return NextResponse.json(
         { error: "Usuario y contraseña requeridos" },
@@ -23,12 +43,13 @@ export async function POST(request: Request) {
     }
 
     // Anti fuerza bruta: 5 fallos en 15 min bloquean la combinación
-    // usuario + IP durante 15 min.
+    // negocio + usuario + IP durante 15 min.
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       request.headers.get("x-real-ip") ||
       "local";
-    const llave = `${username.trim().toLowerCase()}|${ip}`;
+    const codigoLlave = typeof codigoNegocio === "string" ? codigoNegocio.trim().toLowerCase() : "";
+    const llave = `${codigoLlave}|${username.trim().toLowerCase()}|${ip}`;
     const espera = segundosBloqueado(llave);
     if (espera > 0) {
       return NextResponse.json(
@@ -37,16 +58,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await prisma.usuario.findUnique({
-      where: { username },
-    });
+    const negocio = await resolverNegocio(codigoNegocio);
+    if (!negocio && !codigoLlave) {
+      return NextResponse.json(
+        { error: "Indica el código de tu negocio", requiereNegocio: true },
+        { status: 400 }
+      );
+    }
+
+    // Negocio inexistente o suspendido responde igual que una contraseña
+    // incorrecta: no se revela qué negocios existen.
+    const db = negocio && negocio.activo ? tenantDb(negocio.idNegocio) : null;
+    const user = db
+      ? await db.usuario.findUnique({ where: claveUsuario(username) })
+      : null;
 
     const validPassword =
       user && user.activa ? await compare(password, user.passwordHash) : false;
-    if (!user || !validPassword) {
+    if (!db || !negocio || !user || !validPassword) {
       const bloqueada = registrarFallo(llave);
-      if (bloqueada) {
-        await prisma.bitacoraLog
+      if (bloqueada && db) {
+        await db.bitacoraLog
           .create({
             data: {
               idUsuario: user?.idPersona ?? null,
@@ -66,6 +98,7 @@ export async function POST(request: Request) {
 
     const token = await signToken({
       idPersona: user.idPersona,
+      idNegocio: negocio.idNegocio,
       nombre: user.nombre,
       rol: user.rol,
       permisoCobrar: user.permisoCobrar ?? true,
@@ -73,12 +106,12 @@ export async function POST(request: Request) {
       permisoReportes: user.permisoReportes ?? true,
     });
 
-    await prisma.$transaction([
-      prisma.usuario.update({
+    await db.$transaction([
+      db.usuario.update({
         where: { idPersona: user.idPersona },
         data: { ultimoLoginAt: new Date() },
       }),
-      prisma.bitacoraLog.create({
+      db.bitacoraLog.create({
         data: {
           idUsuario: user.idPersona,
           accion: "Login exitoso",
@@ -87,8 +120,8 @@ export async function POST(request: Request) {
       }),
     ]);
 
-    const config = await prisma.configuracionNegocio.findUnique({
-      where: { id: 1 },
+    const config = await db.configuracionNegocio.findUnique({
+      where: CONFIG_PROPIA,
       select: { setupPendiente: true },
     });
 
@@ -103,6 +136,7 @@ export async function POST(request: Request) {
       idPersona: user.idPersona,
       nombre: user.nombre,
       rol: user.rol,
+      negocio: { codigo: negocio.codigo, nombre: negocio.nombre },
       permisoCobrar: user.permisoCobrar ?? true,
       permisoInventario: user.permisoInventario ?? true,
       permisoReportes: user.permisoReportes ?? true,

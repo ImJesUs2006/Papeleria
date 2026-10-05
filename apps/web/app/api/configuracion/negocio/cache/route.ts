@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getBusinessConfig } from "@/lib/feature-flags";
+import { requireAuth } from "@/lib/auth";
+import { getSignedBusinessConfig } from "@/lib/feature-flags";
 
 // ============================================================
 // GET /api/configuracion/negocio/cache
@@ -10,8 +11,10 @@ import { getBusinessConfig } from "@/lib/feature-flags";
 // ============================================================
 
 export async function GET() {
-  const config = await getBusinessConfig();
-  const { getSignedBusinessConfig } = await import("@/lib/feature-flags");
-  const signed = await getSignedBusinessConfig();
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const signed = await getSignedBusinessConfig(auth.user.idNegocio);
   return NextResponse.json(signed);
 }

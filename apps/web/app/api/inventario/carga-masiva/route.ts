@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { parseExcelBuffer } from "@/lib/excel";
 import { getSession } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 interface ValidationError {
   row: number;
@@ -140,6 +141,7 @@ export async function POST(request: Request) {
     if (!session) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
+    const prisma = tenantDb(session.idNegocio);
     if (session.rol !== "ADMINISTRADORA") {
       return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
     }
@@ -254,7 +256,7 @@ export async function POST(request: Request) {
       await prisma.$transaction([
         ...allProducts.map((p) =>
           prisma.producto.upsert({
-            where: { codigoItem: p.codigoItem },
+            where: claveProducto(p.codigoItem),
             update: {
               descripcion: p.descripcion,
               precioUnitario: p.precioUnitario,

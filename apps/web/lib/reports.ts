@@ -1,4 +1,4 @@
-import { prisma } from "@papeleria/database";
+import type { PrismaClient } from "@papeleria/database";
 import type { ExportColumn } from "@/lib/export-exceljs";
 
 // ============================================================
@@ -94,7 +94,7 @@ function filtrarUsuario(where: any, usuario?: string | null): any {
 
 // Auditoría de Caja (Fase 10): los ingresos de sesiones ANULADAS se
 // descartan de los reportes de ventas; los registros permanecen.
-async function cajasAnuladas(): Promise<string[]> {
+async function cajasAnuladas(prisma: PrismaClient): Promise<string[]> {
   const filas = await prisma.sesionCaja.findMany({
     where: { estado: "ANULADA" },
     select: { idCaja: true },
@@ -102,12 +102,14 @@ async function cajasAnuladas(): Promise<string[]> {
   return filas.map((s) => s.idCaja);
 }
 
-async function excluirAnuladas(): Promise<Record<string, unknown>> {
-  const ids = await cajasAnuladas();
+async function excluirAnuladas(prisma: PrismaClient): Promise<Record<string, unknown>> {
+  const ids = await cajasAnuladas(prisma);
   return ids.length ? { idCaja: { notIn: ids } } : {};
 }
 
+/** `prisma` debe ser el cliente con alcance de negocio (lib/tenant). */
 export async function getReporteData(
+  prisma: PrismaClient,
   tipo: string,
   params: ReporteParams
 ): Promise<ReporteData> {
@@ -178,7 +180,7 @@ export async function getReporteData(
       const whereVenta = filtrarUsuario(
         {
           ...rangoFecha(params.desde, params.hasta),
-          ...(await excluirAnuladas()),
+          ...(await excluirAnuladas(prisma)),
         },
         params.usuario
       );
@@ -224,7 +226,7 @@ export async function getReporteData(
         venta: filtrarUsuario(
           {
             ...rangoFecha(params.desde, params.hasta),
-            ...(await excluirAnuladas()),
+            ...(await excluirAnuladas(prisma)),
           },
           params.usuario
         ),
@@ -270,7 +272,7 @@ export async function getReporteData(
           venta: filtrarUsuario(
             {
               ...rangoFecha(params.desde, params.hasta),
-              ...(await excluirAnuladas()),
+              ...(await excluirAnuladas(prisma)),
             },
             params.usuario
           ),

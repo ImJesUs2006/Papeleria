@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { calcularNivel, equivalenciaPuntos } from "@/lib/fidelidad";
 import { RFC_CLIENTE_SCHEMA, RAZON_SOCIAL_SCHEMA } from "@/lib/cliente-fiscal";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET    /api/clientes/[id] → ficha + historial de compras + monedero
@@ -19,6 +19,7 @@ export async function GET(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const { id } = await params;
 
@@ -109,6 +110,7 @@ export async function PATCH(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const { id } = await params;
 
@@ -172,6 +174,7 @@ export async function DELETE(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const { id } = await params;
 

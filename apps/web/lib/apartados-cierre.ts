@@ -3,6 +3,7 @@ import { registrarMovimientosKardex } from "./kardex";
 import { round2, sufijoFolio, fechaFolio } from "./sales";
 import { puntosGanadosPorCompra } from "./fidelidad";
 import { ApartadoError, type ApartadoContext } from "./apartados";
+import { claveProducto } from "./tenant-keys";
 
 // ============================================================
 // Cierre del ciclo del apartado: LIQUIDAR (materializa la venta) o
@@ -192,7 +193,7 @@ export async function cancelarApartado(
 
   for (const l of fisicas) {
     await tx.producto.update({
-      where: { codigoItem: l.codigoItem },
+      where: claveProducto(l.codigoItem),
       data: { stockActual: { increment: l.cantidad } },
     });
   }

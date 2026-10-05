@@ -8,7 +8,12 @@
 // parámetro para poder probarse en aislamiento (Vitest).
 // ============================================================
 
-export const CONFIG_ID = 1;
+/**
+ * Filtro de "la configuración del negocio de la sesión". Va vacío a
+ * propósito: el cliente con alcance de negocio (lib/tenant) le pone el
+ * `idNegocio`. Con el cliente global falla, que es lo deseado.
+ */
+export const CONFIG_PROPIA = {} as { idNegocio: string };
 export const MOTIVO_REINICIO = "Reinicio de fábrica (factory reset)";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -132,7 +137,7 @@ interface SnapshotDb {
  */
 export async function captureSnapshotState(db: SnapshotDb): Promise<SnapshotJson> {
   const [configRow, sesiones, ventasAgg] = await Promise.all([
-    db.configuracionNegocio.findUnique({ where: { id: CONFIG_ID } }),
+    db.configuracionNegocio.findUnique({ where: CONFIG_PROPIA }),
     db.sesionCaja.findMany({
       orderBy: { horaApertura: "desc" },
       take: 50,
@@ -180,7 +185,7 @@ export async function resetNegocio(tx: ResetTx, input: ResetInput) {
   const [datosJson, proximaVersion] = await Promise.all([
     captureSnapshotState(tx),
     tx.configuracionNegocio
-      .findUnique({ where: { id: CONFIG_ID } })
+      .findUnique({ where: CONFIG_PROPIA })
       .then((r) => r?.configVersion ?? 0),
   ]);
 
@@ -193,7 +198,7 @@ export async function resetNegocio(tx: ResetTx, input: ResetInput) {
   });
 
   await tx.configuracionNegocio.update({
-    where: { id: CONFIG_ID },
+    where: CONFIG_PROPIA,
     data: {
       setupPendiente: true,
       configVersion: proximaVersion + 1,
@@ -241,7 +246,7 @@ export class SnapshotError extends Error {
 export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
   const [row, configRow] = await Promise.all([
     tx.snapshotSeguridad.findUnique({ where: { id: input.id } }),
-    tx.configuracionNegocio.findUnique({ where: { id: CONFIG_ID } }),
+    tx.configuracionNegocio.findUnique({ where: CONFIG_PROPIA }),
   ]);
   if (!row) {
     throw new SnapshotError("Snapshot no encontrado", 404);
@@ -256,7 +261,7 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
   const proximaVersion = configRow?.configVersion ?? 0;
 
   await tx.configuracionNegocio.update({
-    where: { id: CONFIG_ID },
+    where: CONFIG_PROPIA,
     data: {
       nombreNegocio: String(cfg.nombreNegocio ?? "Mi Negocio"),
       tipoNegocio: cfg.tipoNegocio as any,

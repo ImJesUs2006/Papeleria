@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { getSession } from "@/lib/auth";
 import { buildStyledWorkbook } from "@/lib/export-exceljs";
 import { getReporteData, ReporteError } from "@/lib/reports";
 import { getBusinessConfig } from "@/lib/feature-flags";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/reportes  → descarga Excel ejecutiva (exceljs)
@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     if (!session) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
+    const prisma = tenantDb(session.idNegocio);
     if (session.rol !== "ADMINISTRADORA") {
       return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
     }
@@ -29,11 +30,11 @@ export async function GET(request: Request) {
     const usuario = searchParams.get("usuario");
     const modulo = searchParams.get("modulo");
 
-    const reporte = await getReporteData(tipo, { desde, hasta, idCaja, usuario, modulo });
+    const reporte = await getReporteData(prisma, tipo, { desde, hasta, idCaja, usuario, modulo });
 
     // Reportes Dinámicos (Fase 2): el encabezado usa el color de marca
     // del negocio y el inventario resalta en rojo el stock bajo su mínimo.
-    const config = await getBusinessConfig();
+    const config = await getBusinessConfig(session.idNegocio);
 
     // Kardex (Fase 3): el reporte de inventario incluye una hoja con los
     // movimientos inmutable —de más recientes a más antiguos— para trazar

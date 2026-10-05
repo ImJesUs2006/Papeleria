@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { tieneOtroAdminActivo } from "@/lib/usuarios";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // /api/usuarios/[id]  (solo ADMINISTRADORA)
@@ -20,6 +20,7 @@ export async function PATCH(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
   const { id } = await params;
 
@@ -84,7 +85,7 @@ export async function PATCH(
       target.activa &&
       ((data.rol !== undefined && data.rol !== "ADMINISTRADORA") || data.activa === false);
 
-    if (quitaAdmin && !(await tieneOtroAdminActivo(target.idPersona))) {
+    if (quitaAdmin && !(await tieneOtroAdminActivo(prisma, target.idPersona))) {
       return NextResponse.json(
         { error: "No se puede dejar el sistema sin administradora activa" },
         { status: 409 }
@@ -134,6 +135,7 @@ export async function DELETE(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
   const { id } = await params;
 
@@ -167,7 +169,7 @@ export async function DELETE(
   }
 
   if (target.rol === "ADMINISTRADORA" && target.activa) {
-    if (!(await tieneOtroAdminActivo(target.idPersona))) {
+    if (!(await tieneOtroAdminActivo(prisma, target.idPersona))) {
       return NextResponse.json(
         { error: "No se puede eliminar la última administradora activa" },
         { status: 409 }

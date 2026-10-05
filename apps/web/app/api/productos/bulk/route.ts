@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { prisma, type Prisma } from "@papeleria/database";
+import { type Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import {
   calcularAjustePrecios,
   validarCodigosSeleccion,
 } from "@/lib/bulk-ops";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 // ============================================================
 // POST /api/productos/bulk — Operaciones masivas (Fase 10):
@@ -19,6 +21,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
       const actualizados = await prisma.$transaction(async (tx) => {
         for (const a of resultado.aplicados) {
           await tx.producto.update({
-            where: { codigoItem: a.codigoItem },
+            where: claveProducto(a.codigoItem),
             data: { precioUnitario: a.precioNuevo },
           });
         }
@@ -139,7 +142,7 @@ export async function POST(request: Request) {
       await prisma.$transaction(async (tx) => {
         for (const c of codigos) {
           await tx.producto.update({
-            where: { codigoItem: c },
+            where: claveProducto(c),
             data: { activo: false },
           });
         }

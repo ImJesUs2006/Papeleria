@@ -8,6 +8,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { BarcodeScanner } from "@/components/pos/barcode-scanner";
 import { CartPanel } from "@/components/pos/cart-panel";
 import { ProductGrid } from "@/components/pos/product-grid";
+import { PosToastHost } from "@/components/pos/pos-toast";
 import { useCartStore } from "@/store/cart";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,10 @@ interface ProductoRapido {
   stockActual: number;
   permiteDecimales?: boolean;
   esServicio?: boolean;
+  precioMayoreo?: number | null;
+  tasaIva?: number | null;
+  exentoIva?: boolean;
+  tasaIeps?: number | null;
 }
 
 export default function CobroPage() {
@@ -115,6 +120,10 @@ export default function CobroPage() {
         cantidad: 1,
         permiteDecimales: p.permiteDecimales,
         esServicio: p.esServicio,
+        precioMayoreo: p.precioMayoreo ?? null,
+        tasaIva: p.tasaIva ?? null,
+        exentoIva: p.exentoIva === true,
+        tasaIeps: p.tasaIeps ?? null,
       });
     } catch {
       setCodigoError("No se pudo conectar con el servidor");
@@ -125,6 +134,7 @@ export default function CobroPage() {
 
   return (
     <DashboardLayout>
+      <PosToastHost />
       <div className="flex flex-1 h-full">
         {/* Left: Scanner + catálogo visual */}
         <div className="flex-1 flex flex-col p-6 overflow-y-auto">

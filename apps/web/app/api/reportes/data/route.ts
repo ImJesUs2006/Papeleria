@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getReporteData, ReporteError } from "@/lib/reports";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/reportes/data → vista previa interactiva (JSON).
@@ -18,15 +19,18 @@ export async function GET(request: Request) {
   if (session.rol !== "ADMINISTRADORA") {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
+  const prisma = tenantDb(session.idNegocio);
 
   const { searchParams } = new URL(request.url);
   const tipo = searchParams.get("tipo") || "inventario";
   const desde = searchParams.get("desde");
   const hasta = searchParams.get("hasta");
   const idCaja = searchParams.get("idCaja");
+  const usuario = searchParams.get("usuario");
+  const modulo = searchParams.get("modulo");
 
   try {
-    const reporte = await getReporteData(tipo, { desde, hasta, idCaja });
+    const reporte = await getReporteData(prisma, tipo, { desde, hasta, idCaja, usuario, modulo });
     const totalFilas = reporte.rows.length;
     const rows = reporte.rows.slice(0, MAX_PREVIEW).map((r) =>
       r.map((c) => (typeof c === "number" ? c : String(c ?? "")))

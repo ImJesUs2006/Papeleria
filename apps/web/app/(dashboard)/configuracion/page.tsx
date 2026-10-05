@@ -17,6 +17,7 @@ import {
   Printer,
   Boxes,
   FileText,
+  Coins,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { UserManagement } from "@/components/configuracion/user-management";
@@ -40,11 +41,13 @@ import {
   VISTAS_POS,
   DEFAULT_ANCHO_TICKET,
   DEFAULT_VISTA_POS,
+  DEFAULT_PUNTOS_CONFIG,
   type BusinessConfig,
   type DatosBancarios,
   type DatosFiscales,
   type FeatureFlags,
   type MetodoPagoConfig,
+  type PuntosConfig,
   type TemaBase,
   type AnchoTicket,
   type VistaPOS,
@@ -58,6 +61,8 @@ const FLAG_LABELS: Record<keyof FeatureFlags, string> = {
   dashboard: "Dashboard de métricas",
   proveedores: "Proveedores y pedidos",
   bitacora: "Bitácora de auditoría",
+  recargas: "Recargas (Control de Caja)",
+  imagenesCloudinary: "Imágenes de producto (Cloudinary)",
 };
 
 /** Tamaño máximo del logo en bytes (base64 ≈ 1 MB). */
@@ -107,6 +112,7 @@ function normalizeConfig(raw: any): BusinessConfig {
     tipoNegocio,
     moneda: typeof raw?.moneda === "string" ? raw.moneda : "MXN",
     ivaRate: Number.isFinite(iva) ? iva : 16,
+    preciosIncluyenIva: raw?.preciosIncluyenIva === true,
     featureFlags,
     metodosPago,
     politicaStockOffline:
@@ -141,8 +147,22 @@ function normalizeConfig(raw: any): BusinessConfig {
       const fiscales: DatosFiscales = {
         rfc: typeof fRaw.rfc === "string" ? fRaw.rfc : undefined,
         razonSocial: typeof fRaw.razonSocial === "string" ? fRaw.razonSocial : undefined,
+        curp: typeof fRaw.curp === "string" ? fRaw.curp : undefined,
         regimenFiscal: typeof fRaw.regimenFiscal === "string" ? fRaw.regimenFiscal : undefined,
+        usoCFDI: typeof fRaw.usoCFDI === "string" ? fRaw.usoCFDI : undefined,
         codigoPostal: typeof fRaw.codigoPostal === "string" ? fRaw.codigoPostal : undefined,
+        calle: typeof fRaw.calle === "string" ? fRaw.calle : undefined,
+        numExt: typeof fRaw.numExt === "string" ? fRaw.numExt : undefined,
+        numInt: typeof fRaw.numInt === "string" ? fRaw.numInt : undefined,
+        colonia: typeof fRaw.colonia === "string" ? fRaw.colonia : undefined,
+        municipio: typeof fRaw.municipio === "string" ? fRaw.municipio : undefined,
+        estado: typeof fRaw.estado === "string" ? fRaw.estado : undefined,
+        cp:
+          typeof fRaw.cp === "string"
+            ? fRaw.cp
+            : typeof fRaw.codigoPostal === "string"
+              ? fRaw.codigoPostal
+              : undefined,
       };
       const tieneAlgo = Object.values(fiscales).some((v) => typeof v === "string" && v.trim());
       return tieneAlgo ? fiscales : null;
@@ -154,9 +174,27 @@ function normalizeConfig(raw: any): BusinessConfig {
       typeof raw?.usarUbicaciones === "boolean" ? raw.usarUbicaciones : true,
     requerirFondoInicial:
       typeof raw?.requerirFondoInicial === "boolean" ? raw.requerirFondoInicial : true,
+    puntosConfig: normalizePuntosConfigLocal(raw?.puntosConfig),
     configVersion: Number.isFinite(Number(raw?.configVersion)) ? Number(raw.configVersion) : 1,
     setupPendiente: Boolean(raw?.setupPendiente),
   };
+}
+
+/** Normaliza la tasa del Puntos Monedero a valores seguros (Fase 12). */
+function normalizePuntosConfigLocal(raw: any): PuntosConfig {
+  const pesos =
+    typeof raw?.pesosCompraPorPunto === "number" &&
+    Number.isFinite(raw.pesosCompraPorPunto) &&
+    raw.pesosCompraPorPunto >= 1
+      ? Math.min(raw.pesosCompraPorPunto, 100000)
+      : DEFAULT_PUNTOS_CONFIG.pesosCompraPorPunto;
+  const valor =
+    typeof raw?.valorPuntoPesos === "number" &&
+    Number.isFinite(raw.valorPuntoPesos) &&
+    raw.valorPuntoPesos > 0
+      ? Math.min(raw.valorPuntoPesos, 10000)
+      : DEFAULT_PUNTOS_CONFIG.valorPuntoPesos;
+  return { pesosCompraPorPunto: pesos, valorPuntoPesos: valor };
 }
 
 export default function ConfiguracionPage() {
@@ -297,6 +335,13 @@ function NegocioConfigPanel() {
     });
   };
 
+  const setPuntoTasa = (campo: keyof PuntosConfig, valor: number) => {
+    if (guardando) return;
+    setConfig((c) =>
+      c ? { ...c, puntosConfig: { ...c.puntosConfig, [campo]: valor } } : c
+    );
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -326,6 +371,7 @@ const guardar = async () => {
           tipoNegocio: config.tipoNegocio,
           moneda: config.moneda,
           ivaRate: Number(config.ivaRate),
+          preciosIncluyenIva: config.preciosIncluyenIva === true,
           featureFlags: config.featureFlags,
           metodosPago: config.metodosPago,
           politicaStockOffline: config.politicaStockOffline,
@@ -340,6 +386,7 @@ const guardar = async () => {
           usarCaducidad: config.usarCaducidad,
           usarUbicaciones: config.usarUbicaciones,
           requerirFondoInicial: config.requerirFondoInicial,
+          puntosConfig: config.puntosConfig,
         }),
       });
       const data = await res.json();
@@ -504,6 +551,25 @@ const guardar = async () => {
           />
         </label>
       </div>
+
+      <label className="flex items-start gap-3 rounded-xl border border-surface-600 bg-surface-700/40 p-3">
+        <input
+          type="checkbox"
+          checked={config.preciosIncluyenIva === true}
+          onChange={(e) => setConfig({ ...config, preciosIncluyenIva: e.target.checked })}
+          className="mt-1"
+        />
+        <span>
+          <span className="block text-sm font-bold text-gray-100">
+            Mis precios ya incluyen impuestos
+          </span>
+          <span className="block text-xs text-muted">
+            Activado: el cliente paga el precio de etiqueta y el ticket desglosa el IVA. Desactivado:
+            el IVA se suma al precio al cobrar. Cada producto puede tener su propia tasa (0%, exento,
+            IEPS) desde Inventario.
+          </span>
+        </span>
+      </label>
 
       <div className="border-t border-surface-600 pt-4">
         <div className="flex items-center gap-2 mb-3">
@@ -873,6 +939,67 @@ const guardar = async () => {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="border-t border-surface-600 pt-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Coins className="h-4 w-4 text-neon-yellow" />
+          <span className="text-xs font-bold text-muted uppercase tracking-wider">
+            Puntos Monedero · Fidelización
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-xs text-muted mb-1 block">
+              Compra para ganar 1 punto ($MXN)
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={100000}
+              step={1}
+              value={config.puntosConfig.pesosCompraPorPunto}
+              onChange={(e) =>
+                setPuntoTasa(
+                  "pesosCompraPorPunto",
+                  Number(e.target.value) || DEFAULT_PUNTOS_CONFIG.pesosCompraPorPunto
+                )
+              }
+              className="input-dark"
+            />
+            <span className="mt-1 text-[11px] text-muted block">
+              Ej. 100: el cliente gana 1 punto por cada $100 que paga.
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted mb-1 block">
+              Valor de 1 punto al pagar ($MXN)
+            </span>
+            <input
+              type="number"
+              min={0.01}
+              max={10000}
+              step={0.05}
+              value={config.puntosConfig.valorPuntoPesos}
+              onChange={(e) =>
+                setPuntoTasa(
+                  "valorPuntoPesos",
+                  Number(e.target.value) || DEFAULT_PUNTOS_CONFIG.valorPuntoPesos
+                )
+              }
+              className="input-dark"
+            />
+            <span className="mt-1 text-[11px] text-muted block">
+              Ej. 1: cada punto cubre $1 al pagar una venta.
+            </span>
+          </label>
+        </div>
+        <p className="mt-2 text-[11px] text-muted">
+          Con el método{" "}
+          <span className="font-bold text-neon-yellow">PUNTOS_MONEDERO</span>{" "}
+          activo, la cajera canjea los puntos del cliente desde el POS. Los
+          puntos no ingresan a la caja: se descuentan del saldo del cliente.
+        </p>
       </div>
 
       <div>

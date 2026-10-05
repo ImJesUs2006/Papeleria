@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { parseExcelBuffer } from "@/lib/excel";
 import { getSession } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 interface ValidationError {
   row: number;
@@ -140,6 +141,7 @@ export async function POST(request: Request) {
     if (!session) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
+    const prisma = tenantDb(session.idNegocio);
     if (session.rol !== "ADMINISTRADORA") {
       return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
     }
@@ -222,10 +224,39 @@ export async function POST(request: Request) {
 
     // Batch upsert with transaction
     if (allProducts.length > 0) {
-      await prisma.$transaction(
-        allProducts.map((p) =>
+      // Kardex inmutable: se calcula el delta de existencia por producto
+      // (contra el stock previo) y se registra junto con el upsert.
+      const previos = await prisma.producto.findMany({
+        where: { codigoItem: { in: allProducts.map((p) => p.codigoItem) } },
+        select: { codigoItem: true, stockActual: true },
+      });
+      const stockPrevio = new Map(previos.map((p) => [p.codigoItem, Number(p.stockActual)]));
+      const movimientos: Array<{
+        codigoItem: string;
+        cantidadCambio: number;
+        tipo: "ENTRADA" | "AJUSTE";
+        motivo: string;
+        idUsuario: string;
+      }> = [];
+      for (const p of allProducts) {
+        const existia = stockPrevio.has(p.codigoItem);
+        const anterior = stockPrevio.get(p.codigoItem) ?? 0;
+        const delta = Math.round((Number(p.stockActual) - anterior) * 1000) / 1000;
+        stockPrevio.set(p.codigoItem, Number(p.stockActual));
+        if (delta === 0) continue;
+        movimientos.push({
+          codigoItem: p.codigoItem,
+          cantidadCambio: delta,
+          tipo: existia ? "AJUSTE" : "ENTRADA",
+          motivo: `Carga masiva Excel (${file.name})`.slice(0, 190),
+          idUsuario: session.idPersona,
+        });
+      }
+
+      await prisma.$transaction([
+        ...allProducts.map((p) =>
           prisma.producto.upsert({
-            where: { codigoItem: p.codigoItem },
+            where: claveProducto(p.codigoItem),
             update: {
               descripcion: p.descripcion,
               precioUnitario: p.precioUnitario,
@@ -250,8 +281,11 @@ export async function POST(request: Request) {
               fechaCaducidad: p.fechaCaducidad,
             },
           })
-        )
-      );
+        ),
+        ...(movimientos.length > 0
+          ? [prisma.movimientoKardex.createMany({ data: movimientos })]
+          : []),
+      ]);
     }
 
     await prisma.bitacoraLog.create({

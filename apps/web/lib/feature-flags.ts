@@ -1,10 +1,10 @@
-import { prisma } from "@papeleria/database";
 import type { Prisma } from "@papeleria/database";
 import type {
   BusinessConfig,
   DatosBancarios,
   DatosFiscales,
   FeatureFlags,
+  PuntosConfig,
   TemaBase,
 } from "@/lib/business-types";
 import {
@@ -17,8 +17,11 @@ import {
   DEFAULT_USAR_CADUCIDAD,
   DEFAULT_USAR_UBICACIONES,
   DEFAULT_REQUERIR_FONDO_INICIAL,
+  DEFAULT_PUNTOS_CONFIG,
 } from "@/lib/business-types";
 import { buildSignedConfig } from "@/lib/config-signing";
+import { tenantDb } from "@/lib/tenant";
+import { CONFIG_PROPIA } from "@/lib/snapshots";
 
 // ============================================================
 // Feature Flags con autoridad SERVIDOR.
@@ -27,7 +30,6 @@ import { buildSignedConfig } from "@/lib/config-signing";
 // queda denegado a nivel API cuando hay conexión.
 // ============================================================
 
-const CONFIG_ID = 1;
 
 /**
  * Normaliza flags crudos a una FeatureFlags completa con TODAS las llaves.
@@ -70,8 +72,25 @@ function normalizeMetodosPago(raw: Prisma.JsonValue | null): string[] {
   return raw.filter(
     (m): m is string =>
       typeof m === "string" &&
-      ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"].includes(m)
+      ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "PUNTOS_MONEDERO"].includes(m)
   );
+}
+
+/** Normaliza la tasa del Puntos Monedero (Fase 12) con valores seguros. */
+function normalizePuntosConfig(raw: Prisma.JsonValue | null): PuntosConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...DEFAULT_PUNTOS_CONFIG };
+  }
+  const obj = raw as Record<string, unknown>;
+  const pesos =
+    typeof obj.pesosCompraPorPunto === "number" && Number.isFinite(obj.pesosCompraPorPunto)
+      ? Math.min(Math.max(obj.pesosCompraPorPunto, 1), 100000)
+      : DEFAULT_PUNTOS_CONFIG.pesosCompraPorPunto;
+  const valor =
+    typeof obj.valorPuntoPesos === "number" && Number.isFinite(obj.valorPuntoPesos)
+      ? Math.min(Math.max(obj.valorPuntoPesos, 0.01), 10000)
+      : DEFAULT_PUNTOS_CONFIG.valorPuntoPesos;
+  return { pesosCompraPorPunto: pesos, valorPuntoPesos: valor };
 }
 
 /** Normaliza datosBancarios a un objeto tipado (filtra tipos no deseados). */
@@ -93,16 +112,30 @@ function normalizeDatosFiscales(raw: Prisma.JsonValue | null): DatosFiscales | n
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
   const pick = (k: string) => (typeof obj[k] === "string" ? String(obj[k]) : undefined);
-  const out: DatosFiscales = { rfc: pick("rfc"), razonSocial: pick("razonSocial"), regimenFiscal: pick("regimenFiscal"), codigoPostal: pick("codigoPostal") };
+  const out: DatosFiscales = {
+    rfc: pick("rfc"),
+    razonSocial: pick("razonSocial"),
+    curp: pick("curp"),
+    regimenFiscal: pick("regimenFiscal"),
+    usoCFDI: pick("usoCFDI"),
+    codigoPostal: pick("codigoPostal"),
+    calle: pick("calle"),
+    numExt: pick("numExt"),
+    numInt: pick("numInt"),
+    colonia: pick("colonia"),
+    municipio: pick("municipio"),
+    estado: pick("estado"),
+    cp: pick("cp") || pick("codigoPostal"),
+  };
   for (const key of Object.keys(out) as Array<keyof DatosFiscales>) {
     if (out[key] === undefined) delete out[key];
   }
   return out;
 }
 
-export async function getBusinessConfig(): Promise<BusinessConfig> {
-  const row = await prisma.configuracionNegocio.findUnique({
-    where: { id: CONFIG_ID },
+export async function getBusinessConfig(idNegocio: string): Promise<BusinessConfig> {
+  const row = await tenantDb(idNegocio).configuracionNegocio.findUnique({
+    where: CONFIG_PROPIA,
   });
 
   if (!row) {
@@ -111,6 +144,7 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       tipoNegocio: "PAPELERIA_RETAIL",
       moneda: "MXN",
       ivaRate: 16,
+      preciosIncluyenIva: false,
       featureFlags: DEFAULT_FEATURE_FLAGS,
       metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
       politicaStockOffline: "PERMITIR_NEGATIVO",
@@ -125,6 +159,7 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       usarCaducidad: DEFAULT_USAR_CADUCIDAD,
       usarUbicaciones: DEFAULT_USAR_UBICACIONES,
       requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
+      puntosConfig: { ...DEFAULT_PUNTOS_CONFIG },
       configVersion: 1,
       setupPendiente: true,
     };
@@ -139,6 +174,7 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
     tipoNegocio: row.tipoNegocio,
     moneda: row.moneda,
     ivaRate: Number(row.ivaRate),
+    preciosIncluyenIva: row.preciosIncluyenIva === true,
     featureFlags: normalizeFlags(row.featureFlags),
     metodosPago: normalizeMetodosPago(row.metodosPago) as BusinessConfig["metodosPago"],
     politicaStockOffline: row.politicaStockOffline as BusinessConfig["politicaStockOffline"],
@@ -158,6 +194,7 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       typeof row.requerirFondoInicial === "boolean"
         ? row.requerirFondoInicial
         : DEFAULT_REQUERIR_FONDO_INICIAL,
+    puntosConfig: normalizePuntosConfig(row.puntosConfig),
     configVersion: row.configVersion,
     setupPendiente: row.setupPendiente,
   };
@@ -168,14 +205,14 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
   return base;
 }
 
-export async function isSetupPendiente(): Promise<boolean> {
-  const config = await getBusinessConfig();
+export async function isSetupPendiente(idNegocio: string): Promise<boolean> {
+  const config = await getBusinessConfig(idNegocio);
   return config.setupPendiente;
 }
 
 /** Cache firmada para sincronización offline (entrega sessionKey una vez). */
-export async function getSignedBusinessConfig() {
-  const config = await getBusinessConfig();
+export async function getSignedBusinessConfig(idNegocio: string) {
+  const config = await getBusinessConfig(idNegocio);
   return buildSignedConfig(config);
 }
 
@@ -188,8 +225,8 @@ const FLAG_TO_MODULO: Record<string, string> = {
 };
 
 /** Middleware de flag: deniega si el módulo no está habilitado en el negocio. */
-export async function requireFeature(flag: keyof FeatureFlags) {
-  const config = await getBusinessConfig();
+export async function requireFeature(flag: keyof FeatureFlags, idNegocio: string) {
+  const config = await getBusinessConfig(idNegocio);
   if (!config.featureFlags[flag]) {
     return {
       allowed: false as const,
@@ -200,4 +237,4 @@ export async function requireFeature(flag: keyof FeatureFlags) {
   return { allowed: true as const };
 }
 
-export { CONFIG_ID };
+export { CONFIG_PROPIA };

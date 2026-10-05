@@ -1,11 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
 
 export default function LoginScreen() {
+  // Código del negocio (multi-tenant). Opcional si la instalación tiene uno solo;
+  // se recuerda en este dispositivo para no teclearlo en cada turno.
+  const [negocio, setNegocio] = useState("");
+  useEffect(() => {
+    try {
+      setNegocio(localStorage.getItem("papeleria-negocio") ?? "");
+    } catch {
+      /* almacenamiento no disponible */
+    }
+  }, []);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,7 +31,7 @@ export default function LoginScreen() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, negocio: negocio.trim() || undefined }),
       });
 
       if (!res.ok) {
@@ -31,6 +41,11 @@ export default function LoginScreen() {
       }
 
       const user = await res.json();
+      try {
+        if (user.negocio?.codigo) localStorage.setItem("papeleria-negocio", user.negocio.codigo);
+      } catch {
+        /* almacenamiento no disponible */
+      }
       login(user);
       // Primer arranque: la administradora configura el negocio.
       if (user.setupPendiente && user.rol === "ADMINISTRADORA") {
@@ -83,6 +98,19 @@ export default function LoginScreen() {
           className="bg-surface-800 border border-surface-600 rounded-2xl p-8"
         >
           <form onSubmit={handleLogin} className="space-y-5">
+            <label className="block">
+              <span className="text-sm text-muted mb-1 block">Negocio</span>
+              <input
+                type="text"
+                value={negocio}
+                onChange={(e) => setNegocio(e.target.value)}
+                placeholder="Código de tu negocio (opcional si solo hay uno)"
+                disabled={isLoading}
+                autoComplete="organization"
+                autoCapitalize="none"
+                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all disabled:opacity-50"
+              />
+            </label>
             <motion.label
               variants={{
                 hidden: { opacity: 0, y: 12 },

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { calcularDevuelto } from "@/lib/returns";
+import { tenantDb } from "@/lib/tenant";
 
 // GET /api/ventas/[folio] → venta con cantidades disponibles para devolver.
 export async function GET(
@@ -12,6 +12,7 @@ export async function GET(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const { folio } = await params;
 
   try {
@@ -41,7 +42,16 @@ export async function GET(
       totalNeto: Number(venta.totalNeto),
       items: venta.lineasDetalle.map((l) => {
         const yaDevuelto = devuelto.get(l.codigoItem) ?? 0;
+        // Impuestos cobrados en la línea; las anteriores al desglose por
+        // producto los deducen de la tasa efectiva de la venta.
+        const tasaVenta =
+          Number(venta.subtotal) > 0 ? Number(venta.iva) / Number(venta.subtotal) : 0;
+        const impuestosLinea =
+          l.ivaLinea != null
+            ? Number(l.ivaLinea) + Number(l.iepsLinea ?? 0)
+            : Math.round(Number(l.subtotalLinea) * tasaVenta * 100) / 100;
         return {
+          impuestosLinea,
           codigoItem: l.codigoItem,
           descripcion: l.producto.descripcion,
           cantidad: Number(l.cantidad),

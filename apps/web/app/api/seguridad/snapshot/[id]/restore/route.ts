@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { compare } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
 import { restoreFromSnapshot } from "@/lib/snapshots";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // POST /api/seguridad/snapshot/[id]/restore
@@ -18,6 +18,7 @@ export async function POST(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const session = auth.user;
   const { id } = await params;
 

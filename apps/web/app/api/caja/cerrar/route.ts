@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { calcularArqueo, round2 } from "@/lib/cash";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // POST /api/caja/cerrar
@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;
@@ -86,9 +87,11 @@ export async function POST(request: Request) {
     const notasCierre = [
       body.notas ? String(body.notas) : "",
       arqueo.descuadre
-        ? `DESCUADRE de $${round2(Math.abs(arqueo.diferenciaTotal)).toFixed(2)} (${
-            arqueo.diferenciaTotal > 0 ? "FALTANTE" : "SOBRANTE"
-          })`
+        ? Math.abs(arqueo.diferenciaTotal) > 0.01
+          ? `DESCUADRE de $${round2(Math.abs(arqueo.diferenciaTotal)).toFixed(2)} (${
+              arqueo.diferenciaTotal > 0 ? "FALTANTE" : "SOBRANTE"
+            })`
+          : "DESCUADRE entre rubros (el total coincide, pero efectivo/vouchers/recargas no)"
         : "Sin descuadre",
       `Efectivo: esperado ${round2(arqueo.esperadoEfectivo).toFixed(2)} / contado ${round2(
         arqueo.declaradoEfectivo
@@ -104,6 +107,14 @@ export async function POST(request: Request) {
       .join(" | ");
 
     const cerrada = await prisma.$transaction(async (tx) => {
+      // Transición condicionada: dos peticiones simultáneas no cierran dos veces.
+      const transicion = await tx.sesionCaja.updateMany({
+        where: { idCaja: sesion.idCaja, estado: "EN_CIERRE", cierreToken },
+        data: { estado: "CERRADA" },
+      });
+      if (transicion.count === 0) {
+        throw Object.assign(new Error("El corte ya fue concluido"), { status: 409 });
+      }
       const cierre = await tx.sesionCaja.update({
         where: { idCaja: sesion.idCaja },
         data: {
@@ -152,7 +163,10 @@ export async function POST(request: Request) {
       },
       arqueo,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 409) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json({ error: "Error al cerrar la caja" }, { status: 500 });
   }
 }

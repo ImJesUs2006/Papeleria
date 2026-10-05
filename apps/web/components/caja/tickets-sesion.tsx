@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ReceiptText,
@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
+import {
+  imprimirTicket,
+  type AnchoTicketImpresion,
+} from "@/lib/print-ticket";
 
 interface VentaResumen {
   folioVenta: string;
@@ -56,7 +60,7 @@ const ETIQUETA_PAGO: Record<string, string> = {
   TARJETA_TERMINAL: "Tarjeta",
   DIGITAL: "Transferencia",
   TRANSFERENCIA: "Transferencia",
-  CREDITO_TIENDA: "Crédito",
+  PUNTOS_MONEDERO: "Puntos",
 };
 
 function FilaTicket({ label, valor }: { label: string; valor: string }) {
@@ -81,6 +85,7 @@ function TicketVenta({
   cajero,
   anchoTicket,
   mensajeTicket,
+  printRef,
 }: {
   venta: VentaDetalle;
   negocio: string;
@@ -88,9 +93,11 @@ function TicketVenta({
   cajero: string;
   anchoTicket: string;
   mensajeTicket: string | null;
+  printRef?: React.Ref<HTMLDivElement>;
 }) {
   return (
     <div
+      ref={printRef}
       className={cn(
         "print-label-area space-y-1.5 text-[11px] font-mono",
         anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80"
@@ -150,6 +157,7 @@ export function TicketsSesion() {
   const [cargando, setCargando] = useState(true);
   const [obteniendo, setObteniendo] = useState<string | null>(null);
   const [ticket, setTicket] = useState<VentaDetalle | null>(null);
+  const areaImpresion = useRef<HTMLDivElement>(null);
 
   const negocio = useConfigStore((s) => s.config?.nombreNegocio ?? "Mi Negocio");
   const configCaja = useConfigStore((s) => ({
@@ -184,7 +192,11 @@ export function TicketsSesion() {
       if (!res.ok) throw new Error(data.error || "No se pudo recuperar la venta");
       setTicket(data);
       setTimeout(() => {
-        window.print();
+        // Impresión térmica estricta: iframe oculto a 58/80mm.
+        imprimirTicket(
+          areaImpresion.current,
+          configCaja.anchoTicket as AnchoTicketImpresion
+        );
         setTimeout(() => setTicket(null), 300);
       }, 120);
     } catch (e: any) {
@@ -197,8 +209,8 @@ export function TicketsSesion() {
   return (
     <div className="space-y-4">
       {error && (
-        <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-          <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" /> {error}
+        <div className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" /> {error}
         </div>
       )}
 
@@ -229,7 +241,7 @@ export function TicketsSesion() {
                 "text-[11px] font-bold px-2 py-0.5 rounded-md",
                 sesion.abierta
                   ? "bg-acento/10 text-acento"
-                  : "bg-neon-red/10 text-neon-red"
+                  : "bg-rose-500/10 text-rose-400"
               )}
             >
               {sesion.abierta ? "Sesión abierta" : "Sesión cerrada"}
@@ -309,6 +321,7 @@ export function TicketsSesion() {
             cajero={sesion?.cajero ?? ""}
             anchoTicket={configCaja.anchoTicket}
             mensajeTicket={configCaja.mensajeTicket}
+            printRef={areaImpresion}
           />
         </div>
       )}

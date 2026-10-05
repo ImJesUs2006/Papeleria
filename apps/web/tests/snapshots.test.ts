@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  CONFIG_ID,
+  CONFIG_PROPIA,
   MOTIVO_REINICIO,
   buildResetJson,
   captureSnapshotState,
@@ -12,7 +12,7 @@ import {
 
 function makeConfigRow(overrides: any = {}) {
   return {
-    id: CONFIG_ID,
+    idNegocio: "default",
     nombreNegocio: "Papelería El Lápiz",
     tipoNegocio: "PAPELERIA_RETAIL",
     moneda: "MXN",
@@ -117,7 +117,7 @@ describe("captureSnapshotState", () => {
     const tx = makeResetTx();
     const json = await captureSnapshotState(tx);
 
-    expect(tx.configuracionNegocio.findUnique).toHaveBeenCalledWith({ where: { id: CONFIG_ID } });
+    expect(tx.configuracionNegocio.findUnique).toHaveBeenCalledWith({ where: CONFIG_PROPIA });
     expect(tx.venta.aggregate).toHaveBeenCalled();
     expect(json.totales.ventas.totalNeto).toBe(1160);
     expect(json.totales.sesionCaja[0].idCaja).toBe("caja-1");
@@ -142,7 +142,7 @@ describe("resetNegocio (factory reset no destructivo)", () => {
       })
     );
     expect(tx.configuracionNegocio.update).toHaveBeenCalledWith({
-      where: { id: CONFIG_ID },
+      where: CONFIG_PROPIA,
       data: { setupPendiente: true, configVersion: 6 },
     });
     expect(tx.bitacoraLog.create).toHaveBeenCalledWith(
@@ -221,7 +221,7 @@ describe("restoreFromSnapshot", () => {
     expect(r.id).toBe("snap-abc");
     expect(r.configVersion).toBe(10);
     expect(tx.configuracionNegocio.update).toHaveBeenCalledWith({
-      where: { id: CONFIG_ID },
+      where: CONFIG_PROPIA,
       data: expect.objectContaining({
         nombreNegocio: "Papelería Antigua",
         tipoNegocio: "ABARROTES",

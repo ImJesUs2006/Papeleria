@@ -21,6 +21,8 @@ export interface VentaOffline {
   montoRecibido?: number | null;
   /** Blindaje Financiero: últimos 4 dígitos del rastreo de transferencia. */
   referenciaTransferencia?: string | null;
+  /** Fase 12: la venta secobró con precios de mayoreo. */
+  esMayoreo?: boolean;
   intentos: number;
   ultimoError?: string;
   folioVentaServer?: string;

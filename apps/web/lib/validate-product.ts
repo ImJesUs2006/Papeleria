@@ -63,6 +63,27 @@ const BASE_PRODUCTO = z.object({
     .max(120, "Máximo 120 caracteres"),
   precioUnitario: precioSchema("Precio de venta"),
   precioCompra: precioSchema("Precio de compra").nullable().optional(),
+  // Fase 12: precio de mayoreo (opcional). Si se captura, debe ser MENOR al
+  // de venta (si no, el interruptor de mayoreo no aportaría nada).
+  precioMayoreo: precioSchema("Precio de mayoreo").nullable().optional(),
+  // Impuestos por producto: IVA propio (null = el del negocio), exento e IEPS.
+  tasaIva: z.number().min(0, "IVA inválido").max(100, "IVA inválido").nullable().optional(),
+  exentoIva: z.boolean().optional(),
+  tasaIeps: z.number().min(0, "IEPS inválido").max(100, "IEPS inválido").nullable().optional(),
+  // Fase 12: imagen del producto (URL de Cloudinary o data URI).
+  imagenUrl: z
+    .string()
+    .trim()
+    .max(1_000_000, "La imagen es demasiado grande")
+    .refine(
+      (v) =>
+        v === "" ||
+        v.startsWith("data:image/") ||
+        /^https:\/\/(res\.cloudinary\.com|[\w.-]+\.cloudinary\.com)\//i.test(v),
+      "La imagen debe ser una URL de Cloudinary o un data URI"
+    )
+    .nullable()
+    .optional(),
   stockActual: stockSchema("Stock actual").default(0),
   stockMinimo: stockSchema("Stock mínimo").default(5),
   // Granel (permiteDecimales) y servicios no son exclusivos: un servicio
@@ -96,6 +117,26 @@ const caducidadValida = (v?: string | null) => {
   return !isNaN(fecha.getTime());
 };
 
+/**
+ * Fase 12: si el producto define precio de mayoreo, este debe ser MENOR que
+ * el de venta (y nunca negativo). Un mayoreo >= menudeo es un error de captura.
+ */
+const mayoreoValido = (d: {
+  precioUnitario?: number;
+  precioMayoreo?: number | null;
+}) => {
+  const mayoreo = d.precioMayoreo;
+  if (mayoreo == null) return true;
+  if (!Number.isFinite(mayoreo) || mayoreo < 0) return false;
+  if (d.precioUnitario == null) return true;
+  return mayoreo < d.precioUnitario;
+};
+
+const REGLAS_MAYOREO = {
+  message: "El precio de mayoreo debe ser menor al precio de venta",
+  path: ["precioMayoreo"] as (string | number)[],
+};
+
 const reglasProducto = (d: {
   precioUnitario?: number;
   precioCompra?: number | null;
@@ -107,7 +148,7 @@ const reglasProducto = (d: {
 export const PRODUCTO_INPUT_SCHEMA = BASE_PRODUCTO.refine(ventaMayorOIgualCompra, {
   message: "El precio de venta no puede ser menor al de compra",
   path: ["precioUnitario"],
-}).refine((d) => caducidadValida(d.fechaCaducidad ?? null), {
+}).refine(mayoreoValido, REGLAS_MAYOREO).refine((d) => caducidadValida(d.fechaCaducidad ?? null), {
   message: "Fecha de caducidad inválida",
   path: ["fechaCaducidad"],
 });
@@ -115,7 +156,7 @@ export const PRODUCTO_INPUT_SCHEMA = BASE_PRODUCTO.refine(ventaMayorOIgualCompra
 export const PRODUCTO_PATCH_SCHEMA = BASE_PRODUCTO.partial().refine(ventaMayorOIgualCompra, {
   message: "El precio de venta no puede ser menor al de compra",
   path: ["precioUnitario"],
-}).refine((d) => caducidadValida(d.fechaCaducidad ?? null), {
+}).refine(mayoreoValido, REGLAS_MAYOREO).refine((d) => caducidadValida(d.fechaCaducidad ?? null), {
   message: "Fecha de caducidad inválida",
   path: ["fechaCaducidad"],
 });

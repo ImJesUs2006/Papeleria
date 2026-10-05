@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { randomUUID } from "crypto";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET  /api/caja/cerrar/iniciar  → estado del corte ciego activo
@@ -15,6 +15,7 @@ export async function GET() {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const sesion = await prisma.sesionCaja.findFirst({
     where: { estado: "EN_CIERRE" },
@@ -39,6 +40,7 @@ export async function POST() {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   try {

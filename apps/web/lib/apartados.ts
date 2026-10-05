@@ -1,6 +1,8 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
-import { IVA_RATE, round2 } from "./sales";
+import { ivaFraccion, round2, sufijoFolio, fechaFolio } from "./sales";
+import { calcularImpuestos, tasasProducto } from "./impuestos";
+import { claveProducto } from "./tenant-keys";
 
 // ============================================================
 // Sistema de Apartados (Layaways) — Fase 10 / C3.
@@ -27,12 +29,7 @@ export class ApartadoError extends Error {
 }
 
 function generarFolioApartado(): string {
-  const d = new Date();
-  const fecha = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-  const aleatorio = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `APT-${fecha}-${aleatorio}`;
+  return `APT-${fechaFolio()}-${sufijoFolio()}`;
 }
 
 export interface ApartadoLineaInput {
@@ -53,6 +50,10 @@ export interface ApartadoInput {
 export interface ApartadoContext {
   idUsuario: string;
   idCaja: string | null;
+  /** Tasa de IVA del negocio en porcentaje (ej. 16). Default: 16. */
+  ivaRate?: number;
+  /** true = los precios de lista ya incluyen impuestos. */
+  preciosIncluyenIva?: boolean;
 }
 
 export interface ApartadoResult {
@@ -106,7 +107,12 @@ export async function crearApartado(
     precioUnitario: number;
     subtotalLinea: number;
     esServicio: boolean;
+    tasaIva: number;
+    tasaIeps: number;
+    ivaLinea: number;
+    iepsLinea: number;
   }> = [];
+  const ivaNegocio = ivaFraccion(ctx.ivaRate) * 100;
 
   for (const item of input.items) {
     const cantidad = Math.round(Number(item.cantidad) * 1000) / 1000;
@@ -115,7 +121,7 @@ export async function crearApartado(
     }
 
     const producto = await tx.producto.findUnique({
-      where: { codigoItem: item.codigoItem },
+      where: claveProducto(item.codigoItem),
     });
     if (!producto || !producto.activo) {
       throw new ApartadoError(`Producto no encontrado: ${item.codigoItem}`, 404);
@@ -134,21 +140,32 @@ export async function crearApartado(
     }
 
     const precio = Number(producto.precioUnitario);
-    const subtotalLinea = round2(precio * cantidad);
-    subtotal = round2(subtotal + subtotalLinea);
-
     lineas.push({
       codigoItem: item.codigoItem,
       descripcion: producto.descripcion,
       cantidad,
       precioUnitario: precio,
-      subtotalLinea,
+      subtotalLinea: round2(precio * cantidad),
       esServicio,
+      ...tasasProducto(producto, ivaNegocio),
+      ivaLinea: 0,
+      iepsLinea: 0,
     });
   }
 
-  const iva = round2(subtotal * IVA_RATE);
-  const total = round2(subtotal + iva);
+  // Mismo motor fiscal que la venta: el apartado congela los impuestos.
+  const fiscal = calcularImpuestos(
+    lineas.map((l) => ({ importe: l.subtotalLinea, tasaIva: l.tasaIva, tasaIeps: l.tasaIeps })),
+    { preciosIncluyenIva: ctx.preciosIncluyenIva === true }
+  );
+  fiscal.lineas.forEach((f, i) => {
+    lineas[i].subtotalLinea = f.base;
+    lineas[i].ivaLinea = f.iva;
+    lineas[i].iepsLinea = f.ieps;
+  });
+  subtotal = fiscal.subtotal;
+  const iva = round2(fiscal.iva + fiscal.ieps);
+  const total = fiscal.total;
   if (anticipo < 0 || anticipo > total) {
     throw new ApartadoError(
       `El anticipo debe estar entre $0 y el total del apartado ($${total})`
@@ -171,7 +188,7 @@ export async function crearApartado(
 
   const folio = generarFolioApartado();
 
-  await tx.apartado.create({
+  const apartado = await tx.apartado.create({
     data: {
       folio,
       idCliente,
@@ -187,12 +204,15 @@ export async function crearApartado(
   for (const l of lineas) {
     await tx.apartadoLinea.create({
       data: {
-        idApartado: folio,
+        idApartado: apartado.idApartado,
         codigoItem: l.codigoItem,
         cantidad: l.cantidad,
         precioMomento: l.precioUnitario,
         descuentoLinea: 0,
         subtotalLinea: l.subtotalLinea,
+        tasaIva: l.tasaIva,
+        ivaLinea: l.ivaLinea,
+        iepsLinea: l.iepsLinea,
       },
     });
   }
@@ -200,10 +220,17 @@ export async function crearApartado(
   // Reserva física de stock + kardex SALIDA (los servicios no tocan inventario).
   for (const l of lineas) {
     if (l.esServicio) continue;
-    await tx.producto.update({
-      where: { codigoItem: l.codigoItem },
+    // UPDATE condicionado: la reserva no puede sobregirar el stock.
+    const r = await tx.producto.updateMany({
+      where: { codigoItem: l.codigoItem, stockActual: { gte: l.cantidad } },
       data: { stockActual: { decrement: l.cantidad } },
     });
+    if (r.count === 0) {
+      throw new ApartadoError(
+        `Stock insuficiente para "${l.descripcion}": otra operación tomó la existencia`,
+        409
+      );
+    }
   }
   await registrarMovimientosKardex(
     tx,

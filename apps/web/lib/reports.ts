@@ -1,4 +1,4 @@
-import { prisma } from "@papeleria/database";
+import type { PrismaClient } from "@papeleria/database";
 import type { ExportColumn } from "@/lib/export-exceljs";
 
 // ============================================================
@@ -20,6 +20,8 @@ export interface ReporteParams {
   desde?: string | null;
   hasta?: string | null;
   idCaja?: string | null;
+  usuario?: string | null;
+  modulo?: string | null;
 }
 
 export class ReporteError extends Error {
@@ -40,9 +42,59 @@ function rangoFecha(desde?: string | null, hasta?: string | null) {
   return where;
 }
 
+// Módulos aceptados por el reporte de bitácora (mismo catálogo que
+// /api/bitacora). Un valor fuera del catálogo se ignora en vez de romper
+// la consulta con un error de enum.
+const MODULOS_BITACORA = [
+  "PUNTO_VENTA",
+  "INVENTARIO",
+  "CAJA",
+  "REPORTES",
+  "CONFIGURACION",
+  "BITACORA",
+  "CARGA_MASIVA",
+  "SYNC",
+  "SETUP",
+  "SEGURIDAD",
+] as const;
+
+function texto(valor?: string | null): string {
+  return typeof valor === "string" ? valor.trim() : "";
+}
+
+// Filtro por usuario para cualquier modelo con `idUsuario` + relación
+// `usuario` (ventas y bitácora): el texto puede ser el id exacto o
+// cualquier fragmento del nombre / username (insensible a mayúsculas).
+function coincidenciaUsuario(usuario?: string | null): any {
+  const valor = texto(usuario);
+  if (!valor) return null;
+  return {
+    OR: [
+      { idUsuario: { equals: valor } },
+      {
+        usuario: {
+          is: {
+            OR: [
+              { nombre: { contains: valor, mode: "insensitive" } },
+              { username: { contains: valor, mode: "insensitive" } },
+            ],
+          },
+        },
+      },
+    ],
+  };
+}
+
+// Añade el filtro de usuario a un `where` ya construido (in-place).
+function filtrarUsuario(where: any, usuario?: string | null): any {
+  const coincidencia = coincidenciaUsuario(usuario);
+  if (coincidencia) where.OR = coincidencia.OR;
+  return where;
+}
+
 // Auditoría de Caja (Fase 10): los ingresos de sesiones ANULADAS se
 // descartan de los reportes de ventas; los registros permanecen.
-async function cajasAnuladas(): Promise<string[]> {
+async function cajasAnuladas(prisma: PrismaClient): Promise<string[]> {
   const filas = await prisma.sesionCaja.findMany({
     where: { estado: "ANULADA" },
     select: { idCaja: true },
@@ -50,12 +102,14 @@ async function cajasAnuladas(): Promise<string[]> {
   return filas.map((s) => s.idCaja);
 }
 
-async function excluirAnuladas(): Promise<Record<string, unknown>> {
-  const ids = await cajasAnuladas();
+async function excluirAnuladas(prisma: PrismaClient): Promise<Record<string, unknown>> {
+  const ids = await cajasAnuladas(prisma);
   return ids.length ? { idCaja: { notIn: ids } } : {};
 }
 
+/** `prisma` debe ser el cliente con alcance de negocio (lib/tenant). */
 export async function getReporteData(
+  prisma: PrismaClient,
   tipo: string,
   params: ReporteParams
 ): Promise<ReporteData> {
@@ -123,8 +177,15 @@ export async function getReporteData(
     }
 
     case "ventas": {
+      const whereVenta = filtrarUsuario(
+        {
+          ...rangoFecha(params.desde, params.hasta),
+          ...(await excluirAnuladas(prisma)),
+        },
+        params.usuario
+      );
       const ventas = await prisma.venta.findMany({
-        where: { ...rangoFecha(params.desde, params.hasta), ...(await excluirAnuladas()) },
+        where: whereVenta,
         include: { lineasDetalle: true, usuario: true },
         orderBy: { fechaHora: "desc" },
       });
@@ -159,13 +220,16 @@ export async function getReporteData(
     }
 
     case "ventas-por-producto": {
-      const whereLinea: any = {};
-      if (params.desde || params.hasta) {
-        whereLinea.venta = rangoFecha(params.desde, params.hasta);
-      }
-      whereLinea.venta = {
-        ...(whereLinea.venta ?? {}),
-        ...(await excluirAnuladas()),
+      // El filtro viaja por la relación `venta` de cada línea de detalle:
+      // rango de fechas, usuario y exclusión de cajas anuladas.
+      const whereLinea: any = {
+        venta: filtrarUsuario(
+          {
+            ...rangoFecha(params.desde, params.hasta),
+            ...(await excluirAnuladas(prisma)),
+          },
+          params.usuario
+        ),
       };
       const lineas = await prisma.lineaDetalleVenta.findMany({
         where: whereLinea,
@@ -200,9 +264,19 @@ export async function getReporteData(
     }
 
     case "top-mas-vendidos": {
+      // Antes ignoraba `desde`/`hasta`; ahora el top se calcula sobre el
+      // mismo rango, usuario y exclusión de cajas anuladas.
       const lineas = await prisma.lineaDetalleVenta.findMany({
         include: { producto: true },
-        where: { venta: { ...(await excluirAnuladas()) } },
+        where: {
+          venta: filtrarUsuario(
+            {
+              ...rangoFecha(params.desde, params.hasta),
+              ...(await excluirAnuladas(prisma)),
+            },
+            params.usuario
+          ),
+        },
       });
       const agg = new Map<string, { descripcion: string; cantidad: number; total: number }>();
       for (const l of lineas) {
@@ -304,7 +378,15 @@ export async function getReporteData(
     }
 
     case "bitacora": {
+      const AND: any[] = [rangoFecha(params.desde, params.hasta)];
+      const porUsuario = coincidenciaUsuario(params.usuario);
+      if (porUsuario) AND.push(porUsuario);
+      const modulo = texto(params.modulo).toUpperCase();
+      if ((MODULOS_BITACORA as readonly string[]).includes(modulo)) {
+        AND.push({ moduloSistema: modulo });
+      }
       const logs = await prisma.bitacoraLog.findMany({
+        where: { AND },
         include: { usuario: true },
         orderBy: { fechaHora: "desc" },
         take: 5000,

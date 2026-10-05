@@ -44,7 +44,7 @@ export function AccionesSesion({ sesion, esAdmin, onCambio }: Props) {
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={() => setAbierto("abono")}
-          className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400/10 border border-amber-400/40 text-amber-300 text-sm font-bold hover:bg-amber-400/20 transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-300 text-sm font-bold hover:bg-amber-500/20 transition-colors"
         >
           <Users className="h-4 w-4" /> Abono de cliente
         </motion.button>
@@ -52,7 +52,7 @@ export function AccionesSesion({ sesion, esAdmin, onCambio }: Props) {
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={() => setAbierto("retiro")}
-            className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-neon-red/10 border border-neon-red/40 text-neon-red text-sm font-bold hover:bg-neon-red/20 transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-400 text-sm font-bold hover:bg-rose-500/20 transition-colors"
           >
             <ShieldCheck className="h-4 w-4" /> Retiro de efectivo
           </motion.button>
@@ -152,7 +152,7 @@ function ModalAbono({
         initial={{ scale: 0.92, y: 16 }}
         animate={{ scale: 1, y: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-surface-800 border border-amber-400/40 rounded-3xl p-6 max-w-md w-full max-h-[85vh] flex flex-col"
+        className="bg-surface-800 border border-amber-500/40 rounded-3xl p-6 max-w-md w-full max-h-[85vh] flex flex-col"
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ function ModalAbono({
                   buscar(e.target.value);
                 }}
                 placeholder="Buscar cliente con deuda..."
-                className="w-full bg-surface-700 border border-surface-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-muted/50 focus:border-amber-400 focus:outline-none transition-all"
+                className="w-full bg-surface-700 border border-surface-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-muted/50 focus:border-amber-500 focus:outline-none transition-all"
                 autoFocus
               />
             </div>
@@ -229,7 +229,7 @@ function ModalAbono({
                 onChange={(e) => setMonto(e.target.value)}
                 placeholder="0.00"
                 min={0}
-                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-xl text-amber-300 font-black focus:border-amber-400 focus:outline-none transition-all"
+                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-xl text-amber-300 font-black focus:border-amber-500 focus:outline-none transition-all"
               />
             </label>
             {error && (
@@ -251,7 +251,7 @@ function ModalAbono({
                   "flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm transition-all",
                   procesando || !monto || parseFloat(monto) <= 0
                     ? "bg-surface-600 text-muted cursor-not-allowed"
-                    : "bg-amber-400 text-btn-ink shadow-neon"
+                    : "bg-indigo-500 text-white hover:bg-indigo-400"
                 )}
               >
                 {procesando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -311,19 +311,19 @@ function ModalRetiro({
         initial={{ scale: 0.92, y: 16 }}
         animate={{ scale: 1, y: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-surface-800 border border-neon-red/40 rounded-3xl p-6 max-w-md w-full"
+        className="bg-surface-800 border border-rose-500/40 rounded-3xl p-6 max-w-md w-full"
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-neon-red" />
+            <ShieldCheck className="h-5 w-5 text-rose-400" />
             <h3 className="font-black text-gray-100">Retiro de efectivo</h3>
           </div>
           <button onClick={onClose} className="text-muted hover:text-gray-100">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex items-start gap-2 bg-neon-red/10 border border-neon-red/30 rounded-xl px-3 py-2.5 mb-4">
-          <AlertTriangle className="h-4 w-4 text-neon-red shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2.5 mb-4">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
           <p className="text-[11px] text-gray-200">
             Acción de gerencia: el efectivo sale de la caja y el corte ciego lo restará del
             monto esperado para no marcar descuadre.
@@ -338,7 +338,7 @@ function ModalRetiro({
             onChange={(e) => setMonto(e.target.value)}
             placeholder="0.00"
             min={0}
-            className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-xl text-neon-red font-black focus:border-neon-red focus:outline-none transition-all"
+            className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-xl text-rose-400 font-black focus:border-rose-500 focus:outline-none transition-all"
             autoFocus
           />
         </label>
@@ -348,7 +348,7 @@ function ModalRetiro({
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
             placeholder="Ej. Compra de insumos, pago de proveedor"
-            className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-2.5 text-sm text-gray-100 focus:border-neon-red focus:outline-none transition-all"
+            className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-2.5 text-sm text-gray-100 focus:border-rose-500 focus:outline-none transition-all"
           />
         </label>
 
@@ -372,7 +372,7 @@ function ModalRetiro({
               "flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm transition-all",
               procesando || !monto || parseFloat(monto) <= 0 || motivo.trim().length < 2
                 ? "bg-surface-600 text-muted cursor-not-allowed"
-                : "bg-neon-red text-btn-ink shadow-neon"
+                : "bg-rose-600 text-white hover:bg-rose-500"
             )}
           >
             {procesando ? <Loader2 className="h-4 w-4 animate-spin" /> : <HandCoins className="h-4 w-4" />}

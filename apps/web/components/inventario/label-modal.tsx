@@ -6,6 +6,7 @@ import JsBarcode from "jsbarcode";
 import { QRCodeSVG } from "qrcode.react";
 import { X, Printer, Copy, Check, QrCode, Barcode, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { imprimirTicket } from "@/lib/print-ticket";
 
 export interface LabelProduct {
   codigoItem: string;
@@ -22,6 +23,7 @@ interface Props {
 export function LabelModal({ product, onClose }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const areaImpresion = useRef<HTMLDivElement>(null);
   const [copiado, setCopiado] = useState(false);
   const [copiando, setCopiando] = useState(false);
 
@@ -85,7 +87,8 @@ export function LabelModal({ product, onClose }: Props) {
     }
   };
 
-  const imprimir = () => window.print();
+  const imprimir = () =>
+    imprimirTicket(areaImpresion.current, "80mm");
 
   return (
     <AnimatePresence>
@@ -125,7 +128,7 @@ export function LabelModal({ product, onClose }: Props) {
           </div>
 
           {/* Etiqueta imprimible */}
-          <div className="print-label-area bg-white rounded-2xl p-5 mb-5">
+          <div ref={areaImpresion} className="print-label-area bg-white rounded-2xl p-5 mb-5">
             <p className="text-sm font-bold text-btn-ink text-center mb-3">
               {product.descripcion}
             </p>

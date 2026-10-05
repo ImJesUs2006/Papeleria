@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { Prisma } from "@prisma/client";
 import { requireAuth } from "@/lib/auth";
+import { registrarMovimientosKardex } from "@/lib/kardex";
 import {
   validateProductoInput,
   sanitizeText,
   normalizarFechaCaducidad,
 } from "@/lib/validate-product";
+import { tenantDb } from "@/lib/tenant";
+import { claveCodigoBarras, claveProducto } from "@/lib/tenant-keys";
 
 const ALLOWED_SORT = [
   "descripcion",
@@ -21,6 +23,11 @@ const ALLOWED_SORT = [
 type SortField = (typeof ALLOWED_SORT)[number];
 
 export async function GET(request: Request) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const prisma = tenantDb(auth.user.idNegocio);
   try {
     const { searchParams } = new URL(request.url);
 
@@ -141,6 +148,11 @@ export async function GET(request: Request) {
         descripcion: p.descripcion,
         precioUnitario: Number(p.precioUnitario),
         precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
+precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+        tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
+        exentoIva: p.exentoIva === true,
+        tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
+        imagenUrl: p.imagenUrl ?? null,
         stockActual: p.stockActual,
         stockMinimo: p.stockMinimo,
         permiteDecimales: p.permiteDecimales,
@@ -175,6 +187,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   let body: any;
@@ -192,7 +205,7 @@ export async function POST(request: Request) {
 
   try {
     const existente = await prisma.producto.findUnique({
-      where: { codigoItem: data.codigoItem },
+      where: claveProducto(data.codigoItem),
     });
     if (existente) {
       return NextResponse.json(
@@ -203,7 +216,7 @@ export async function POST(request: Request) {
 
     if (data.codigoBarras) {
       const dupBarras = await prisma.producto.findUnique({
-        where: { codigoBarras: data.codigoBarras },
+        where: claveCodigoBarras(data.codigoBarras),
       });
       if (dupBarras) {
         return NextResponse.json(
@@ -219,8 +232,17 @@ export async function POST(request: Request) {
           codigoItem: data.codigoItem,
           descripcion: sanitizeText(data.descripcion),
           precioUnitario: new Prisma.Decimal(data.precioUnitario),
-          precioCompra:
+precioCompra:
             data.precioCompra != null ? new Prisma.Decimal(data.precioCompra) : null,
+          // Fase 12: mayoreo (0/null = sin precio de mayoreo) e imagen.
+          precioMayoreo:
+            data.precioMayoreo != null && data.precioMayoreo > 0
+              ? new Prisma.Decimal(data.precioMayoreo)
+              : null,
+          imagenUrl: data.imagenUrl || null,
+          tasaIva: data.exentoIva ? null : data.tasaIva ?? null,
+          exentoIva: data.exentoIva === true,
+          tasaIeps: data.tasaIeps != null && data.tasaIeps > 0 ? data.tasaIeps : null,
           stockActual: data.stockActual,
           stockMinimo: data.stockMinimo,
           permiteDecimales: data.permiteDecimales === true,
@@ -238,6 +260,18 @@ export async function POST(request: Request) {
               : null,
         },
       });
+
+      if (Number(producto.stockActual) > 0 && !producto.esServicio) {
+        await registrarMovimientosKardex(tx, [
+          {
+            codigoItem: producto.codigoItem,
+            tipo: "ENTRADA",
+            cantidad: Number(producto.stockActual),
+            motivo: "Inventario inicial (alta de producto)",
+            idUsuario: user.idPersona,
+          },
+        ]);
+      }
 
       await tx.bitacoraLog.create({
         data: {
@@ -263,6 +297,11 @@ export async function POST(request: Request) {
           descripcion: creado.descripcion,
           precioUnitario: Number(creado.precioUnitario),
           precioCompra: creado.precioCompra != null ? Number(creado.precioCompra) : null,
+        precioMayoreo: creado.precioMayoreo != null ? Number(creado.precioMayoreo) : null,
+        tasaIva: creado.tasaIva != null ? Number(creado.tasaIva) : null,
+        exentoIva: creado.exentoIva === true,
+        tasaIeps: creado.tasaIeps != null ? Number(creado.tasaIeps) : null,
+        imagenUrl: creado.imagenUrl ?? null,
           stockActual: creado.stockActual,
           stockMinimo: creado.stockMinimo,
           permiteDecimales: creado.permiteDecimales,

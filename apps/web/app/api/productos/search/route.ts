@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
+import { requireAuth } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
 
 export async function GET(request: Request) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const prisma = tenantDb(auth.user.idNegocio);
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q") || "";
@@ -28,8 +34,15 @@ export async function GET(request: Request) {
         codigoItem: p.codigoItem,
         descripcion: p.descripcion,
         precioUnitario: p.precioUnitario,
+        precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+        tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
+        exentoIva: p.exentoIva === true,
+        tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
+        imagenUrl: p.imagenUrl ?? null,
         stockActual: p.stockActual,
         tipoImpresion: p.tipoImpresion,
+        permiteDecimales: p.permiteDecimales,
+        esServicio: p.esServicio,
       }))
     );
   } catch (error) {

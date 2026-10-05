@@ -100,11 +100,13 @@ Desde `packages/database` (o con los alias de turbo desde la raíz):
 
 ```powershell
 cd packages/database
-npx prisma db push   # crea/actualiza tablas y coerce el cliente Prisma
+npx prisma migrate deploy   # aplica las migraciones versionadas (crea/actualiza tablas)
 npx prisma db seed   # inserta usuarios y catálogo de prueba
 ```
 
-También disponible desde la raíz: `npm run db:push` y `npm run db:seed`.
+También disponible desde la raíz: `npm run db:deploy` y `npm run db:seed`.
+
+> Desde la versión multi-negocio el esquema se gestiona con **migraciones** (`packages/database/prisma/migrations`). Para cambiar el esquema usa `npm run db:migrate` (genera la migración) en lugar de `db push`.
 
 **Usuarios de prueba** creados por el seed:
 
@@ -142,6 +144,6 @@ npm test   # 11 pruebas Vitest (transacciones de venta + arqueo de caja)
 - **`EADDRINUSE: address already in use :::3000`** → quedó un `next dev` anterior abierto; mátalo (paso 6) y reintenta.
 - **`Error: listen EADDRINUSE` en otros puertos** → comprueba que no se superpongan `5433`, `3000`, `5050`.
 - **`DATABASE_URL` apuntando al puerto por defecto** → recuerda: Docker expone `5433`.
-- **`prisma db push` no conecta** → revisa que Docker esté arriba (`docker ps`) y que el contenedor esté sano.
+- **`prisma migrate deploy` no conecta** → revisa que Docker esté arriba (`docker ps`) y que el contenedor esté sano.
 - **`Missing script: "dev"` en `packages/database`** → ejecuta siempre `npm run dev` desde la raíz (turbo usa el script `dev` de cada workspace), no desde la carpeta.
 - **CSS sin estilos / página en HTML crudo** → verificó que el pipeline PostCSS esté presente (`apps/web/postcss.config.mjs`); reinstala con `npm install` si falta.

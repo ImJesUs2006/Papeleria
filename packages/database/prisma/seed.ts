@@ -6,12 +6,21 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding database...");
 
+  // Negocio por defecto (multi-tenant): dueño de los datos de ejemplo.
+  const ID_NEGOCIO = "default";
+  await prisma.negocio.upsert({
+    where: { idNegocio: ID_NEGOCIO },
+    update: {},
+    create: { idNegocio: ID_NEGOCIO, codigo: "default", nombre: "Mi Negocio" },
+  });
+
   // Create admin user
   const adminPassword = await hash("admin123", 12);
   await prisma.usuario.upsert({
-    where: { username: "admin" },
+    where: { idNegocio_username: { idNegocio: ID_NEGOCIO, username: "admin" } },
     update: { isRoot: true },
     create: {
+      idNegocio: ID_NEGOCIO,
       nombre: "Administradora",
       username: "admin",
       passwordHash: adminPassword,
@@ -24,9 +33,10 @@ async function main() {
   // Create test cajera
   const cajeraPassword = await hash("cajera123", 12);
   await prisma.usuario.upsert({
-    where: { username: "cajera1" },
+    where: { idNegocio_username: { idNegocio: ID_NEGOCIO, username: "cajera1" } },
     update: {},
     create: {
+      idNegocio: ID_NEGOCIO,
       nombre: "María (Cajera)",
       username: "cajera1",
       passwordHash: cajeraPassword,
@@ -219,9 +229,11 @@ async function main() {
 
   for (const product of sampleProducts) {
     await prisma.producto.upsert({
-      where: { codigoItem: product.codigoItem },
+      where: {
+        idNegocio_codigoItem: { idNegocio: ID_NEGOCIO, codigoItem: product.codigoItem },
+      },
       update: {},
-      create: product,
+      create: { ...product, idNegocio: ID_NEGOCIO },
     });
   }
 

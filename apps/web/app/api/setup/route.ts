@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { Prisma, prisma } from "@papeleria/database";
+import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
-import { getBusinessConfig, CONFIG_ID } from "@/lib/feature-flags";
+import { getBusinessConfig, CONFIG_PROPIA } from "@/lib/feature-flags";
 import { validateConfigInput } from "@/lib/validate-config";
 import { buildSignedConfig } from "@/lib/config-signing";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/setup                 → estado del wizard
@@ -12,7 +13,11 @@ import { buildSignedConfig } from "@/lib/config-signing";
 // ============================================================
 
 export async function GET() {
-  const config = await getBusinessConfig();
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const config = await getBusinessConfig(auth.user.idNegocio);
   return NextResponse.json({
     setupPendiente: config.setupPendiente,
     tipoNegocio: config.tipoNegocio,
@@ -25,6 +30,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
 
   if (user.rol !== "ADMINISTRADORA") {
@@ -44,7 +50,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const previa = await prisma.configuracionNegocio.findUnique({ where: { id: CONFIG_ID } });
+    const previa = await prisma.configuracionNegocio.findUnique({ where: CONFIG_PROPIA });
     const proximaVersion = (previa?.configVersion ?? 0) + 1;
 
     // Deep merge: el setup (o una reconfiguración parcial) no borra módulos.
@@ -55,13 +61,16 @@ export async function POST(request: Request) {
     );
 
     const guardada = await prisma.configuracionNegocio.upsert({
-      where: { id: CONFIG_ID },
+      where: CONFIG_PROPIA,
       update: {
         nombreNegocio: parsed.data.nombreNegocio,
         tipoNegocio: parsed.data.tipoNegocio,
         metodosPago: parsed.data.metodosPago,
         featureFlags: flagsMerged,
         ivaRate: parsed.data.ivaRate,
+        ...(body?.preciosIncluyenIva !== undefined
+          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+          : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
@@ -78,12 +87,14 @@ export async function POST(request: Request) {
         updatedById: user.idPersona,
       },
       create: {
-        id: CONFIG_ID,
         nombreNegocio: parsed.data.nombreNegocio,
         tipoNegocio: parsed.data.tipoNegocio,
         metodosPago: parsed.data.metodosPago,
         featureFlags: flagsMerged,
         ivaRate: parsed.data.ivaRate,
+        ...(body?.preciosIncluyenIva !== undefined
+          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+          : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
@@ -115,7 +126,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const configurable = await getBusinessConfig();
+    const configurable = await getBusinessConfig(user.idNegocio);
     const signed = buildSignedConfig(configurable);
 
     return NextResponse.json({ ok: true, ...signed }, { status: 201 });

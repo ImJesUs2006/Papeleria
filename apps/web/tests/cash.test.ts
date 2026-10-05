@@ -94,7 +94,11 @@ describe("POST /api/caja/cerrar", () => {
 
   it("valida que el arqueo exacto se refleje en la respuesta (corte ciego)", async () => {
     const tx = {
-      sesionCaja: { update: vi.fn(async (args: any) => args.data) },
+      sesionCaja: {
+        update: vi.fn(async (args: any) => args.data),
+        // Transición condicionada EN_CIERRE → CERRADA (anti doble cierre).
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
       bitacoraLog: { create: vi.fn(async () => ({})) },
     };
     const prisma = {

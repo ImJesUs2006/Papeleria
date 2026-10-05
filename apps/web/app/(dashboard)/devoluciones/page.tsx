@@ -22,6 +22,8 @@ interface VentaItem {
   cantidad: number;
   precioUnitario: number;
   subtotalLinea: number;
+  /** IVA + IEPS cobrados en la línea (para la vista previa del reembolso). */
+  impuestosLinea?: number;
   devuelto: number;
   disponible: number;
 }
@@ -55,13 +57,13 @@ interface DevolucionResumen {
   items: Array<{ descripcion: string; cantidad: number }>;
 }
 
-const IVA_RATE = 0.16;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const METODOS_REEMBOLSO = [
   { value: "EFECTIVO", label: "Efectivo" },
   { value: "TRANSFERENCIA", label: "Transferencia" },
   { value: "TARJETA_TERMINAL", label: "Tarjeta (terminal)" },
+  { value: "PUNTOS_MONEDERO", label: "Puntos de fidelidad" },
 ];
 
 export default function DevolucionesPage() {
@@ -129,12 +131,17 @@ export default function DevolucionesPage() {
 
   const totales = useMemo(() => {
     if (!venta) return { subtotal: 0, iva: 0, total: 0, hay: false };
+    // Proporcional a lo cobrado por línea (base e impuestos reales de la
+    // venta); el servidor recalcula y es la autoridad.
     let subtotal = 0;
+    let iva = 0;
     for (const item of venta.items) {
       const c = seleccion[item.codigoItem] ?? 0;
-      if (c > 0) subtotal = round2(subtotal + item.precioUnitario * c);
+      if (c <= 0 || item.cantidad <= 0) continue;
+      const proporcion = c / item.cantidad;
+      subtotal = round2(subtotal + (item.subtotalLinea ?? item.precioUnitario * item.cantidad) * proporcion);
+      iva = round2(iva + (item.impuestosLinea ?? 0) * proporcion);
     }
-    const iva = round2(subtotal * IVA_RATE);
     return { subtotal, iva, total: round2(subtotal + iva), hay: subtotal > 0 };
   }, [venta, seleccion]);
 
@@ -343,7 +350,7 @@ export default function DevolucionesPage() {
                         <span>${totales.subtotal.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-muted">
-                        <span>IVA (16%)</span>
+                        <span>Impuestos</span>
                         <span>${totales.iva.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-gray-100 font-bold text-lg pt-1 border-t border-surface-600 mt-1">

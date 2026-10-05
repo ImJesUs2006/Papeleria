@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/jwt";
 
-const PUBLIC_PATHS = ["/api/auth/login", "/(auth)/login", "/login", "/_next", "/favicon.ico"];
+const PUBLIC_PATHS = ["/api/auth/login", "/api/negocios", "/(auth)/login", "/login", "/_next", "/favicon.ico"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
@@ -27,7 +27,9 @@ export async function middleware(request: NextRequest) {
   const payload = await verifyToken(token);
 
   if (!payload) {
-    const response = NextResponse.redirect(new URL("/login", request.url));
+    const response = pathname.startsWith("/api/")
+      ? NextResponse.json({ error: "Sesión expirada" }, { status: 401 })
+      : NextResponse.redirect(new URL("/login", request.url));
     response.cookies.delete("papeleria_token");
     return response;
   }
@@ -37,9 +39,22 @@ export async function middleware(request: NextRequest) {
   // puede hidratar los flags (las CAJERA no degradan a NO_VERIFICADA). Los
   // escritores de configuración SÍ siguen siendo exclusivos de ADMINISTRADORA.
   const esCacheConfigLectura = pathname === "/api/configuracion/negocio/cache";
+  // APIs administrativas: se bloquean también aquí (defensa en profundidad)
+  // para que una ruta nueva bajo estos prefijos nazca protegida.
+  const ADMIN_API_PREFIXES = [
+    "/api/configuracion",
+    "/api/reportes",
+    "/api/bitacora",
+    "/api/seguridad",
+    "/api/dashboard",
+    "/api/proveedores",
+    "/api/pedidos",
+    "/api/facturas",
+  ];
   const isAdminRoute =
     !esCacheConfigLectura &&
-    (pathname.startsWith("/setup") ||
+    (ADMIN_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+      pathname.startsWith("/setup") ||
       pathname.startsWith("/configuracion") ||
       pathname.startsWith("/reportes") ||
       pathname.startsWith("/bitacora") ||

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/seguridad/snapshot — Historial de snapshots.
@@ -12,6 +12,7 @@ export async function GET() {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   try {
     const rows = await prisma.snapshotSeguridad.findMany({

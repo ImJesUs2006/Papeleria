@@ -33,7 +33,7 @@ export const METODOS_PAGO_DISPONIBLES = [
   "EFECTIVO",
   "TARJETA_TERMINAL",
   "TRANSFERENCIA",
-  "CREDITO_TIENDA",
+  "PUNTOS_MONEDERO",
 ] as const;
 
 export type MetodoPagoConfig = (typeof METODOS_PAGO_DISPONIBLES)[number];
@@ -50,17 +50,49 @@ export interface DatosBancarios {
   cuenta?: string;
 }
 
-/** Datos fiscales para emisión de comprobantes/CFDI (JSON de configuración). */
+/**
+ * Datos fiscales para la emisión de comprobantes/CFDI (JSON de configuración).
+ * Fase 11 (SAT): RFC/CURP validados, catálogos de Régimen Fiscal y Uso de
+ * CFDI, y dirección fragmentada en campos individuales (calle, c.p., etc.).
+ */
 export interface DatosFiscales {
   rfc?: string;
   razonSocial?: string;
+  curp?: string;
   regimenFiscal?: string;
+  usoCFDI?: string;
+  /** @deprecated reemplazado por `cp` (dirección fragmentada), se conserva por retrocompatibilidad. */
   codigoPostal?: string;
+  calle?: string;
+  numExt?: string;
+  numInt?: string;
+  colonia?: string;
+  municipio?: string;
+  estado?: string;
+  cp?: string;
 }
 
 /** Anchos de ticket térmico soportados (58mm | 80mm). */
 export const ANCHOS_TICKET = ["58mm", "80mm"] as const;
 export type AnchoTicket = (typeof ANCHOS_TICKET)[number];
+
+/**
+ * Programa de fidelización "Puntos Monedero" (Fase 12).
+ * - `pesosCompraPorPunto`: cuánto debe gastar el cliente (MXN) para GANAR 1
+ *   punto. Ej. 100 → 1 punto por cada $100 de compra.
+ * - `valorPuntoPesos`: cuánto cubre 1 punto al PAGAR una venta. Ej. 1 → cada
+ *   punto equivale a $1 MXN.
+ */
+export interface PuntosConfig {
+  pesosCompraPorPunto: number;
+  valorPuntoPesos: number;
+}
+
+/** Tasa por defecto del monedero: 1 punto por cada $100 y 1 punto = $1. */
+export const DEFAULT_PUNTOS_CONFIG: PuntosConfig = {
+  pesosCompraPorPunto: 100,
+  valorPuntoPesos: 1,
+};
 
 /** Vista inicial del POS: lector enfocado o catálogo táctil inmediato. */
 export const VISTAS_POS = ["ESCANER", "CATALOGO_TACTIL"] as const;
@@ -77,6 +109,10 @@ export type FeatureFlags = {
   proveedores: boolean;
   /** Bitácora de auditoría */
   bitacora: boolean;
+  /** Panel de Recargas (telefónicas) en el Control de Caja */
+  recargas: boolean;
+  /** Imágenes de producto en la nube (Cloudinary) */
+  imagenesCloudinary: boolean;
 };
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -85,6 +121,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   dashboard: true,
   proveedores: false,
   bitacora: true,
+  recargas: false,
+  imagenesCloudinary: false,
 };
 
 export interface BusinessConfig {
@@ -92,6 +130,8 @@ export interface BusinessConfig {
   tipoNegocio: TipoNegocio;
   moneda: string;
   ivaRate: number;
+  /** true = los precios de lista ya incluyen impuestos (se desglosan en el ticket). */
+  preciosIncluyenIva: boolean;
   featureFlags: FeatureFlags;
   metodosPago: MetodoPagoConfig[];
   politicaStockOffline: "PERMITIR_NEGATIVO" | "RECHAZAR";
@@ -112,6 +152,9 @@ export interface BusinessConfig {
   vistaDefectoPOS: VistaPOS;
   // Datos fiscales (RFC, razón social, régimen y CP) para Facturación.
   datosFiscales: DatosFiscales | null;
+  // Programa de fidelización "Puntos Monedero": tasa de ganancia y valor del
+  // punto al pagar (los define la administradora en Configuración).
+  puntosConfig: PuntosConfig;
   // ---- Configuración Personalizable (Fase 10) ----
   // El negocio decide si su inventario usa fechas de caducidad (farmacias,
   // abarrotes) y/o ubicaciones en estante; y si la caja exige fondo inicial.
@@ -167,6 +210,8 @@ export const PRESETS_POR_NEGOCIO: Record<
       dashboard: true,
       proveedores: false,
       bitacora: true,
+      recargas: false,
+      imagenesCloudinary: false,
     },
     metodosPago: ["TRANSFERENCIA", "TARJETA_TERMINAL"],
     politicaStockOffline: "RECHAZAR",
@@ -180,6 +225,8 @@ export const PRESETS_POR_NEGOCIO: Record<
       dashboard: true,
       proveedores: true,
       bitacora: true,
+      recargas: true,
+      imagenesCloudinary: false,
     },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
@@ -193,6 +240,8 @@ export const PRESETS_POR_NEGOCIO: Record<
       dashboard: true,
       proveedores: true,
       bitacora: true,
+      recargas: true,
+      imagenesCloudinary: false,
     },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
@@ -206,8 +255,10 @@ export const PRESETS_POR_NEGOCIO: Record<
       dashboard: true,
       proveedores: true,
       bitacora: true,
+      recargas: true,
+      imagenesCloudinary: false,
     },
-    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"],
+    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     // La farmacia exige registros de lote/vigencia: no se permite vender
     // con stock negativo y la caducidad se muestra por defecto.
     politicaStockOffline: "RECHAZAR",
@@ -221,8 +272,10 @@ export const PRESETS_POR_NEGOCIO: Record<
       dashboard: true,
       proveedores: true,
       bitacora: true,
+      recargas: true,
+      imagenesCloudinary: false,
     },
-    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"],
+    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     // Moda/prendas: el inventario por talla/color es clave, pero la plantilla
     // no bloquea una venta si el artículo aún no fue cargado.
     politicaStockOffline: "PERMITIR_NEGATIVO",

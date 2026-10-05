@@ -56,6 +56,12 @@ export function ManualSearchModal({ open, onClose }: Props) {
       tipoImpresion: (p as any).tipoImpresion,
       permiteDecimales: p.permiteDecimales,
       esServicio: p.esServicio,
+      // Fase 12: mayoreo e imagen para que el storeija el precio correcto.
+      precioMayoreo: (p as any).precioMayoreo ?? null,
+      imagenUrl: (p as any).imagenUrl ?? null,
+      tasaIva: (p as any).tasaIva ?? null,
+      exentoIva: (p as any).exentoIva === true,
+      tasaIeps: (p as any).tasaIeps ?? null,
     });
   };
 

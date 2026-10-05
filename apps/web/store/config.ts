@@ -170,5 +170,23 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 }));
 
 /** Útil para sketches: flags seguras por defecto. */
+/**
+ * Tasa de IVA vigente como fracción (0.16). Fuente única para el cliente
+ * (carrito, venta offline, vista previa de devoluciones): la del negocio si
+ * ya se hidrató la configuración; 16% en caso contrario.
+ */
+export function ivaFraccionCliente(): number {
+  const pct = Number(useConfigStore.getState().config?.ivaRate);
+  return Number.isFinite(pct) && pct >= 0 && pct <= 100 ? pct / 100 : 0.16;
+}
+
+/** Parámetros fiscales del negocio (IVA base y si los precios lo incluyen). */
+export function fiscalCliente(): { ivaNegocio: number; preciosIncluyenIva: boolean } {
+  return {
+    ivaNegocio: ivaFraccionCliente() * 100,
+    preciosIncluyenIva: useConfigStore.getState().config?.preciosIncluyenIva === true,
+  };
+}
+
 export { safeFlags };
 export type { PersistedCache };

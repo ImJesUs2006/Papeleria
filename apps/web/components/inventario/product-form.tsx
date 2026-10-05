@@ -13,6 +13,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { ImagenProductoUpload } from "@/components/inventario/imagen-producto-upload";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,14 @@ export interface ProductFormData {
   descripcion: string;
   precioUnitario: number;
   precioCompra?: number | null;
+  /** Fase 12: precio de mayoreo (0 = el producto no tiene mayoreo). */
+  precioMayoreo?: number | null;
+  /** Impuestos por producto: IVA propio (null = el del negocio), exento, IEPS. */
+  tasaIva?: number | null;
+  exentoIva?: boolean;
+  tasaIeps?: number | null;
+  /** Fase 12: imagen del producto (URL de Cloudinary). */
+  imagenUrl?: string | null;
   stockActual: number;
   stockMinimo: number;
   ubicacionEstante?: string | null;
@@ -93,6 +102,31 @@ const formSchema = z
       .min(0, "El precio de compra no puede ser negativo")
       .max(9_999_999, "Precio de compra demasiado alto")
       .optional(),
+    precioMayoreo: z
+      .number({ invalid_type_error: "Precio de mayoreo inválido" })
+      .min(0, "El precio de mayoreo no puede ser negativo")
+      .max(9_999_999, "Precio de mayoreo demasiado alto")
+      .optional(),
+    // "" = tasa del negocio · "EXENTO" · o el porcentaje ("16", "8", "0").
+    impuestoIva: z.string().optional(),
+    tasaIeps: z
+      .number({ invalid_type_error: "IEPS inválido" })
+      .min(0, "El IEPS no puede ser negativo")
+      .max(100, "El IEPS no puede pasar de 100%")
+      .optional(),
+    imagenUrl: z
+      .string()
+      .trim()
+      .max(500, "La URL de la imagen es demasiado larga")
+      .refine(
+        (v) =>
+          v === "" ||
+          v.startsWith("data:image/") ||
+          /^https:\/\/[\w.-]+\.cloudinary\.com\//i.test(v),
+        "La imagen debe ser una URL de Cloudinary o un data URI"
+      )
+      .optional()
+      .or(z.literal("")),
     stockActual: stockFormSchema("Stock actual"),
     stockMinimo: stockFormSchema("Stock mínimo"),
     codigoBarras: textoOpcional(64),
@@ -113,6 +147,14 @@ const formSchema = z
     {
       message: "El precio de venta no puede ser menor al de compra",
       path: ["precioUnitario"],
+    }
+  )
+  // Fase 12: el mayoreo, si existe, siempre es menor al precio de venta.
+  .refine(
+    (d) => !d.precioMayoreo || d.precioUnitario > d.precioMayoreo,
+    {
+      message: "El precio de mayoreo debe ser menor al precio de venta",
+      path: ["precioMayoreo"],
     }
   );
 
@@ -182,8 +224,15 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
 
   const precioCompra = watch("precioCompra");
   const precioUnitario = watch("precioUnitario");
+  const precioMayoreo = watch("precioMayoreo");
+  const imagenUrl = watch("imagenUrl");
   const margen =
     precioCompra != null && precioUnitario != null ? precioUnitario - precioCompra : null;
+  // Fase 12: ahorro que ve la cajera al pasar la venta a mayoreo.
+  const ahorroMayoreo =
+    precioMayoreo != null && precioUnitario != null && precioMayoreo > 0
+      ? precioUnitario - precioMayoreo
+      : null;
 
   useEffect(() => {
     if (!open) return;
@@ -199,6 +248,10 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
             descripcion: p.descripcion,
             precioUnitario: Number(p.precioUnitario),
             precioCompra: p.precioCompra != null ? Number(p.precioCompra) : undefined,
+            precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : undefined,
+            imagenUrl: p.imagenUrl ?? "",
+            impuestoIva: p.exentoIva ? "EXENTO" : p.tasaIva != null ? String(Number(p.tasaIva)) : "",
+            tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : undefined,
             stockActual: Number(p.stockActual),
             stockMinimo: Number(p.stockMinimo),
             codigoBarras: p.codigoBarras ?? "",
@@ -238,6 +291,14 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       descripcion: values.descripcion,
       precioUnitario: values.precioUnitario,
       precioCompra: values.precioCompra ?? null,
+      precioMayoreo: values.precioMayoreo ?? null,
+      exentoIva: values.impuestoIva === "EXENTO",
+      tasaIva:
+        !values.impuestoIva || values.impuestoIva === "EXENTO"
+          ? null
+          : Number(values.impuestoIva),
+      tasaIeps: values.tasaIeps ?? null,
+      imagenUrl: values.imagenUrl?.trim() || null,
       stockActual: values.stockActual,
       stockMinimo: values.stockMinimo,
       codigoBarras: values.codigoBarras?.trim() || null,
@@ -262,7 +323,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar el producto");
-      onSaved?.(data);
+      onSaved?.({ ...payload, ...(data.data ?? data) });
       onClose();
     } catch (e: any) {
       setServerError(e.message || "Error al guardar el producto");
@@ -387,6 +448,50 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                 />
                 {err("precioUnitario")}
               </label>
+              {/* Fase 12: precio de mayoreo (vacío = sin mayoreo). */}
+              <label className="block">
+                <span className="text-xs text-muted mb-1 block">
+                  Precio mayoreo (opcional)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  {...register("precioMayoreo", numeroOpcional)}
+                  className="input-dark"
+                  placeholder="Sin mayoreo"
+                />
+                {err("precioMayoreo")}
+                {ahorroMayoreo != null && (
+                  <span className="text-[11px] text-teal-300 mt-1 block">
+                    Ahorro por unidad: ${ahorroMayoreo.toFixed(2)}
+                  </span>
+                )}
+              </label>
+              {/* Impuestos por producto (tasa 0%, exento, IEPS). */}
+              <label className="block">
+                <span className="text-xs text-muted mb-1 block">IVA del producto</span>
+                <select {...register("impuestoIva")} className="input-dark">
+                  <option value="">Tasa del negocio</option>
+                  <option value="16">16%</option>
+                  <option value="8">8% (frontera)</option>
+                  <option value="0">Tasa 0%</option>
+                  <option value="EXENTO">Exento</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs text-muted mb-1 block">IEPS % (opcional)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  {...register("tasaIeps", numeroOpcional)}
+                  className="input-dark"
+                  placeholder="No causa IEPS"
+                />
+                {err("tasaIeps")}
+              </label>
               <label className="block">
                 <span className="text-xs text-muted mb-1 block">Stock actual</span>
                 <input
@@ -456,6 +561,14 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                 </label>
               )}
             </div>
+
+            {/* Fase 12: imagen del producto (Cloudinary). */}
+            <ImagenProductoUpload
+              value={imagenUrl?.trim() ? imagenUrl.trim() : null}
+              onChange={(url) =>
+                setValue("imagenUrl", url ?? "", { shouldValidate: true, shouldDirty: true })
+              }
+            />
 
             {/* Sellos de Fase 10: granel y servicios */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">

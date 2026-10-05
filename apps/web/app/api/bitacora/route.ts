@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { buildExcelBuffer } from "@/lib/excel";
+import { tenantDb } from "@/lib/tenant";
 
 const MODULOS_VALIDOS = [
   "PUNTO_VENTA",
@@ -27,16 +27,23 @@ export async function GET(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   try {
     const { searchParams } = new URL(request.url);
     const desdeParam = searchParams.get("desde");
     const hastaParam = searchParams.get("hasta");
     const modulo = searchParams.get("modulo");
+    const usuarioParam = searchParams.get("usuario");
     const exportar = searchParams.get("export") === "xlsx";
-    // Fase B: paginación estricta para no arrastrar el log completo.
+    // Paginación estricta (Fase 11): nunca descargar el log completo.
+    // Se aceptan dos estilos de URL: `?page=1&limit=50` (remoto por páginas)
+    // y `?offset=0&limit=50` (carga incremental, retrocompatible).
     const limite = Math.min(Math.max(Number(searchParams.get("limit")) || 50, 1), 200);
-    const offset = Math.max(Number(searchParams.get("offset")) || 0, 0);
+    const page = Math.max(Number(searchParams.get("page")) || 1, 1);
+    const offset = searchParams.get("offset")
+      ? Math.max(Number(searchParams.get("offset")) || 0, 0)
+      : (page - 1) * limite;
 
     const AND: any[] = [];
 
@@ -52,6 +59,20 @@ export async function GET(request: Request) {
     }
     if (modulo && MODULOS_VALIDOS.includes(modulo)) {
       AND.push({ moduloSistema: modulo as any });
+    }
+    // Fase 11: búsqueda por usuario (nombre o username).
+    if (usuarioParam && usuarioParam.trim().length >= 1) {
+      const porUsuario = {
+        usuario: {
+          is: {
+            OR: [
+              { nombre: { contains: usuarioParam.trim(), mode: "insensitive" as const } },
+              { username: { contains: usuarioParam.trim(), mode: "insensitive" as const } },
+            ],
+          },
+        },
+      };
+      AND.push(porUsuario);
     }
 
     const [logs, total] = await Promise.all([
@@ -117,6 +138,8 @@ export async function GET(request: Request) {
       total,
       offset,
       limite,
+      page,
+      totalPaginas: Math.max(1, Math.ceil(total / limite)),
       tieneMas: offset + logs.length < total,
     });
   } catch (error) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package,
@@ -13,6 +13,8 @@ import {
   CreditCard,
   Eye,
   X,
+  UserRound,
+  Boxes,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import {
@@ -20,6 +22,7 @@ import {
   PreviewSkeleton,
   type PreviewData,
 } from "@/components/reports/preview-table";
+import { BitacoraPreview } from "@/components/reports/bitacora-preview";
 import { cn } from "@/lib/utils";
 
 interface ReportDef {
@@ -106,25 +109,89 @@ const REPORT_TYPES: ReportDef[] = [
   {
     id: "bitacora",
     label: "Bitácora de Auditoría",
-    description: "Últimos 5000 registros de actividad del sistema",
+    description: "Explora acciones del sistema con paginación remota (50 por página)",
     icon: ScrollText,
     colorClass: "border-neon-pink",
     bgClass: "bg-neon-pink/10",
     textClass: "text-neon-pink",
     hoverBgClass: "hover:bg-neon-pink/20",
-    needsDateRange: false,
+    needsDateRange: true,
   },
 ];
+
+// Módulos del sistema que acepta el reporte de bitácora (mismo catálogo
+// que /api/bitacora y lib/reports.ts).
+const MODULOS = [
+  "PUNTO_VENTA",
+  "INVENTARIO",
+  "CAJA",
+  "REPORTES",
+  "CONFIGURACION",
+  "BITACORA",
+  "CARGA_MASIVA",
+  "SEGURIDAD",
+  "SETUP",
+  "SYNC",
+] as const;
+
+interface UsuarioFiltro {
+  idPersona: string;
+  nombre: string;
+  username: string | null;
+  rol: string | null;
+}
+
+// El reporte que consume el filtro de módulo.
+const REPORTE_CON_MODULO = "bitacora";
 
 export default function ReportesPage() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [cajaId, setCajaId] = useState("");
+  const [usuario, setUsuario] = useState("");
+  const [modulo, setModulo] = useState("");
+  const [usuarios, setUsuarios] = useState<UsuarioFiltro[]>([]);
+  const [usuariosCargando, setUsuariosCargando] = useState(true);
+  const [usuariosError, setUsuariosError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [bitacoraOpen, setBitacoraOpen] = useState(false);
+  // Último reporte Generates: define qué filtros globals son relevantes.
+  const [contexto, setContexto] = useState<string | null>(null);
+  const moduloDisponible = contexto === REPORTE_CON_MODULO;
+
+  // El selector de usuarios se alimenta del endpoint real ya existente
+  // (/api/usuarios). Cualquier fallo degrada a un campo de texto libre
+  // —el servidor también acepta nombre o username— sin romper la página.
+  const cargarUsuarios = useCallback(async () => {
+    setUsuariosCargando(true);
+    try {
+      const res = await fetch("/api/usuarios");
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "No se pudieron cargar los usuarios");
+      const lista = Array.isArray(json?.usuarios) ? json.usuarios : [];
+      setUsuarios(
+        lista.filter(
+          (u: UsuarioFiltro) => u && typeof u.idPersona === "string" && !!u.idPersona
+        )
+      );
+      setUsuariosError(null);
+    } catch (e) {
+      setUsuarios([]);
+      setUsuariosError(
+        e instanceof Error ? e.message : "No se pudieron cargar los usuarios"
+      );
+    } finally {
+      setUsuariosCargando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void cargarUsuarios();
+  }, [cargarUsuarios]);
 
   const buildParams = (report: ReportDef): URLSearchParams | null => {
     const params = new URLSearchParams({ tipo: report.id });
@@ -139,22 +206,44 @@ export default function ReportesPage() {
       }
       params.set("idCaja", cajaId.trim());
     }
+    // Filtros avanzados aplicados EN EL SERVIDOR sobre la consulta paginada.
+    if (usuario.trim()) params.set("usuario", usuario.trim());
+    if (report.id === REPORTE_CON_MODULO && modulo) params.set("modulo", modulo);
     return params;
   };
 
   const handlePreview = async (report: ReportDef) => {
+    // La bitácora usa su propia vista con paginación remota (?page=1&limit=50).
+    if (report.id === "bitacora") {
+      setSelectedType(report.id);
+      setContexto(report.id);
+      setBitacoraOpen(true);
+      return;
+    }
     const params = buildParams(report);
     if (!params) return;
     setPreviewLoading(true);
     setPreviewError(null);
     setSelectedType(report.id);
+    setContexto(report.id);
     try {
       const res = await fetch(`/api/reportes/data?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al generar vista previa");
-      setPreviewData(data);
-    } catch (e: any) {
-      setPreviewError(e.message);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Error al generar vista previa");
+      // Toda lectura de la respuesta va con default defensivo: una carga
+      // malformada nunca debe romper el modal.
+      const filas = Array.isArray(data?.rows) ? data.rows : [];
+      setPreviewData({
+        title: typeof data?.title === "string" ? data.title : "Vista previa",
+        headers: Array.isArray(data?.headers) ? data.headers : [],
+        numFmt: Array.isArray(data?.numFmt) ? data.numFmt : [],
+        total: Array.isArray(data?.total) ? data.total : [],
+        rows: filas.map((f: unknown) => (Array.isArray(f) ? f : [])),
+        totalFilas: Number(data?.totalFilas) || filas.length,
+        truncado: Boolean(data?.truncado),
+      });
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : "Error al generar vista previa");
       setPreviewData(null);
     } finally {
       setPreviewLoading(false);
@@ -166,6 +255,7 @@ export default function ReportesPage() {
     if (!params) return;
     setIsGenerating(true);
     setSelectedType(report.id);
+    setContexto(report.id);
 
     try {
       const res = await fetch(`/api/reportes?${params.toString()}`);
@@ -211,27 +301,103 @@ export default function ReportesPage() {
           </p>
         </motion.div>
 
-        {/* Global date filter */}
-        <div className="mb-6 flex items-center gap-4">
+        {/* Filtros globales: fechas + usuario + módulo (todos server-side) */}
+        <div className="mb-6 flex flex-wrap items-start gap-x-4 gap-y-3">
           <div className="flex items-center gap-2 text-sm text-muted">
             <ScrollText className="h-4 w-4" />
             <span>Filtros globales:</span>
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="bg-surface-700 border border-surface-500 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:border-neon-blue focus:outline-none"
-            />
-            <span className="text-muted text-sm">a</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="bg-surface-700 border border-surface-500 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:border-neon-blue focus:outline-none"
-            />
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-3">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="bg-surface-700 border border-surface-500 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:border-neon-blue focus:outline-none"
+              />
+              <span className="text-muted text-sm">a</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="bg-surface-700 border border-surface-500 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:border-neon-blue focus:outline-none"
+              />
+            </div>
+
+            {/* Filtro por usuario: se aplica en el servidor (id, nombre o username) */}
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <UserRound className="h-4 w-4 shrink-0" />
+              <span>Usuario</span>
+              {usuarios.length > 0 ? (
+                <select
+                  value={usuario}
+                  onChange={(e) => setUsuario(e.target.value)}
+                  disabled={usuariosCargando}
+                  className="bg-surface-700 border border-surface-500 rounded-lg px-2 py-1.5 text-xs text-gray-100 focus:border-neon-blue focus:outline-none disabled:opacity-50"
+                >
+                  <option value="" className="bg-surface-800">
+                    Todos
+                  </option>
+                  {usuarios.map((u) => (
+                    <option key={u.idPersona} value={u.idPersona} className="bg-surface-800">
+                      {u.nombre}
+                      {u.username ? ` (${u.username})` : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={usuario}
+                  onChange={(e) => setUsuario(e.target.value)}
+                  placeholder="id, nombre o usuario"
+                  className="bg-surface-700 border border-surface-500 rounded-lg px-2 py-1.5 text-xs text-gray-100 placeholder:text-muted/40 focus:border-neon-blue focus:outline-none"
+                />
+              )}
+            </label>
+
+            {/* Filtro por módulo: sólo la bitácora lo soporta */}
+            <label
+              className={cn(
+                "flex items-center gap-2 text-xs",
+                moduloDisponible ? "text-muted" : "text-muted/50"
+              )}
+              title={
+                moduloDisponible
+                  ? "Filtra la bitácora por módulo del sistema"
+                  : "Sólo aplica a la Bitácora de auditoría"
+              }
+            >
+              <Boxes className="h-4 w-4 shrink-0" />
+              <span>Módulo</span>
+              <select
+                value={modulo}
+                onChange={(e) => setModulo(e.target.value)}
+                disabled={!moduloDisponible}
+                className="bg-surface-700 border border-surface-500 rounded-lg px-2 py-1.5 text-xs text-gray-100 focus:border-neon-pink focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <option value="" className="bg-surface-800">
+                  {moduloDisponible ? "Todos" : "No aplica"}
+                </option>
+                {MODULOS.map((m) => (
+                  <option key={m} value={m} className="bg-surface-800">
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+          {!moduloDisponible && (
+            <p className="mt-2 text-[11px] text-muted/70">
+              El filtro de módulo se habilita al generar la Bitácora de auditoría.
+            </p>
+          )}
+          {usuariosError && (
+            <p className="mt-2 text-[11px] text-warning">
+              No se pudo cargar el catálogo de usuarios ({usuariosError}). Escribe el nombre o
+              usuario directamente.
+            </p>
+          )}
         </div>
 
         {/* Report cards */}
@@ -347,7 +513,7 @@ export default function ReportesPage() {
                       {selectedType && ` · ${REPORT_TYPES.find((r) => r.id === selectedType)?.label ?? ""}`}
                     </h3>
                     <p className="text-[11px] text-muted">
-                      Explora, ordena y filtra antes de exportar a Excel
+                      Explora y ordena antes de exportar a Excel
                     </p>
                   </div>
                   <button
@@ -381,6 +547,16 @@ export default function ReportesPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <BitacoraPreview
+          open={bitacoraOpen}
+          onClose={() => {
+            setBitacoraOpen(false);
+            setSelectedType(null);
+          }}
+          desde={dateFrom}
+          hasta={dateTo}
+        />
 
         <p className="mt-6 text-center text-xs text-muted">
           Usa &quot;Vista previa&quot; en cada tarjeta para explorar los datos en el modal, o

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { FileText, Save, Loader2, Check, AlertTriangle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
+import { FacturacionEmitir } from "@/components/facturacion/facturacion-emitir";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfigStore } from "@/store/config";
@@ -21,9 +22,16 @@ export default function FacturacionPage() {
         >
           <h2 className="text-2xl font-black text-gray-100 mb-1">Facturación</h2>
           <p className="text-sm text-muted">
-            CFDI 4.0 · Datos fiscales del negocio para emitir comprobantes
+            CFDI 4.0 · Emisión de comprobantes y datos fiscales del negocio
           </p>
         </motion.div>
+
+        {/* Fase 12: emitir y listar facturas (cliente registrado + ticket). */}
+        <div className="mb-8">
+          <ErrorBoundary>
+            <FacturacionEmitir />
+          </ErrorBoundary>
+        </div>
 
         <ErrorBoundary>
           <FacturacionDatosFiscales />
@@ -158,8 +166,9 @@ function FacturacionDatosFiscales() {
               Datos fiscales del negocio
             </h3>
             <p className="text-xs text-muted">
-              RFC, razón social, régimen y código postal. Son la base de los
-              comprobantes que emita este sistema.
+              RFC/CURP validados, catálogos SAT de Régimen Fiscal y Uso de CFDI,
+              y domicilio fiscal fraccionado. Base de los comprobantes que emita
+              este sistema.
             </p>
           </div>
         </div>
@@ -192,8 +201,22 @@ function extractConfig(raw: any): BusinessConfig {
   const datosFiscales: DatosFiscales = {
     rfc: typeof fRaw.rfc === "string" ? fRaw.rfc : undefined,
     razonSocial: typeof fRaw.razonSocial === "string" ? fRaw.razonSocial : undefined,
+    curp: typeof fRaw.curp === "string" ? fRaw.curp : undefined,
     regimenFiscal: typeof fRaw.regimenFiscal === "string" ? fRaw.regimenFiscal : undefined,
+    usoCFDI: typeof fRaw.usoCFDI === "string" ? fRaw.usoCFDI : undefined,
     codigoPostal: typeof fRaw.codigoPostal === "string" ? fRaw.codigoPostal : undefined,
+    calle: typeof fRaw.calle === "string" ? fRaw.calle : undefined,
+    numExt: typeof fRaw.numExt === "string" ? fRaw.numExt : undefined,
+    numInt: typeof fRaw.numInt === "string" ? fRaw.numInt : undefined,
+    colonia: typeof fRaw.colonia === "string" ? fRaw.colonia : undefined,
+    municipio: typeof fRaw.municipio === "string" ? fRaw.municipio : undefined,
+    estado: typeof fRaw.estado === "string" ? fRaw.estado : undefined,
+    cp:
+      typeof fRaw.cp === "string"
+        ? fRaw.cp
+        : typeof fRaw.codigoPostal === "string"
+          ? fRaw.codigoPostal
+          : undefined,
   };
   const tieneFiscales = Object.values(datosFiscales).some((v) => typeof v === "string" && v.trim());
 
@@ -202,12 +225,15 @@ function extractConfig(raw: any): BusinessConfig {
     tipoNegocio: raw?.tipoNegocio ?? "PAPELERIA",
     moneda: raw?.moneda ?? "MXN",
     ivaRate: Number(raw?.ivaRate ?? 0),
+    preciosIncluyenIva: raw?.preciosIncluyenIva === true,
     featureFlags: {
       inventario: flags.inventario === true,
       facturacion: flags.facturacion === true,
       dashboard: flags.dashboard === true,
       proveedores: flags.proveedores === true,
       bitacora: flags.bitacora === true,
+      recargas: flags.recargas === true,
+      imagenesCloudinary: flags.imagenesCloudinary === true,
     },
     metodosPago: Array.isArray(raw?.metodosPago) ? raw.metodosPago : ["EFECTIVO", "TRANSFERENCIA"],
     politicaStockOffline:
@@ -225,7 +251,22 @@ function extractConfig(raw: any): BusinessConfig {
     usarCaducidad: raw?.usarCaducidad === true,
     usarUbicaciones: raw?.usarUbicaciones !== false,
     requerirFondoInicial: raw?.requerirFondoInicial !== false,
+    puntosConfig: normalizePuntos(raw?.puntosConfig),
     configVersion: raw?.configVersion ?? 1,
     setupPendiente: raw?.setupPendiente ?? false,
+  };
+}
+
+/** Fase 12: tasa del Puntos Monedero (defaults seguros si no llega config). */
+function normalizePuntos(raw: any) {
+  return {
+    pesosCompraPorPunto:
+      typeof raw?.pesosCompraPorPunto === "number" && raw.pesosCompraPorPunto > 0
+        ? Math.min(raw.pesosCompraPorPunto, 100000)
+        : 100,
+    valorPuntoPesos:
+      typeof raw?.valorPuntoPesos === "number" && raw.valorPuntoPesos > 0
+        ? Math.min(raw.valorPuntoPesos, 10000)
+        : 1,
   };
 }

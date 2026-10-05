@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
 // GET /api/productos/top — Catálogo visual del POS (UX Fase 1).
@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
 
   const param = parseInt(
     new URL(request.url).searchParams.get("limit") || String(MAX_DEFAULT),
@@ -93,6 +94,11 @@ export async function GET(request: Request) {
       codigoItem: p.codigoItem,
       descripcion: p.descripcion,
       precioUnitario: Number(p.precioUnitario),
+      precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+      tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
+      exentoIva: p.exentoIva === true,
+      tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
+      imagenUrl: p.imagenUrl ?? null,
       stockActual: p.stockActual,
       tipoImpresion: p.tipoImpresion ?? null,
       codigoBarras: p.codigoBarras ?? null,

@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { normalizarFechaCaducidad } from "@/lib/validate-product";
+import { registrarMovimientosKardex } from "@/lib/kardex";
+import { tenantDb } from "@/lib/tenant";
+import { claveProducto } from "@/lib/tenant-keys";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ codigo: string }> }
 ) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const prisma = tenantDb(auth.user.idNegocio);
   try {
     const { codigo } = await params;
     const producto = await prisma.producto.findUnique({
-      where: { codigoItem: codigo },
+      where: claveProducto(codigo),
     });
 
     if (!producto) {
@@ -25,6 +32,11 @@ export async function GET(
       descripcion: producto.descripcion,
       precioUnitario: Number(producto.precioUnitario),
       precioCompra: producto.precioCompra != null ? Number(producto.precioCompra) : null,
+      precioMayoreo: producto.precioMayoreo != null ? Number(producto.precioMayoreo) : null,
+      tasaIva: producto.tasaIva != null ? Number(producto.tasaIva) : null,
+      exentoIva: producto.exentoIva === true,
+      tasaIeps: producto.tasaIeps != null ? Number(producto.tasaIeps) : null,
+      imagenUrl: producto.imagenUrl ?? null,
       stockActual: producto.stockActual,
       stockMinimo: producto.stockMinimo,
       permiteDecimales: producto.permiteDecimales,
@@ -53,6 +65,7 @@ export async function PATCH(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const prisma = tenantDb(auth.user.idNegocio);
   const user = auth.user;
   const { codigo } = await params;
 
@@ -65,7 +78,7 @@ export async function PATCH(
 
   try {
     const existente = await prisma.producto.findUnique({
-      where: { codigoItem: codigo },
+      where: claveProducto(codigo),
     });
     if (!existente) {
       return NextResponse.json(
@@ -128,6 +141,91 @@ export async function PATCH(
         { error: "El precio de venta no puede ser menor al de compra" },
         { status: 400 }
       );
+    }
+
+    // ---- Fase 12: precio de mayoreo ----
+    let mayoreoFinal: number | null =
+      existente.precioMayoreo != null ? Number(existente.precioMayoreo) : null;
+    if (body.precioMayoreo !== undefined) {
+      if (body.precioMayoreo === null || body.precioMayoreo === "") {
+        data.precioMayoreo = null;
+        mayoreoFinal = null;
+      } else {
+        const mayoreo = Number(body.precioMayoreo);
+        if (!Number.isFinite(mayoreo) || mayoreo < 0) {
+          return NextResponse.json(
+            { error: "Precio de mayoreo inválido" },
+            { status: 400 }
+          );
+        }
+        // 0 significa "sin precio de mayoreo" (el POS usa menudeo).
+        if (mayoreo === 0) {
+          data.precioMayoreo = null;
+          mayoreoFinal = null;
+        } else {
+          if (mayoreo >= ventaFinal) {
+            return NextResponse.json(
+              { error: "El precio de mayoreo debe ser menor al de venta" },
+              { status: 400 }
+            );
+          }
+          data.precioMayoreo = Math.round(mayoreo * 100) / 100;
+          mayoreoFinal = data.precioMayoreo;
+        }
+      }
+    } else if (
+      body.precioUnitario !== undefined &&
+      mayoreoFinal != null &&
+      mayoreoFinal >= ventaFinal
+    ) {
+      // Subió el precio de venta y el mayoreo quedó igual o por encima.
+      return NextResponse.json(
+        { error: "Actualiza el precio de mayoreo: ya no es menor al de venta" },
+        { status: 400 }
+      );
+    }
+
+    // ---- Impuestos por producto ----
+    const porcentaje = (v: unknown): number | null | undefined => {
+      if (v === null || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n * 100) / 100 : undefined;
+    };
+    if (body.exentoIva !== undefined) {
+      data.exentoIva = body.exentoIva === true;
+      if (data.exentoIva) data.tasaIva = null;
+    }
+    if (body.tasaIva !== undefined && data.exentoIva !== true) {
+      const t = porcentaje(body.tasaIva);
+      if (t === undefined) {
+        return NextResponse.json({ error: "IVA inválido (0 a 100)" }, { status: 400 });
+      }
+      data.tasaIva = t;
+    }
+    if (body.tasaIeps !== undefined) {
+      const t = porcentaje(body.tasaIeps);
+      if (t === undefined) {
+        return NextResponse.json({ error: "IEPS inválido (0 a 100)" }, { status: 400 });
+      }
+      data.tasaIeps = t === 0 ? null : t;
+    }
+
+    // ---- Fase 12: imagen del producto (Cloudinary) ----
+    if (body.imagenUrl !== undefined) {
+      const url = typeof body.imagenUrl === "string" ? body.imagenUrl.trim() : "";
+      if (url === "") {
+        data.imagenUrl = null;
+      } else if (
+        url.startsWith("data:image/") ||
+        /^https:\/\/[\w.-]+\.cloudinary\.com\//i.test(url)
+      ) {
+        data.imagenUrl = url;
+      } else {
+        return NextResponse.json(
+          { error: "La imagen debe ser una URL de Cloudinary o un data URI" },
+          { status: 400 }
+        );
+      }
     }
 
     if (body.tipoImpresion !== undefined) {
@@ -228,7 +326,7 @@ export async function PATCH(
 
     const actualizado = await prisma.$transaction(async (tx) => {
       const producto = await tx.producto.update({
-        where: { codigoItem: codigo },
+        where: claveProducto(codigo),
         data,
       });
 
@@ -239,8 +337,23 @@ export async function PATCH(
           `Precio ${Number(existente.precioUnitario).toFixed(2)} → ${data.precioUnitario.toFixed(2)}`
         );
       }
-      if (data.stockActual !== undefined && data.stockActual !== existente.stockActual) {
+      const deltaStock =
+        data.stockActual !== undefined
+          ? Math.round((data.stockActual - Number(existente.stockActual)) * 1000) / 1000
+          : 0;
+      if (deltaStock !== 0) {
         cambios.push(`Stock ${existente.stockActual} → ${data.stockActual}`);
+        // Kardex inmutable: todo cambio manual de existencia es un AJUSTE
+        // con signo (recuento físico, merma, corrección).
+        await registrarMovimientosKardex(tx, [
+          {
+            codigoItem: codigo,
+            tipo: "AJUSTE",
+            cantidad: deltaStock,
+            motivo: "Ajuste manual de inventario",
+            idUsuario: user.idPersona,
+          },
+        ]);
       }
 
       if (cambios.length > 0) {

@@ -55,6 +55,11 @@ export default function CajaPage() {
   const requerirFondoInicial = useConfigStore(
     (s) => s.config?.requerirFondoInicial ?? true
   );
+  // Fase 12 · feature flag: el panel de Recargas telephone bosses solo se
+  // muestra si el negocio lo activó en Configuración.
+  const recargasActivas = useConfigStore(
+    (s) => s.config?.featureFlags?.recargas ?? false
+  );
 
   useEffect(() => {
     // Restaura la sesión vigente (incl. un corte EN_CIERRE a medias).
@@ -237,7 +242,7 @@ export default function CajaPage() {
                   value={fondoInicial}
                   onChange={(e) => setFondoInicial(e.target.value)}
                   placeholder="500.00"
-                  className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-lg text-gray-100 focus:border-acento focus:shadow-neon focus:outline-none transition-all"
+                  className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-lg text-gray-100 focus:border-acento focus:outline-none transition-all"
                 />
               </label>
 
@@ -250,9 +255,9 @@ export default function CajaPage() {
                   "w-full py-3 rounded-xl font-bold transition-all",
                   requerirFondoInicial
                     ? fondoInicial
-                      ? "bg-acento text-btn-ink shadow-neon"
+                      ? "bg-acento text-btn-ink shadow-card"
                       : "bg-surface-600 text-muted cursor-not-allowed"
-                    : "bg-acento text-btn-ink shadow-neon"
+                    : "bg-acento text-btn-ink shadow-card"
                 )}
               >
                 Abrir Caja
@@ -269,7 +274,7 @@ export default function CajaPage() {
                   className={cn(
                     "h-3 w-3 rounded-full animate-pulse",
                     sesionActual.estado === "EN_CIERRE"
-                      ? "bg-neon-red"
+                      ? "bg-rose-500"
                       : "bg-acento"
                   )}
                 />
@@ -296,7 +301,7 @@ export default function CajaPage() {
               </div>
               <button
                 onClick={() => setShowCorteCiego(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-neon-red/10 border border-neon-red/30 rounded-lg text-neon-red text-sm font-medium hover:bg-neon-red/20 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-sm font-medium hover:bg-rose-500/20 transition-colors"
               >
                 <Lock className="h-4 w-4" />
                 {sesionActual.estado === "EN_CIERRE" ? "Continuar corte" : "Cerrar Caja"}
@@ -326,9 +331,9 @@ export default function CajaPage() {
 
             {/* SEPARACIÓN DE FLUJOS - CRÍTICO */}
             {sesionActual.estado === "EN_CIERRE" ? (
-              <div className="bg-surface-800 border-2 border-neon-red/40 rounded-2xl p-8 text-center">
-                <div className="h-12 w-12 mx-auto rounded-xl bg-neon-red/10 flex items-center justify-center mb-4">
-                  <Lock className="h-6 w-6 text-neon-red" />
+              <div className="bg-surface-800 border-2 border-rose-500/40 rounded-2xl p-8 text-center">
+                <div className="h-12 w-12 mx-auto rounded-xl bg-rose-500/10 flex items-center justify-center mb-4">
+                  <Lock className="h-6 w-6 text-rose-400" />
                 </div>
                 <h3 className="font-black text-gray-100 mb-1">
                   Corte ciego en curso
@@ -336,7 +341,7 @@ export default function CajaPage() {
                 <p className="text-sm text-muted max-w-sm mx-auto">
                   Los montos están ocultos. Continúa el conteo físico con el
                   botón{" "}
-                  <span className="text-neon-red font-medium">
+                  <span className="text-rose-400 font-medium">
                     &quot;Continuar corte&quot;
                   </span>{" "}
                   de arriba.
@@ -361,7 +366,7 @@ export default function CajaPage() {
                   </div>
                 </div>
 
-                <div className="text-3xl lg:text-4xl font-black text-acento text-glow-green mb-4">
+                <div className="text-3xl lg:text-4xl font-black text-acento mb-4">
                   ${sesionActual.totalVentasEfectivo.toFixed(2)}
                 </div>
 
@@ -392,7 +397,7 @@ export default function CajaPage() {
                         value={ingresoPapa}
                         onChange={(e) => setIngresoPapa(e.target.value)}
                         placeholder="0.00"
-                        className="w-full bg-surface-700 border-2 border-acento/40 rounded-xl px-4 py-3 text-lg text-gray-100 placeholder:text-muted/50 focus:border-acento focus:shadow-neon focus:outline-none transition-all"
+                        className="w-full bg-surface-700 border-2 border-acento/40 rounded-xl px-4 py-3 text-lg text-gray-100 placeholder:text-muted/50 focus:border-acento focus:outline-none transition-all"
                       />
                       <motion.button
                         whileTap={{ scale: 0.95 }}
@@ -401,7 +406,7 @@ export default function CajaPage() {
                         className={cn(
                           "flex items-center gap-2 px-4 rounded-xl font-bold transition-all shrink-0",
                           ingresoPapa && procesando === null
-                            ? "bg-acento text-btn-ink shadow-neon"
+                            ? "bg-acento text-btn-ink shadow-card"
                             : "bg-surface-600 text-muted cursor-not-allowed"
                         )}
                       >
@@ -416,15 +421,16 @@ export default function CajaPage() {
                 </div>
               </motion.div>
 
-              {/* Flujo Recargas - SEPARADO */}
+              {/* Flujo Recargas - SEPARADO (feature flag `recargas`) */}
+              {recargasActivas && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="bg-surface-800 border-2 border-neon-cyan/40 rounded-2xl p-6"
+                className="bg-surface-800 border-2 border-sky-500/40 rounded-2xl p-6"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-lg bg-neon-cyan/10 flex items-center justify-center">
-                    <Smartphone className="h-5 w-5 text-neon-cyan" />
+                  <div className="h-10 w-10 rounded-lg bg-sky-500/10 flex items-center justify-center">
+                    <Smartphone className="h-5 w-5 text-sky-400" />
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-100">Recargas</h3>
@@ -434,12 +440,12 @@ export default function CajaPage() {
                   </div>
                 </div>
 
-                <div className="text-3xl lg:text-4xl font-black text-neon-cyan text-glow-cyan mb-4">
+                <div className="text-3xl lg:text-4xl font-black text-sky-400 mb-4">
                   ${sesionActual.totalRecargas.toFixed(2)}
                 </div>
 
-                <div className="p-3 bg-neon-cyan/5 rounded-lg border border-neon-cyan/20 mb-5">
-                  <div className="flex items-center gap-2 text-xs text-neon-cyan">
+                <div className="p-3 bg-sky-500/5 rounded-lg border border-sky-500/20 mb-5">
+                  <div className="flex items-center gap-2 text-xs text-sky-400">
                     <AlertTriangle className="h-3 w-3" />
                     <span>
                       Flujo separado intencionalmente para evitar descuadres
@@ -448,9 +454,9 @@ export default function CajaPage() {
                 </div>
 
                 {/* Input de ingreso exclusivo de Recargas */}
-                <div className="border-t border-neon-cyan/20 pt-4">
+                <div className="border-t border-sky-500/20 pt-4">
                   <label className="block mb-2">
-                    <span className="text-xs font-bold text-neon-cyan uppercase tracking-wider">
+                    <span className="text-xs font-bold text-sky-400 uppercase tracking-wider">
                       Registrar recarga
                     </span>
                     <div className="flex gap-2 mt-2">
@@ -459,7 +465,7 @@ export default function CajaPage() {
                         value={ingresoRecarga}
                         onChange={(e) => setIngresoRecarga(e.target.value)}
                         placeholder="0.00"
-                        className="w-full bg-surface-700 border-2 border-neon-cyan/40 rounded-xl px-4 py-3 text-lg text-gray-100 placeholder:text-muted/50 focus:border-neon-cyan focus:shadow-neon-cyan focus:outline-none transition-all"
+                        className="w-full bg-surface-700 border-2 border-sky-500/40 rounded-xl px-4 py-3 text-lg text-gray-100 placeholder:text-muted/50 focus:border-sky-500 focus:outline-none transition-all"
                       />
                       <motion.button
                         whileTap={{ scale: 0.95 }}
@@ -468,7 +474,7 @@ export default function CajaPage() {
                         className={cn(
                           "flex items-center gap-2 px-4 rounded-xl font-bold transition-all shrink-0",
                           ingresoRecarga && procesando === null
-                            ? "bg-neon-cyan text-btn-ink shadow-neon-cyan"
+                            ? "bg-sky-600 text-white hover:bg-sky-500"
                             : "bg-surface-600 text-muted cursor-not-allowed"
                         )}
                       >
@@ -482,6 +488,7 @@ export default function CajaPage() {
                   </label>
                 </div>
               </motion.div>
+              )}
             </div>
 
             {/* Total balanceado */}
@@ -508,7 +515,7 @@ export default function CajaPage() {
               {(sesionActual.totalRetiros ?? 0) > 0 && (
                 <div className="flex justify-between items-center mt-1 text-sm">
                   <span className="text-muted">Retiros autorizados</span>
-                  <span className="text-neon-red">
+                  <span className="text-rose-400">
                     -${(sesionActual.totalRetiros ?? 0).toFixed(2)}
                   </span>
                 </div>

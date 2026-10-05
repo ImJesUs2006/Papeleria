@@ -88,10 +88,47 @@ enum TipoMovimientoKardex {
 // TABLAS
 // ============================================================
 
+// ============================================================
+// MULTI-TENANT — cada negocio (arrendatario) es dueño de sus datos.
+// Toda tabla lleva `idNegocio`; el cliente Prisma con alcance de negocio
+// (apps/web/lib/tenant.ts) lo inyecta y filtra en cada consulta.
+// ============================================================
+
+model Negocio {
+  idNegocio String   @id @default(uuid())
+  // Código corto con el que el personal inicia sesión (ej. "papeleria-centro").
+  codigo    String   @unique
+  nombre    String
+  // false = negocio suspendido: nadie de ese negocio puede iniciar sesión.
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  configuracion    ConfiguracionNegocio?
+  usuarios         Usuario[]
+  productos        Producto[]
+  categorias       Categoria[]
+  proveedores      Proveedor[]
+  pedidosProveedor PedidoProveedor[]
+  ventas           Venta[]
+  sesionesCaja     SesionCaja[]
+  snapshots        SnapshotSeguridad[]
+  bitacoraLogs     BitacoraLog[]
+  devoluciones     Devolucion[]
+  pagosProveedor   PagoProveedor[]
+  clientes         Cliente[]
+  facturas         Factura[]
+  apartados        Apartado[]
+  retirosEfectivo  RetiroEfectivo[]
+
+  @@map("negocios")
+}
+
 model Usuario {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio          String    @default("default")
   idPersona          String    @id @default(uuid())
   nombre             String
-  username           String    @unique
+  username           String
   passwordHash       String
   rol                Rol       @default(CAJERA)
   activa             Boolean   @default(true)
@@ -122,15 +159,37 @@ model Usuario {
   retirosAutorizados RetiroEfectivo[]       @relation("RetiroAutorizadoPor")
   movimientosKardex  MovimientoKardex[]
   apartadosCreados   Apartado[]
+  facturasEmitidas   Factura[]
 
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@unique([idNegocio, username])
+  @@index([idNegocio])
   @@map("usuarios")
 }
 
 model Producto {
-  codigoItem         String         @id
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio          String         @default("default")
+  codigoItem         String
   descripcion        String
   precioUnitario     Decimal        @db.Decimal(10, 2)
   precioCompra       Decimal?       @db.Decimal(10, 2)
+  // ---- Fase 12 · Venta a Mayoreo ----
+  // Precio de mayoreo (opcional). Si es null o 0, el producto NO tiene
+  // precio de mayoreo y el interruptor del POS lo omite (usa menudeo).
+  precioMayoreo      Decimal?       @db.Decimal(10, 2)
+  // ---- Impuestos por producto ----
+  // IVA propio en porcentaje (16, 8, 0). Null = hereda la tasa del negocio.
+  tasaIva            Decimal?       @db.Decimal(5, 2)
+  // Exento de IVA (distinto de tasa 0% para efectos fiscales).
+  exentoIva          Boolean        @default(false)
+  // IEPS en porcentaje (bebidas azucaradas, tabaco…). Null = no causa.
+  tasaIeps           Decimal?       @db.Decimal(5, 2)
+  // ---- Fase 12 · Imágenes Cloudinary ----
+  // URL pública de la imagen en Cloudinary (o data URI). Solo se usa cuando
+  // el feature flag `imagenesCloudinary` está activo en Configuración.
+  imagenUrl          String?        @db.Text
   // ---- Fase 10 · Plantilla Universal ----
   // Ventas a granel: el carrito y el ticket aceptan fracciones (0.5 kg, 8 m).
   // El stock se modela en Decimal(10,3) para poder rastrear kilos/metros.
@@ -152,7 +211,7 @@ model Producto {
   fechaCaducidad     DateTime?
   tipoImpresion      TipoImpresion?
   proveedor          String?
-  codigoBarras       String?        @unique
+  codigoBarras       String?
   activo             Boolean        @default(true)
   // Destacado para el catálogo visual del POS (grid táctil "más vendidos / favoritos").
   favorito           Boolean        @default(false)
@@ -165,8 +224,12 @@ model Producto {
   devolucionLineas  DevolucionLinea[]
   kardexMovimientos MovimientoKardex[]
   apartadoLineas    ApartadoLinea[]
+  negocio           Negocio               @relation(fields: [idNegocio], references: [idNegocio])
 
+  @@id([idNegocio, codigoItem])
+  @@unique([idNegocio, codigoBarras])
   @@index([idCategoria])
+  @@index([idNegocio])
   @@map("productos")
 }
 
@@ -181,11 +244,15 @@ model Categoria {
 
   productos Producto[]
 
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
   @@index([idNegocio])
   @@map("categorias")
 }
 
 model Proveedor {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio     String   @default("default")
   idProveedor   String   @id @default(uuid())
   nombre        String
   telefono      String?
@@ -200,10 +267,15 @@ model Proveedor {
   pedidos PedidoProveedor[]
   pagos   PagoProveedor[]
 
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio])
   @@map("proveedores")
 }
 
 model PedidoProveedor {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio     String    @default("default")
   idPedido      String    @id @default(uuid())
   idProveedor   String
   fechaPedido   DateTime  @default(now())
@@ -216,11 +288,15 @@ model PedidoProveedor {
   proveedor Proveedor             @relation(fields: [idProveedor], references: [idProveedor])
   usuario   Usuario               @relation(fields: [createdBy], references: [idPersona])
   items     ItemPedidoProveedor[]
+  negocio   Negocio               @relation(fields: [idNegocio], references: [idNegocio])
 
+  @@index([idProveedor])
+  @@index([idNegocio])
   @@map("pedidos_proveedor")
 }
 
 model ItemPedidoProveedor {
+  idNegocio      String  @default("default")
   idItemPedido   String  @id @default(uuid())
   idPedido       String
   codigoItem     String
@@ -228,22 +304,27 @@ model ItemPedidoProveedor {
   precioCotizado Decimal @db.Decimal(10, 2)
 
   pedido   PedidoProveedor @relation(fields: [idPedido], references: [idPedido])
-  producto Producto        @relation(fields: [codigoItem], references: [codigoItem])
+  producto Producto        @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
 
+  @@index([idPedido])
+  @@index([idNegocio])
   @@map("items_pedido_proveedor")
 }
 
 model Venta {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio               String      @default("default")
   folioVenta              String      @id
   fechaHora               DateTime    @default(now())
   subtotal                Decimal     @db.Decimal(10, 2)
   iva                     Decimal     @db.Decimal(10, 2)
+  ieps                    Decimal     @default(0) @db.Decimal(10, 2)
   totalNeto               Decimal     @db.Decimal(10, 2)
   idUsuario               String
   idCaja                  String?
-  // ---- CRM y Cuentas por Cobrar (Fase 3) ----
-  // Cliente asociado cuando el pago se hace con "Crédito de Tienda"
-  // (el total pasa a `saldoDeudor` en lugar de ingresar a caja).
+  // ---- CRM y fidelización ----
+  // Cliente asociado al ticket. Con PUNTOS_MONEDERO es obligatorio (dueño
+  // del monedero); en los demás métodos es opcional y solo acumula puntos.
   idCliente               String?
   estado                  EstadoVenta @default(ACTIVA)
   metodoPago              String      @default("EFECTIVO")
@@ -254,6 +335,7 @@ model Venta {
   createdAt               DateTime    @default(now())
   // ---- Offline-first (idempotencia + traza de origen) ----
   idLocal                 String?     @unique
+  // "ONLINE" | "OFFLINE" (sincronizada) | "APARTADO" (liquidación de apartado)
   origen                  String      @default("ONLINE")
   dispositivoId           String?
   fechaHoraCliente        DateTime?
@@ -263,33 +345,54 @@ model Venta {
   cliente       Cliente?            @relation(fields: [idCliente], references: [idCliente])
   lineasDetalle LineaDetalleVenta[]
   devoluciones  Devolucion[]
+  // Fase 12: un ticket genera como máximo una factura.
+  factura       Factura?
+  negocio       Negocio             @relation(fields: [idNegocio], references: [idNegocio])
 
+  // Reportes, dashboard y corte filtran por fecha, caja y cliente.
+  @@index([fechaHora])
+  @@index([idCaja])
+  @@index([idCliente])
+  @@index([estado, fechaHora])
+  @@index([idNegocio])
   @@map("ventas")
 }
 
 model LineaDetalleVenta {
-  idLinea        String  @id @default(uuid())
+  idNegocio      String   @default("default")
+  idLinea        String   @id @default(uuid())
   folioVenta     String
   codigoItem     String
   // Fase 10: Decimal para ventas a granel (0.5 kg); las unidades enteras
   // se siguen escribiendo como 1, 2, 3...
-  cantidad       Decimal @db.Decimal(10, 3)
-  precioMomento  Decimal @db.Decimal(10, 2)
-  descuentoLinea Decimal @default(0) @db.Decimal(10, 2)
-  subtotalLinea  Decimal @db.Decimal(10, 2)
+  cantidad       Decimal  @db.Decimal(10, 3)
+  precioMomento  Decimal  @db.Decimal(10, 2)
+  descuentoLinea Decimal  @default(0) @db.Decimal(10, 2)
+  subtotalLinea  Decimal  @db.Decimal(10, 2)
+  // ---- Impuestos por línea (los exigirá el CFDI) ----
+  // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
+  // IVA se deduce de los totales de la venta.
+  tasaIva        Decimal? @db.Decimal(5, 2)
+  ivaLinea       Decimal? @db.Decimal(10, 2)
+  iepsLinea      Decimal  @default(0) @db.Decimal(10, 2)
 
   venta    Venta    @relation(fields: [folioVenta], references: [folioVenta])
-  producto Producto @relation(fields: [codigoItem], references: [codigoItem])
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
 
+  @@index([folioVenta])
+  @@index([codigoItem])
+  @@index([idNegocio])
   @@map("lineas_detalle_venta")
 }
 
 model SesionCaja {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio           String           @default("default")
   idCaja              String           @id @default(uuid())
   // ---- Folios Amigables (Fase 9) ----
   // Identificador legible para reportes e impresiones (ej. "CAJA-001")
   // en lugar del UUID interno. Se asigna en la apertura de caja.
-  folioCaja           String?          @unique
+  folioCaja           String?
   // ---- Multi-Caja (Fase 3) ----
   // Identificador humano del terminal físico (ej. "Caja 1", "Terminal 2").
   nombreCaja          String?
@@ -323,69 +426,85 @@ model SesionCaja {
   devoluciones   Devolucion[]
   retiros        RetiroEfectivo[]
   apartados      Apartado[]
+  negocio        Negocio          @relation(fields: [idNegocio], references: [idNegocio])
 
+  @@unique([idNegocio, folioCaja])
+  // "La caja ABIERTA" se consulta en cada venta.
+  @@index([estado])
+  @@index([idNegocio])
   @@map("sesiones_caja")
 }
 
 model ConfiguracionNegocio {
-  id                    Int         @id @default(1)
-  nombreNegocio         String      @default("Mi Negocio")
-  tipoNegocio           TipoNegocio @default(PAPELERIA_RETAIL)
-  moneda                String      @default("MXN")
-  ivaRate               Decimal     @default(16) @db.Decimal(5, 2)
+  idNegocio            String      @id @default("default")
+  nombreNegocio        String      @default("Mi Negocio")
+  tipoNegocio          TipoNegocio @default(PAPELERIA_RETAIL)
+  moneda               String      @default("MXN")
+  ivaRate              Decimal     @default(16) @db.Decimal(5, 2)
+  // true = los precios de lista YA incluyen impuestos (lo usual en mostrador):
+  // el ticket los desglosa hacia atrás. false = se suman al cobrar.
+  preciosIncluyenIva   Boolean     @default(false)
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
-  featureFlags          Json        @default("{}")
+  featureFlags         Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
-  metodosPago           Json        @default("[]")
-  politicaStockOffline  String      @default("PERMITIR_NEGATIVO")
+  metodosPago          Json        @default("[]")
+  politicaStockOffline String      @default("PERMITIR_NEGATIVO")
   // ---- Marca Blanca / Temas (Fase 1 → Fase 3) ----
   // Logo del negocio: data URI base64 (máx 1 MB, validado en API) o URL.
-  logo                  String?     @db.Text
+  logo                 String?     @db.Text
   // Tema base visual del sistema: "NEON" | "MINIMALISTA" | "BRUTALISTA" | "CORPORATIVO".
   // BrandTheme inyecta data-theme="<temaBase>" en <html> y las variables
   // semánticas de Tailwind (bg-surface, border-base, shadow-card) cambian
   // sus valores CSS nativos según el tema.
-  temaBase              String      @default("NEON")
+  temaBase             String      @default("NEON")
   // Color de acento (hex #rrggbb) para botones principales y acentos (antes temaColor).
-  colorAcento           String      @default("#10b981")
+  colorAcento          String      @default("#10b981")
   // ---- Hiper-personalización (Fase de Pulido / Fase 4) ----
   // Texto opcional al final del ticket (políticas de devolución, gracias, etc.).
-  mensajeTicket         String?
+  mensajeTicket        String?
   // Ancho del ticket térmico: "58mm" | "80mm" (clase CSS del recibo).
-  anchoTicket           String      @default("80mm")
+  anchoTicket          String      @default("80mm")
   // Vista inicial del POS: "ESCANER" (input enfocado) | "CATALOGO_TACTIL" (grid).
-  vistaDefectoPOS       String      @default("ESCANER")
+  vistaDefectoPOS      String      @default("ESCANER")
   // Datos fiscales para facturación (RFC, Razón Social, Régimen Fiscal y CP).
   // Ej: { rfc: string; razonSocial: string; regimenFiscal: string; codigoPostal: string }
-  datosFiscales         Json?
+  datosFiscales        Json?
   // ---- Blindaje Financiero (Fase 2) ----
   // Cuenta de transferencia del negocio para cobros PPG/pagaré, ej.
   // { banco: string; titular: string; clabe: string; cuenta: string }
   // Administrada por el Admin desde Configuración; el POS la muestra en
   // el modal de pago "Transferencia" exigiendo los últimos 4 dígitos de
   // la referencia/rastreo.
-  datosBancarios        Json?
+  datosBancarios       Json?
   // ---- Configuración Personalizable del Inventario (Fase 10) ----
   // Toggles para el Inventario: caducidad (lotes) y ubicaciones de estante.
   // Apagar una opción oculta su columna/campo en la UI sin perder datos
   // históricos de los productos.
-  usarCaducidad         Boolean     @default(false)
-  usarUbicaciones       Boolean     @default(true)
+  usarCaducidad        Boolean     @default(false)
+  usarUbicaciones      Boolean     @default(true)
   // ---- Configuración de Caja (Fase 10) ----
   // true = la apertura de caja exige capturar el fondo inicial (por defecto).
   // false = la caja puede abrirse sin fondo (caja de puesto rápido en ferias).
-  requerirFondoInicial  Boolean     @default(true)
-  configVersion         Int         @default(1)
-  setupPendiente        Boolean     @default(true)
-  updatedById           String?
-  updatedAt             DateTime    @updatedAt
+  requerirFondoInicial Boolean     @default(true)
+  // ---- Puntos Monedero (Fase 12) ----
+  // Tasa del programa de fidelización: cuánto gastar para ganar 1 punto y
+  // cuánto cubre 1 punto al pagar. Ej: { pesosCompraPorPunto: 100, valorPuntoPesos: 1 }
+  puntosConfig         Json?
+  configVersion        Int         @default(1)
+  setupPendiente       Boolean     @default(true)
+  updatedById          String?
+  updatedAt            DateTime    @updatedAt
 
   updatedBy Usuario? @relation(fields: [updatedById], references: [idPersona])
+
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
 
   @@map("configuracion_negocio")
 }
 
 model SnapshotSeguridad {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio String   @default("default")
   id        String   @id @default(uuid())
   fecha     DateTime @default(now())
   // Estado completo (configuración + totales por sesión de caja) en JSON,
@@ -396,13 +515,17 @@ model SnapshotSeguridad {
   idUsuario String?
 
   usuario Usuario? @relation("SnapshotCreadoPor", fields: [idUsuario], references: [idPersona])
+  negocio Negocio  @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([fecha])
   @@index([idUsuario])
+  @@index([idNegocio])
   @@map("snapshots_seguridad")
 }
 
 model BitacoraLog {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio     String        @default("default")
   idLog         String        @id @default(uuid())
   fechaHora     DateTime      @default(now())
   idUsuario     String?
@@ -413,14 +536,18 @@ model BitacoraLog {
   ipOrigen      String?
 
   usuario Usuario? @relation(fields: [idUsuario], references: [idPersona])
+  negocio Negocio  @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([fechaHora])
   @@index([moduloSistema])
   @@index([idUsuario])
+  @@index([idNegocio])
   @@map("bitacora_logs")
 }
 
 model Devolucion {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio       String         @default("default")
   idDevolucion    String         @id @default(uuid())
   folioDevolucion String         @unique
   folioVenta      String
@@ -429,6 +556,7 @@ model Devolucion {
   motivo          String?
   subtotal        Decimal        @db.Decimal(10, 2)
   iva             Decimal        @db.Decimal(10, 2)
+  ieps            Decimal        @default(0) @db.Decimal(10, 2)
   totalNeto       Decimal        @db.Decimal(10, 2)
   metodoReembolso String         @default("EFECTIVO")
   idUsuario       String
@@ -439,12 +567,15 @@ model Devolucion {
   usuario    Usuario           @relation(fields: [idUsuario], references: [idPersona])
   sesionCaja SesionCaja?       @relation(fields: [idCaja], references: [idCaja])
   lineas     DevolucionLinea[]
+  negocio    Negocio           @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([folioVenta])
+  @@index([idNegocio])
   @@map("devoluciones")
 }
 
 model DevolucionLinea {
+  idNegocio         String  @default("default")
   idLineaDevolucion String  @id @default(uuid())
   idDevolucion      String
   codigoItem        String
@@ -454,12 +585,16 @@ model DevolucionLinea {
   subtotalLinea     Decimal @db.Decimal(10, 2)
 
   devolucion Devolucion @relation(fields: [idDevolucion], references: [idDevolucion])
-  producto   Producto   @relation(fields: [codigoItem], references: [codigoItem])
+  producto   Producto   @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
 
+  @@index([idDevolucion])
+  @@index([idNegocio])
   @@map("devolucion_lineas")
 }
 
 model PagoProveedor {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio   String   @default("default")
   idPago      String   @id @default(uuid())
   idProveedor String
   fechaHora   DateTime @default(now())
@@ -472,8 +607,10 @@ model PagoProveedor {
 
   proveedor Proveedor @relation(fields: [idProveedor], references: [idProveedor])
   usuario   Usuario   @relation(fields: [idUsuario], references: [idPersona])
+  negocio   Negocio   @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([idProveedor])
+  @@index([idNegocio])
   @@map("pagos_proveedor")
 }
 
@@ -484,18 +621,70 @@ model PagoProveedor {
 // Cliente del sistema de cuentas por cobrar (Crédito de Tienda) y
 // programa de fidelización (1 punto por cada $100 de compra).
 model Cliente {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio       String   @default("default")
   idCliente       String   @id @default(uuid())
   nombre          String
   telefono        String?
   saldoDeudor     Decimal  @default(0) @db.Decimal(10, 2)
   puntosFidelidad Int      @default(0)
+  // ---- Fase 12 · Facturación estricta ----
+  // Datos fiscales del receptor del CFDI. Opcionales en el padrón (el POS
+  // solo necesita nombre), pero se exigen al emitir la factura.
+  rfc             String?
+  razonSocial     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   ventas    Venta[]
   apartados Apartado[]
+  facturas  Factura[]
 
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio])
   @@map("clientes")
+}
+
+// ============================================================
+// FASE 12 — Facturación estricta (CFDI 4.0)
+// ============================================================
+
+enum EstadoFactura {
+  EMITIDA
+  CANCELADA
+}
+
+// Una factura está siempre atada a UN cliente registrado y a UN ticket de
+// compra existente (folioVenta es único: no se puede facturar dos veces el
+// mismo ticket). Los importes se copian del ticket en el momento de emitir.
+model Factura {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio    String        @default("default")
+  idFactura    String        @id @default(uuid())
+  folio        String        @unique
+  fechaEmision DateTime      @default(now())
+  idCliente    String
+  folioVenta   String        @unique
+  subtotal     Decimal       @db.Decimal(10, 2)
+  iva          Decimal       @db.Decimal(10, 2)
+  totalNeto    Decimal       @db.Decimal(10, 2)
+  metodoPago   String
+  usoCfdi      String        @default("S01")
+  formaPago    String        @default("PUE")
+  estado       EstadoFactura @default(EMITIDA)
+  idUsuario    String
+  createdAt    DateTime      @default(now())
+
+  cliente Cliente @relation(fields: [idCliente], references: [idCliente])
+  venta   Venta   @relation(fields: [folioVenta], references: [folioVenta])
+  usuario Usuario @relation(fields: [idUsuario], references: [idPersona])
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idCliente])
+  @@index([fechaEmision])
+  @@index([idNegocio])
+  @@map("facturas")
 }
 
 // ============================================================
@@ -506,6 +695,8 @@ model Cliente {
 // ingresa a la SesionCaja como efectivo/digital) y el stock queda reservado
 // (descuento físico inmediato). La venta se materializa al liquidar.
 model Apartado {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio        String         @default("default")
   idApartado       String         @id @default(uuid())
   // Folio legible para operación e impresión (ej. "APT-0001").
   folio            String         @unique
@@ -526,27 +717,37 @@ model Apartado {
   sesionCaja SesionCaja?     @relation(fields: [idCaja], references: [idCaja])
   usuario    Usuario         @relation(fields: [idUsuario], references: [idPersona])
   lineas     ApartadoLinea[]
+  negocio    Negocio         @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([idCliente])
   @@index([estado])
+  @@index([idNegocio])
   @@map("apartados")
 }
 
 // Líneas del apartado: mismas reglas que la venta (Producto + cantidad
 // Decimal para granel), pero el subtotal guarda el precio acordado.
 model ApartadoLinea {
-  idLineaApartado String  @id @default(uuid())
+  idNegocio       String   @default("default")
+  idLineaApartado String   @id @default(uuid())
   idApartado      String
   codigoItem      String
-  cantidad        Decimal @db.Decimal(10, 3)
-  precioMomento   Decimal @db.Decimal(10, 2)
-  descuentoLinea  Decimal @default(0) @db.Decimal(10, 2)
-  subtotalLinea   Decimal @db.Decimal(10, 2)
+  cantidad        Decimal  @db.Decimal(10, 3)
+  precioMomento   Decimal  @db.Decimal(10, 2)
+  descuentoLinea  Decimal  @default(0) @db.Decimal(10, 2)
+  subtotalLinea   Decimal  @db.Decimal(10, 2)
+  // ---- Impuestos por línea (los exigirá el CFDI) ----
+  // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
+  // IVA se deduce de los totales de el apartado.
+  tasaIva         Decimal? @db.Decimal(5, 2)
+  ivaLinea        Decimal? @db.Decimal(10, 2)
+  iepsLinea       Decimal  @default(0) @db.Decimal(10, 2)
 
   apartado Apartado @relation(fields: [idApartado], references: [idApartado])
-  producto Producto @relation(fields: [codigoItem], references: [codigoItem])
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
 
   @@index([idApartado])
+  @@index([idNegocio])
   @@map("apartado_lineas")
 }
 
@@ -554,6 +755,7 @@ model ApartadoLinea {
 // devolución, carga masiva, ajuste, pedido) genera EXACTAMENTE un
 // registro aquí; nunca se toca `stockActual` sin su trazo.
 model MovimientoKardex {
+  idNegocio      String               @default("default")
   idMovimiento   String               @id @default(uuid())
   fecha          DateTime             @default(now())
   codigoItem     String
@@ -566,11 +768,12 @@ model MovimientoKardex {
   motivo         String
   idUsuario      String
 
-  producto Producto @relation(fields: [codigoItem], references: [codigoItem])
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
   usuario  Usuario  @relation(fields: [idUsuario], references: [idPersona])
 
   @@index([codigoItem, fecha])
   @@index([fecha])
+  @@index([idNegocio])
   @@map("movimientos_kardex")
 }
 
@@ -578,6 +781,8 @@ model MovimientoKardex {
 // AL cerrar, el corte ciego resta estos montos del esperado para no
 // marcar descuadre matemático.
 model RetiroEfectivo {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio String   @default("default")
   idRetiro  String   @id @default(uuid())
   idCaja    String
   idAdmin   String
@@ -588,8 +793,10 @@ model RetiroEfectivo {
 
   sesionCaja SesionCaja @relation(fields: [idCaja], references: [idCaja])
   admin      Usuario    @relation("RetiroAutorizadoPor", fields: [idAdmin], references: [idPersona])
+  negocio    Negocio    @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([idCaja])
   @@index([fechaHora])
+  @@index([idNegocio])
   @@map("retiros_efectivo")
 }

@@ -11,15 +11,19 @@ import {
   DEFAULT_USAR_CADUCIDAD,
   DEFAULT_USAR_UBICACIONES,
   DEFAULT_REQUERIR_FONDO_INICIAL,
+  DEFAULT_PUNTOS_CONFIG,
   type AnchoTicket,
   type TemaBase,
   type VistaPOS,
+  type PuntosConfig,
 } from "@/lib/business-types";
 
 const FEATURE_FLAGS_SCHEMA = z.object(
   Object.fromEntries(
-    VALID_FLAG_KEYS.map((k) => [k, z.boolean()])
-  ) as Record<string, z.ZodBoolean>
+    // `.default(false)`: los flags nuevos (p. ej. Fase 12) NO pueden romper
+    // clientes viejoso configs guardadas que aún no los envían.
+    VALID_FLAG_KEYS.map((k) => [k, z.boolean().default(false)])
+  ) as Record<string, z.ZodDefault<z.ZodBoolean>>
 );
 
 // Logo de marca blanca: data URI de imagen (base64) o URL http(s), máx 1 MB.
@@ -43,13 +47,129 @@ const DATOS_BANCARIOS_SCHEMA = z
   })
   .strict();
 
+// ============================================================
+// Validaciones SAT (Fase 11): RFC, CURP, catálogos de Régimen
+// Fiscal / Uso de CFDI y dirección fragmentada. El negocio puede
+// guardar datos fiscales incompletos, pero cuando un campo se
+// llena debe cumplir el formato oficial para emitir CFDI.
+// ============================================================
+const RFC_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
+const RFC_ERROR =
+  "RFC inválido (persona física: 13 caracteres; persona moral: 12, sin espacios)";
+const CURP_REGEX = /^[A-Z][AEIOU][A-Z]{2}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$/;
+const CURP_ERROR =
+  "CURP inválida (18 caracteres: iniciales + fecha AAMMDD + género + entidad + consecutivo + dígito)";
+
+// Catálogo del SAT de Clave de Régimen Fiscal (sat.gob.mx).
+const CLAVES_REGIMEN_FISCAL = [
+  "601", "603", "606", "607", "608", "610", "611", "612", "614", "615",
+  "616", "621", "625", "626", "628", "629", "630", "632", "634", "635",
+  "636", "637", "638", "651", "652", "653", "654", "655", "656", "657",
+] as const;
+
+/**
+ * Catálogo del SAT de Uso de CFDI (códigos de 3 caracteres).
+ * Exportado para que la emisión de facturas (Fase 12) reutilice EXACTAMENTE
+ * la misma lista que valida la configuración: una sola fuente de verdad.
+ */
+export const CLAVES_USO_CFDI = [
+  "G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10",
+  "I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08",
+  "P01", "P04", "P05", "S01", "CP01",
+  "D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10",
+] as const;
+
+/** Extrae el código SAT (ej. "601" de "601 - General de Ley Personas Morales"). */
+function codigoSat(valor: string): string {
+  const primerToken = valor.trim().split(/\s+/)[0];
+  if (/^CP\d{2}$/i.test(primerToken)) return "CP01";
+  return primerToken.toUpperCase();
+}
+
+/** Campo opcional de catálogo SAT: acepta el código o "código - descripción". */
+function catSat(cat: readonly string[], mensaje: string) {
+  return z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .refine(
+      (v) => !v || (cat as readonly string[]).includes(codigoSat(v)),
+      mensaje
+    );
+}
+
+const TEXTO_DIRECCION = (campo: string, max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `${campo} excede los ${max} caracteres`)
+    .optional();
+
+const NUM_EXTERIOR = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9-]{1,10}$/, "Número exterior inválido (ej: 12, 12A, S/N)")
+  .optional();
+
+const CPDIRECCION = z
+  .string()
+  .trim()
+  .regex(/^\d{5}$/, "Código postal inválido (5 dígitos)")
+  .optional();
+
+// Programa de fidelización (Fase 12): tasa de ganancia de puntos y valor de
+// cada punto al pagar. Con defaults: un cliente viejo no los rompe.
+const PUNTOS_CONFIG_SCHEMA = z
+  .object({
+    // Peso mínimo gastado para ganar 1 punto (ej. 100 → 1 punto por $100).
+    pesosCompraPorPunto: z
+      .number()
+      .min(1, "La compra mínima por punto debe ser al menos $1")
+      .max(100000, "La compra mínima por punto no puede superar $100,000")
+      .default(DEFAULT_PUNTOS_CONFIG.pesosCompraPorPunto),
+    // Cuánto cubre 1 punto al pagar (ej. 1 → cada punto vale $1).
+    valorPuntoPesos: z
+      .number()
+      .min(0.01, "El valor del punto debe ser positivo")
+      .max(10000, "El valor del punto no puede superar $10,000")
+      .default(DEFAULT_PUNTOS_CONFIG.valorPuntoPesos),
+  })
+  .strict();
+
 // Datos fiscales para la emisión de comprobantes (módulo Facturación).
 const DATOS_FISCALES_SCHEMA = z
   .object({
-    rfc: z.string().trim().max(20).optional(),
-    razonSocial: z.string().trim().max(120).optional(),
-    regimenFiscal: z.string().trim().max(60).optional(),
-    codigoPostal: z.string().trim().max(10).optional(),
+    rfc: z
+      .string()
+      .trim()
+      .max(13, "RFC inválido (máx 13 caracteres)")
+      .optional()
+      .refine((v) => !v || RFC_REGEX.test(v.toUpperCase()), RFC_ERROR),
+    razonSocial: TEXTO_DIRECCION("Razón social", 120),
+    curp: z
+      .string()
+      .trim()
+      .max(18)
+      .optional()
+      .refine((v) => !v || CURP_REGEX.test(v.toUpperCase()), CURP_ERROR),
+    regimenFiscal: catSat(
+      CLAVES_REGIMEN_FISCAL,
+      "Régimen fiscal inválido (usa una clave del catálogo SAT: 601, 612, 626, …)"
+    ),
+    usoCFDI: catSat(
+      CLAVES_USO_CFDI,
+      "Uso de CFDI inválido (usa una clave del catálogo SAT: G03, P01, …)"
+    ),
+    codigoPostal: CPDIRECCION,
+    // Dirección fragmentada (reemplaza el campo libre).
+    calle: TEXTO_DIRECCION("Calle", 120),
+    numExt: NUM_EXTERIOR,
+    numInt: NUM_EXTERIOR,
+    colonia: TEXTO_DIRECCION("Colonia", 80),
+    municipio: TEXTO_DIRECCION("Municipio", 80),
+    estado: TEXTO_DIRECCION("Estado", 60),
+    cp: CPDIRECCION,
   })
   .strict();
 
@@ -64,6 +184,7 @@ export const CONFIG_INPUT_SCHEMA = z
     ),
     moneda: z.string().trim().min(3).max(8).default("MXN"),
     ivaRate: z.number().min(0).max(100).default(16),
+    preciosIncluyenIva: z.boolean().default(false),
     featureFlags: FEATURE_FLAGS_SCHEMA,
     metodosPago: z.array(z.enum(METODOS_PAGO_DISPONIBLES)).min(1),
     politicaStockOffline: z.enum(["PERMITIR_NEGATIVO", "RECHAZAR"]).default("PERMITIR_NEGATIVO"),
@@ -87,6 +208,10 @@ export const CONFIG_INPUT_SCHEMA = z
       .enum(VISTAS_POS as unknown as [VistaPOS, ...VistaPOS[]])
       .default("ESCANER"),
     datosFiscales: DATOS_FISCALES_SCHEMA.nullable().optional(),
+    // Programa de fidelización (Fase 12): tasas del Puntos Monedero.
+    puntosConfig: PUNTOS_CONFIG_SCHEMA
+      .default(DEFAULT_PUNTOS_CONFIG)
+      .optional(),
     // Configuración personalizable (Fase 10): el negocio decide si su
     // inventario exige caducidad, si muestra ubicaciones y si la caja
     // solicita fondo inicial. Con default: un cliente viejo no los rompe.

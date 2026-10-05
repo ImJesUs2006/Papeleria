@@ -76,6 +76,11 @@ export function calcularArqueo(input: ArqueoInput): ArqueoResult {
     totalEsperado,
     totalDeclarado,
     diferenciaTotal,
-    descuadre: Math.abs(diferenciaTotal) > EPSILON,
+    // Por rubro: un faltante de efectivo NO se compensa con un sobrante de
+    // vouchers (son dinero distinto); cualquiera de los tres marca descuadre.
+    descuadre:
+      Math.abs(faltanteEfectivo) > EPSILON ||
+      Math.abs(faltanteDigital) > EPSILON ||
+      Math.abs(faltanteRecargas) > EPSILON,
   };
 }

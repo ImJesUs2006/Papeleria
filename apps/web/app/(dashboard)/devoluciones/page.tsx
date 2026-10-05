@@ -15,7 +15,6 @@ import {
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
-import { ivaFraccionCliente } from "@/store/config";
 
 interface VentaItem {
   codigoItem: string;
@@ -23,6 +22,8 @@ interface VentaItem {
   cantidad: number;
   precioUnitario: number;
   subtotalLinea: number;
+  /** IVA + IEPS cobrados en la línea (para la vista previa del reembolso). */
+  impuestosLinea?: number;
   devuelto: number;
   disponible: number;
 }
@@ -130,12 +131,17 @@ export default function DevolucionesPage() {
 
   const totales = useMemo(() => {
     if (!venta) return { subtotal: 0, iva: 0, total: 0, hay: false };
+    // Proporcional a lo cobrado por línea (base e impuestos reales de la
+    // venta); el servidor recalcula y es la autoridad.
     let subtotal = 0;
+    let iva = 0;
     for (const item of venta.items) {
       const c = seleccion[item.codigoItem] ?? 0;
-      if (c > 0) subtotal = round2(subtotal + item.precioUnitario * c);
+      if (c <= 0 || item.cantidad <= 0) continue;
+      const proporcion = c / item.cantidad;
+      subtotal = round2(subtotal + (item.subtotalLinea ?? item.precioUnitario * item.cantidad) * proporcion);
+      iva = round2(iva + (item.impuestosLinea ?? 0) * proporcion);
     }
-    const iva = round2(subtotal * ivaFraccionCliente());
     return { subtotal, iva, total: round2(subtotal + iva), hay: subtotal > 0 };
   }, [venta, seleccion]);
 
@@ -344,7 +350,7 @@ export default function DevolucionesPage() {
                         <span>${totales.subtotal.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-muted">
-                        <span>IVA (16%)</span>
+                        <span>Impuestos</span>
                         <span>${totales.iva.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-gray-100 font-bold text-lg pt-1 border-t border-surface-600 mt-1">

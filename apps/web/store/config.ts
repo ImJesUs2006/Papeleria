@@ -180,5 +180,13 @@ export function ivaFraccionCliente(): number {
   return Number.isFinite(pct) && pct >= 0 && pct <= 100 ? pct / 100 : 0.16;
 }
 
+/** Parámetros fiscales del negocio (IVA base y si los precios lo incluyen). */
+export function fiscalCliente(): { ivaNegocio: number; preciosIncluyenIva: boolean } {
+  return {
+    ivaNegocio: ivaFraccionCliente() * 100,
+    preciosIncluyenIva: useConfigStore.getState().config?.preciosIncluyenIva === true,
+  };
+}
+
 export { safeFlags };
 export type { PersistedCache };

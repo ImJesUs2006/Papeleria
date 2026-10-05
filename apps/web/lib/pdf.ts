@@ -10,6 +10,8 @@ export interface ResultadoVentaPDF {
   totalNeto: number;
   subtotal: number;
   iva: number;
+  /** IEPS de la venta (opcional; solo se imprime si es mayor a 0). */
+  ieps?: number;
   cambio: number | null;
   metodoPago: string;
   nombreCliente: string | null;
@@ -133,7 +135,10 @@ export function construirTicketPDF(resultado: ResultadoVentaPDF, negocio: string
 
   lineas.push({ doble: true });
   lineas.push({ texto: "Subtotal", der: pdfMoneda(resultado.subtotal), tam: 9 });
-  lineas.push({ texto: "IVA (16%)", der: pdfMoneda(resultado.iva), tam: 9 });
+  if ((resultado.ieps ?? 0) > 0) {
+    lineas.push({ texto: "IEPS", der: pdfMoneda(resultado.ieps ?? 0), tam: 9 });
+  }
+  lineas.push({ texto: "IVA", der: pdfMoneda(resultado.iva), tam: 9 });
   lineas.push({ texto: "TOTAL", der: pdfMoneda(resultado.totalNeto), negrita: true, tam: 12 });
   lineas.push({ texto: `Método: ${ETIQUETA_PAGO[resultado.metodoPago] ?? resultado.metodoPago}`, tam: 9 });
   if (resultado.cambio != null && resultado.cambio > 0) {

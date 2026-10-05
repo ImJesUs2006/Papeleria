@@ -57,6 +57,7 @@ export async function POST(request: Request) {
         idUsuario: user.idPersona,
         idCaja: sesion?.idCaja ?? null,
         ivaRate: config.ivaRate,
+        preciosIncluyenIva: config.preciosIncluyenIva,
         puntos: config.puntosConfig,
       })
     );

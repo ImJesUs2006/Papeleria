@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { ivaFraccionCliente } from "@/store/config";
+import { fiscalCliente } from "@/store/config";
+import { calcularImpuestos, tasasProducto, type ResumenFiscal } from "@/lib/impuestos";
 
 export interface CartItem {
   codigoItem: string;
@@ -20,6 +21,27 @@ export interface CartItem {
   precioMayoreo?: number | null;
   /** Fase 12: imagen del producto (Cloudinary) para el catálogo táctil. */
   imagenUrl?: string | null;
+  /** Impuestos del producto: IVA propio (null = el del negocio), exento, IEPS. */
+  tasaIva?: number | null;
+  exentoIva?: boolean;
+  tasaIeps?: number | null;
+}
+
+/**
+ * Totales fiscales de un carrito con el MISMO motor que usa el servidor
+ * (IVA por producto, IEPS y precios con impuestos incluidos).
+ */
+export function totalesCarrito(
+  items: Pick<CartItem, "subtotalLinea" | "tasaIva" | "exentoIva" | "tasaIeps">[]
+): ResumenFiscal {
+  const { ivaNegocio, preciosIncluyenIva } = fiscalCliente();
+  return calcularImpuestos(
+    items.map((i) => ({
+      importe: Math.round(Number(i.subtotalLinea) * 100) / 100,
+      ...tasasProducto(i, ivaNegocio),
+    })),
+    { preciosIncluyenIva }
+  );
 }
 
 export type MetodoPagoPOS = "EFECTIVO" | "TARJETA" | "DIGITAL" | "PUNTOS_MONEDERO";
@@ -77,6 +99,8 @@ interface CartState {
   /** ¿Al menos una línea del carrito tiene precio de mayoreo? */
   getTieneMayoreo: () => boolean;
 
+  /** Desglose fiscal completo (base, IEPS, IVA y total a pagar). */
+  getTotales: () => ResumenFiscal;
   getSubtotal: () => number;
   getIVA: () => number;
   getTotal: () => number;
@@ -193,20 +217,14 @@ export const useCartStore = create<CartState>((set, get) => ({
       return Number.isFinite(m) && m > 0;
     }),
 
-  getSubtotal: () => {
-    const { items } = get();
-    return items.reduce((sum, item) => sum + item.subtotalLinea, 0);
-  },
+  getTotales: () => totalesCarrito(get().items),
 
-  getIVA: () => {
-    const subtotal = get().getSubtotal();
-    return subtotal * ivaFraccionCliente();
-  },
+  // Base sin impuestos (con precios que ya incluyen IVA es menor al importe).
+  getSubtotal: () => get().getTotales().subtotal,
 
-  getTotal: () => {
-    const subtotal = get().getSubtotal();
-    return subtotal * (1 + ivaFraccionCliente());
-  },
+  getIVA: () => get().getTotales().iva,
+
+  getTotal: () => get().getTotales().total,
 
   getItemCount: () => {
     const { items } = get();

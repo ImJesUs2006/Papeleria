@@ -60,6 +60,7 @@ export interface ReturnResult {
   metodoReembolso: MetodoReembolso;
   subtotal: number;
   iva: number;
+  ieps: number;
   totalNeto: number;
   ventaCompleta: boolean;
   items: Array<{
@@ -180,6 +181,11 @@ export async function executeReturn(
     precio: number;
     descripcion: string;
     esServicio: boolean;
+    /** Base sin impuestos vendida (suma de las líneas del artículo). */
+    base: number;
+    /** IVA cobrado; null = línea anterior al desglose por producto. */
+    iva: number | null;
+    ieps: number;
   }>();
 
   // Identifica los servicios (esServicio) para NO reingresar stock.
@@ -197,12 +203,27 @@ export async function executeReturn(
       precio: Number(l.precioMomento),
       descripcion: l.codigoItem,
       esServicio: serviciosMap.get(l.codigoItem) === true,
+      base:
+        (actual?.base ?? 0) +
+        (l.subtotalLinea != null
+          ? Number(l.subtotalLinea)
+          : Number(l.precioMomento) * Number(l.cantidad)),
+      iva:
+        l.ivaLinea == null || actual?.iva === null
+          ? null
+          : (actual?.iva ?? 0) + Number(l.ivaLinea),
+      ieps: (actual?.ieps ?? 0) + Number(l.iepsLinea ?? 0),
     });
   }
 
   const yaDevuelto = calcularDevuelto(venta.devoluciones);
 
   let subtotal = 0;
+  // Impuestos devueltos: lo que se cobró por línea, en proporción a lo
+  // devuelto. Las líneas sin desglose usan la tasa efectiva de la venta.
+  let ivaConocido = 0;
+  let iepsDevuelto = 0;
+  let subtotalSinDesglose = 0;
   const lineas: ReturnResult["items"] = [];
   const cantidades: Array<{ codigoItem: string; cantidad: number }> = [];
 
@@ -222,8 +243,15 @@ export async function executeReturn(
       );
     }
 
-    const subtotalLinea = round2(original.precio * cantidad);
+    const proporcion = cantidad / original.cantidad;
+    const subtotalLinea = round2(original.base * proporcion);
     subtotal = round2(subtotal + subtotalLinea);
+    if (original.iva === null) {
+      subtotalSinDesglose = round2(subtotalSinDesglose + subtotalLinea);
+    } else {
+      ivaConocido = round2(ivaConocido + original.iva * proporcion);
+    }
+    iepsDevuelto = round2(iepsDevuelto + original.ieps * proporcion);
     lineas.push({
       codigoItem: item.codigoItem,
       descripcion: original.descripcion,
@@ -242,8 +270,9 @@ export async function executeReturn(
     Number.isFinite(subtotalVenta) && subtotalVenta > 0 && Number.isFinite(ivaVenta)
       ? ivaVenta / subtotalVenta
       : ivaFraccion(ctx.ivaRate);
-  const iva = round2(subtotal * tasaIva);
-  const totalNeto = round2(subtotal + iva);
+  const iva = round2(ivaConocido + subtotalSinDesglose * tasaIva);
+  const ieps = iepsDevuelto;
+  const totalNeto = round2(subtotal + iva + ieps);
   const folioDevolucion = generarFolioDevolucion();
 
   // Reingreso de stock (nunca para servicios).
@@ -355,6 +384,7 @@ export async function executeReturn(
       motivo: input.motivo || null,
       subtotal,
       iva,
+      ieps,
       totalNeto,
       metodoReembolso,
       idUsuario: ctx.idUsuario,
@@ -408,6 +438,7 @@ export async function executeReturn(
     metodoReembolso,
     subtotal,
     iva,
+    ieps,
     totalNeto,
     ventaCompleta,
     items: lineas,

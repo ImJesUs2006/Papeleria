@@ -97,7 +97,8 @@ export async function liquidarApartado(
   const anticipo = round2(Number(apartado.anticipo));
   const saldo = round2(total - anticipo);
   const subtotal = round2(apartado.lineas.reduce((s, l) => s + Number(l.subtotalLinea), 0));
-  const iva = round2(total - subtotal);
+  const ieps = round2(apartado.lineas.reduce((s, l) => s + Number(l.iepsLinea ?? 0), 0));
+  const iva = round2(total - subtotal - ieps);
   const folioVenta = `F-${fechaFolio()}-${sufijoFolio()}`;
 
   await tx.venta.create({
@@ -105,6 +106,7 @@ export async function liquidarApartado(
       folioVenta,
       subtotal,
       iva,
+      ieps,
       totalNeto: total,
       idUsuario: ctx.idUsuario,
       idCaja,
@@ -124,6 +126,9 @@ export async function liquidarApartado(
         precioMomento: l.precioMomento,
         descuentoLinea: l.descuentoLinea,
         subtotalLinea: l.subtotalLinea,
+        tasaIva: l.tasaIva,
+        ivaLinea: l.ivaLinea,
+        iepsLinea: l.iepsLinea ?? 0,
       },
     });
   }

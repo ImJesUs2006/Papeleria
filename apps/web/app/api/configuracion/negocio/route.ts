@@ -58,6 +58,9 @@ export async function PUT(request: Request) {
         tipoNegocio: parsed.data.tipoNegocio,
         moneda: parsed.data.moneda,
         ivaRate: parsed.data.ivaRate,
+        ...(body?.preciosIncluyenIva !== undefined
+          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+          : {}),
         featureFlags: flagsMerged,
         metodosPago: parsed.data.metodosPago,
         politicaStockOffline: parsed.data.politicaStockOffline,

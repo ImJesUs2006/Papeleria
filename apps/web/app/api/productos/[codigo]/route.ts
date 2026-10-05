@@ -33,6 +33,9 @@ export async function GET(
       precioUnitario: Number(producto.precioUnitario),
       precioCompra: producto.precioCompra != null ? Number(producto.precioCompra) : null,
       precioMayoreo: producto.precioMayoreo != null ? Number(producto.precioMayoreo) : null,
+      tasaIva: producto.tasaIva != null ? Number(producto.tasaIva) : null,
+      exentoIva: producto.exentoIva === true,
+      tasaIeps: producto.tasaIeps != null ? Number(producto.tasaIeps) : null,
       imagenUrl: producto.imagenUrl ?? null,
       stockActual: producto.stockActual,
       stockMinimo: producto.stockMinimo,
@@ -180,6 +183,31 @@ export async function PATCH(
         { error: "Actualiza el precio de mayoreo: ya no es menor al de venta" },
         { status: 400 }
       );
+    }
+
+    // ---- Impuestos por producto ----
+    const porcentaje = (v: unknown): number | null | undefined => {
+      if (v === null || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n * 100) / 100 : undefined;
+    };
+    if (body.exentoIva !== undefined) {
+      data.exentoIva = body.exentoIva === true;
+      if (data.exentoIva) data.tasaIva = null;
+    }
+    if (body.tasaIva !== undefined && data.exentoIva !== true) {
+      const t = porcentaje(body.tasaIva);
+      if (t === undefined) {
+        return NextResponse.json({ error: "IVA inválido (0 a 100)" }, { status: 400 });
+      }
+      data.tasaIva = t;
+    }
+    if (body.tasaIeps !== undefined) {
+      const t = porcentaje(body.tasaIeps);
+      if (t === undefined) {
+        return NextResponse.json({ error: "IEPS inválido (0 a 100)" }, { status: 400 });
+      }
+      data.tasaIeps = t === 0 ? null : t;
     }
 
     // ---- Fase 12: imagen del producto (Cloudinary) ----

@@ -1,6 +1,7 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
 import { ivaFraccion, round2, sufijoFolio, fechaFolio } from "./sales";
+import { calcularImpuestos, tasasProducto } from "./impuestos";
 import { claveProducto } from "./tenant-keys";
 
 // ============================================================
@@ -51,6 +52,8 @@ export interface ApartadoContext {
   idCaja: string | null;
   /** Tasa de IVA del negocio en porcentaje (ej. 16). Default: 16. */
   ivaRate?: number;
+  /** true = los precios de lista ya incluyen impuestos. */
+  preciosIncluyenIva?: boolean;
 }
 
 export interface ApartadoResult {
@@ -104,7 +107,12 @@ export async function crearApartado(
     precioUnitario: number;
     subtotalLinea: number;
     esServicio: boolean;
+    tasaIva: number;
+    tasaIeps: number;
+    ivaLinea: number;
+    iepsLinea: number;
   }> = [];
+  const ivaNegocio = ivaFraccion(ctx.ivaRate) * 100;
 
   for (const item of input.items) {
     const cantidad = Math.round(Number(item.cantidad) * 1000) / 1000;
@@ -132,21 +140,32 @@ export async function crearApartado(
     }
 
     const precio = Number(producto.precioUnitario);
-    const subtotalLinea = round2(precio * cantidad);
-    subtotal = round2(subtotal + subtotalLinea);
-
     lineas.push({
       codigoItem: item.codigoItem,
       descripcion: producto.descripcion,
       cantidad,
       precioUnitario: precio,
-      subtotalLinea,
+      subtotalLinea: round2(precio * cantidad),
       esServicio,
+      ...tasasProducto(producto, ivaNegocio),
+      ivaLinea: 0,
+      iepsLinea: 0,
     });
   }
 
-  const iva = round2(subtotal * ivaFraccion(ctx.ivaRate));
-  const total = round2(subtotal + iva);
+  // Mismo motor fiscal que la venta: el apartado congela los impuestos.
+  const fiscal = calcularImpuestos(
+    lineas.map((l) => ({ importe: l.subtotalLinea, tasaIva: l.tasaIva, tasaIeps: l.tasaIeps })),
+    { preciosIncluyenIva: ctx.preciosIncluyenIva === true }
+  );
+  fiscal.lineas.forEach((f, i) => {
+    lineas[i].subtotalLinea = f.base;
+    lineas[i].ivaLinea = f.iva;
+    lineas[i].iepsLinea = f.ieps;
+  });
+  subtotal = fiscal.subtotal;
+  const iva = round2(fiscal.iva + fiscal.ieps);
+  const total = fiscal.total;
   if (anticipo < 0 || anticipo > total) {
     throw new ApartadoError(
       `El anticipo debe estar entre $0 y el total del apartado ($${total})`
@@ -191,6 +210,9 @@ export async function crearApartado(
         precioMomento: l.precioUnitario,
         descuentoLinea: 0,
         subtotalLinea: l.subtotalLinea,
+        tasaIva: l.tasaIva,
+        ivaLinea: l.ivaLinea,
+        iepsLinea: l.iepsLinea,
       },
     });
   }

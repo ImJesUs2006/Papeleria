@@ -130,6 +130,8 @@ export interface BusinessConfig {
   tipoNegocio: TipoNegocio;
   moneda: string;
   ivaRate: number;
+  /** true = los precios de lista ya incluyen impuestos (se desglosan en el ticket). */
+  preciosIncluyenIva: boolean;
   featureFlags: FeatureFlags;
   metodosPago: MetodoPagoConfig[];
   politicaStockOffline: "PERMITIR_NEGATIVO" | "RECHAZAR";

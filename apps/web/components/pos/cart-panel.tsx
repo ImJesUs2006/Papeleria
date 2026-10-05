@@ -370,9 +370,7 @@ function ApartadoModal({
 export function CartPanel() {
   const {
     items,
-    getSubtotal,
-    getIVA,
-    getTotal,
+    getTotales,
     getItemCount,
     metodoPago,
     setMetodoPago,
@@ -404,9 +402,8 @@ export function CartPanel() {
 
   const datosBancarios = config?.datosBancarios;
 
-  const subtotal = getSubtotal();
-  const iva = getIVA();
-  const total = getTotal();
+  const { subtotal, iva, ieps, total } = getTotales();
+  const preciosIncluyenIva = useConfigStore((s) => s.config?.preciosIncluyenIva === true);
   const itemCount = getItemCount();
   const tieneMayoreo = getTieneMayoreo();
 
@@ -727,8 +724,14 @@ export function CartPanel() {
           <span>Subtotal</span>
           <span>${subtotal.toFixed(2)}</span>
         </div>
+        {ieps > 0 && (
+          <div className="flex justify-between text-sm text-muted">
+            <span>IEPS</span>
+            <span>${ieps.toFixed(2)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-sm text-muted">
-          <span>IVA (16%)</span>
+          <span>IVA{preciosIncluyenIva ? " (incluido)" : ""}</span>
           <span>${iva.toFixed(2)}</span>
         </div>
         <div className="flex justify-between text-lg font-bold text-gray-100 pt-1 border-t border-surface-500">

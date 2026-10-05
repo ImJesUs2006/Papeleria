@@ -9,7 +9,7 @@ import { guardarVentaOffline } from "@/lib/offline/idb";
 import { obtenerDispositivoId } from "@/lib/offline/sync";
 import { obtenerInventarioLocal } from "@/store/inventory";
 import type { CartItem } from "@/store/cart";
-import { ivaFraccionCliente } from "@/store/config";
+import { totalesCarrito } from "@/store/cart";
 
 export interface ResultadoLineaVenta {
   codigoItem: string;
@@ -28,6 +28,8 @@ export interface ResultadoVenta {
   items: ResultadoLineaVenta[];
   subtotal: number;
   iva: number;
+  /** IEPS de la venta (0 si ningún producto lo causa). */
+  ieps: number;
   metodoPago: string;
   nombreCliente: string | null;
   fechaHora: string;
@@ -101,6 +103,7 @@ export async function registrarVentaClient(items: CartItem[], extra: {
           })),
       subtotal: numeroSeguro(data.subtotal),
       iva: numeroSeguro(data.iva),
+      ieps: numeroSeguro(data.ieps),
       metodoPago: data.metodoPago ?? extra.metodoPago,
       nombreCliente: data.nombreCliente ?? null,
       fechaHora: data.fechaHora ?? new Date().toISOString(),
@@ -118,12 +121,17 @@ export async function registrarVentaClient(items: CartItem[], extra: {
       );
     }
 
-    const subtotal = items.reduce(
-      (s, i) => s + numeroSeguro(i.cantidad) * numeroSeguro(i.precioUnitario),
-      0
+    // Mismo motor fiscal que el servidor (que de todos modos recalcula al
+    // sincronizar): IVA por producto, IEPS y precios con impuestos incluidos.
+    const fiscal = totalesCarrito(
+      items.map((i) => ({
+        ...i,
+        subtotalLinea: numeroSeguro(i.cantidad) * numeroSeguro(i.precioUnitario),
+      }))
     );
-    const iva = subtotal * ivaFraccionCliente();
-    const totalNeto = Math.round((subtotal + iva) * 100) / 100;
+    const subtotal = fiscal.subtotal;
+    const iva = fiscal.iva;
+    const totalNeto = fiscal.total;
     const idLocal = `loc-${crypto.randomUUID()}`;
 
     // Descuento local de stock para reflejo inmediato del inventario.
@@ -146,7 +154,8 @@ export async function registrarVentaClient(items: CartItem[], extra: {
 referenciaTransferencia: extra.referenciaTransferencia ?? null,
       esMayoreo: extra.esMayoreo === true,
       subtotal: Math.round(subtotal * 100) / 100,
-      iva: Math.round(iva * 100) / 100,
+      // La cola offline guarda un solo campo de impuestos (informativo).
+      iva: Math.round((iva + fiscal.ieps) * 100) / 100,
       totalNeto,
       montoRecibido: extra.montoRecibido ?? null,
       intentos: 0,
@@ -173,6 +182,7 @@ referenciaTransferencia: extra.referenciaTransferencia ?? null,
       })),
       subtotal: Math.round(subtotal * 100) / 100,
       iva: Math.round(iva * 100) / 100,
+      ieps: fiscal.ieps,
       metodoPago: extra.metodoPago,
       nombreCliente: null,
       fechaHora: new Date().toISOString(),

@@ -102,8 +102,13 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                   <div className="flex justify-between pt-1">
                     <span>Subtotal</span><span>${numeroSeguro(result.subtotal).toFixed(2)}</span>
                   </div>
+                  {numeroSeguro(result.ieps) > 0 && (
+                    <div className="flex justify-between">
+                      <span>IEPS</span><span>${numeroSeguro(result.ieps).toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
-                    <span>IVA (16%)</span><span>${numeroSeguro(result.iva).toFixed(2)}</span>
+                    <span>IVA</span><span>${numeroSeguro(result.iva).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between font-black text-sm">
                     <span>TOTAL</span><span>${numeroSeguro(result.totalNeto).toFixed(2)}</span>
@@ -172,6 +177,7 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                     totalNeto: result.totalNeto,
                     subtotal: result.subtotal,
                     iva: result.iva,
+                    ieps: result.ieps,
                     cambio: result.cambio,
                     metodoPago: result.metodoPago,
                     nombreCliente: result.nombreCliente,

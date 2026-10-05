@@ -1,5 +1,6 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
+import { calcularImpuestos, tasasProducto } from "./impuestos";
 import {
   puntosGanadosPorCompra,
   puntosRequeridos,
@@ -129,6 +130,8 @@ export interface SaleContext {
   idCaja: string | null;
   /** Tasa de IVA del negocio en porcentaje (ej. 16). Default: 16. */
   ivaRate?: number;
+  /** true = los precios de lista ya incluyen impuestos (se desglosan). */
+  preciosIncluyenIva?: boolean;
   /**
    * Fase 12: tasa del Puntos Monedero inyectada por el endpoint
    * (`BusinessConfig.puntosConfig`). Si no llega, se usan los defaults.
@@ -143,6 +146,8 @@ export interface SaleResult {
   folioVenta: string;
   subtotal: number;
   iva: number;
+  /** IEPS total de la venta (0 si ningún producto lo causa). */
+  ieps: number;
   totalNeto: number;
   metodoPago: MetodoPago;
   tipoVenta: TipoVenta;
@@ -231,7 +236,12 @@ export async function executeSale(
     precioUnitario: number;
     subtotalLinea: number;
     esServicio: boolean;
+    tasaIva: number;
+    tasaIeps: number;
+    ivaLinea: number;
+    iepsLinea: number;
   }> = [];
+  const ivaNegocio = ivaFraccion(ctx.ivaRate) * 100;
 
   for (const item of input.items) {
     // Granel (permiteDecimales) soporta hasta 3 decimales; lo demás es entero.
@@ -262,21 +272,35 @@ export async function executeSale(
     }
 
     const precio = elegirPrecioUnitario(producto, input.esMayoreo === true);
-    const subtotalLinea = round2(precio * cantidad);
-    subtotal = round2(subtotal + subtotalLinea);
-
     lineas.push({
       codigoItem: item.codigoItem,
       descripcion: producto.descripcion,
       cantidad,
       precioUnitario: precio,
-      subtotalLinea,
+      // Importe a precio de lista; el motor fiscal lo convierte en base.
+      subtotalLinea: round2(precio * cantidad),
       esServicio,
+      ...tasasProducto(producto, ivaNegocio),
+      ivaLinea: 0,
+      iepsLinea: 0,
     });
   }
 
-  const iva = round2(subtotal * ivaFraccion(ctx.ivaRate));
-  const totalNeto = round2(subtotal + iva);
+  // Impuestos por producto (IVA propio / exento / IEPS) y, si el negocio
+  // rotula con impuestos incluidos, desglose hacia atrás.
+  const fiscal = calcularImpuestos(
+    lineas.map((l) => ({ importe: l.subtotalLinea, tasaIva: l.tasaIva, tasaIeps: l.tasaIeps })),
+    { preciosIncluyenIva: ctx.preciosIncluyenIva === true }
+  );
+  fiscal.lineas.forEach((f, i) => {
+    lineas[i].subtotalLinea = f.base;
+    lineas[i].ivaLinea = f.iva;
+    lineas[i].iepsLinea = f.ieps;
+  });
+  subtotal = fiscal.subtotal;
+  const iva = fiscal.iva;
+  const ieps = fiscal.ieps;
+  const totalNeto = fiscal.total;
   const folioVenta = generarFolio();
 
   // El efectivo recibido debe cubrir el total (el cambio nunca es negativo).
@@ -343,6 +367,7 @@ export async function executeSale(
       folioVenta,
       subtotal: round2(subtotal),
       iva,
+      ieps,
       totalNeto,
       idUsuario: ctx.idUsuario,
       idCaja: ctx.idCaja ?? undefined,
@@ -363,6 +388,9 @@ export async function executeSale(
         precioMomento: l.precioUnitario,
         descuentoLinea: 0,
         subtotalLinea: l.subtotalLinea,
+        tasaIva: l.tasaIva,
+        ivaLinea: l.ivaLinea,
+        iepsLinea: l.iepsLinea,
       },
     });
   }
@@ -433,6 +461,7 @@ export async function executeSale(
         folioVenta,
         subtotal,
         iva,
+        ...(ieps > 0 ? { ieps } : {}),
         totalNeto,
         metodoPago: input.metodoPago,
         tipoVenta,
@@ -452,6 +481,7 @@ export async function executeSale(
     folioVenta,
     subtotal,
     iva,
+    ieps,
     totalNeto,
     metodoPago: input.metodoPago as MetodoPago,
     tipoVenta,

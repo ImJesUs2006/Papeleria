@@ -30,6 +30,10 @@ export interface ProductFormData {
   precioCompra?: number | null;
   /** Fase 12: precio de mayoreo (0 = el producto no tiene mayoreo). */
   precioMayoreo?: number | null;
+  /** Impuestos por producto: IVA propio (null = el del negocio), exento, IEPS. */
+  tasaIva?: number | null;
+  exentoIva?: boolean;
+  tasaIeps?: number | null;
   /** Fase 12: imagen del producto (URL de Cloudinary). */
   imagenUrl?: string | null;
   stockActual: number;
@@ -102,6 +106,13 @@ const formSchema = z
       .number({ invalid_type_error: "Precio de mayoreo inválido" })
       .min(0, "El precio de mayoreo no puede ser negativo")
       .max(9_999_999, "Precio de mayoreo demasiado alto")
+      .optional(),
+    // "" = tasa del negocio · "EXENTO" · o el porcentaje ("16", "8", "0").
+    impuestoIva: z.string().optional(),
+    tasaIeps: z
+      .number({ invalid_type_error: "IEPS inválido" })
+      .min(0, "El IEPS no puede ser negativo")
+      .max(100, "El IEPS no puede pasar de 100%")
       .optional(),
     imagenUrl: z
       .string()
@@ -237,6 +248,10 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
             descripcion: p.descripcion,
             precioUnitario: Number(p.precioUnitario),
             precioCompra: p.precioCompra != null ? Number(p.precioCompra) : undefined,
+            precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : undefined,
+            imagenUrl: p.imagenUrl ?? "",
+            impuestoIva: p.exentoIva ? "EXENTO" : p.tasaIva != null ? String(Number(p.tasaIva)) : "",
+            tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : undefined,
             stockActual: Number(p.stockActual),
             stockMinimo: Number(p.stockMinimo),
             codigoBarras: p.codigoBarras ?? "",
@@ -277,6 +292,12 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       precioUnitario: values.precioUnitario,
       precioCompra: values.precioCompra ?? null,
       precioMayoreo: values.precioMayoreo ?? null,
+      exentoIva: values.impuestoIva === "EXENTO",
+      tasaIva:
+        !values.impuestoIva || values.impuestoIva === "EXENTO"
+          ? null
+          : Number(values.impuestoIva),
+      tasaIeps: values.tasaIeps ?? null,
       imagenUrl: values.imagenUrl?.trim() || null,
       stockActual: values.stockActual,
       stockMinimo: values.stockMinimo,
@@ -446,6 +467,30 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                     Ahorro por unidad: ${ahorroMayoreo.toFixed(2)}
                   </span>
                 )}
+              </label>
+              {/* Impuestos por producto (tasa 0%, exento, IEPS). */}
+              <label className="block">
+                <span className="text-xs text-muted mb-1 block">IVA del producto</span>
+                <select {...register("impuestoIva")} className="input-dark">
+                  <option value="">Tasa del negocio</option>
+                  <option value="16">16%</option>
+                  <option value="8">8% (frontera)</option>
+                  <option value="0">Tasa 0%</option>
+                  <option value="EXENTO">Exento</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs text-muted mb-1 block">IEPS % (opcional)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  {...register("tasaIeps", numeroOpcional)}
+                  className="input-dark"
+                  placeholder="No causa IEPS"
+                />
+                {err("tasaIeps")}
               </label>
               <label className="block">
                 <span className="text-xs text-muted mb-1 block">Stock actual</span>

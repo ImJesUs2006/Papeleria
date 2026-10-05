@@ -73,6 +73,9 @@ export function ProductGrid() {
       // Fase 12: mayoreo e imagen viajan al carrito (el store decide el precio).
       precioMayoreo: p.precioMayoreo ?? null,
       imagenUrl: p.imagenUrl ?? null,
+      tasaIva: (p as any).tasaIva ?? null,
+      exentoIva: (p as any).exentoIva === true,
+      tasaIeps: (p as any).tasaIeps ?? null,
     });
     // Fase 12: feedback instantáneo al tocar una tarjeta del catálogo.
     pushToast(`Producto ${p.descripcion} agregado`);

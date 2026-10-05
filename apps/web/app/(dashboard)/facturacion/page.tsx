@@ -225,6 +225,7 @@ function extractConfig(raw: any): BusinessConfig {
     tipoNegocio: raw?.tipoNegocio ?? "PAPELERIA",
     moneda: raw?.moneda ?? "MXN",
     ivaRate: Number(raw?.ivaRate ?? 0),
+    preciosIncluyenIva: raw?.preciosIncluyenIva === true,
     featureFlags: {
       inventario: flags.inventario === true,
       facturacion: flags.facturacion === true,

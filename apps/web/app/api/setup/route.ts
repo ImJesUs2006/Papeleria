@@ -68,6 +68,9 @@ export async function POST(request: Request) {
         metodosPago: parsed.data.metodosPago,
         featureFlags: flagsMerged,
         ivaRate: parsed.data.ivaRate,
+        ...(body?.preciosIncluyenIva !== undefined
+          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+          : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
@@ -89,6 +92,9 @@ export async function POST(request: Request) {
         metodosPago: parsed.data.metodosPago,
         featureFlags: flagsMerged,
         ivaRate: parsed.data.ivaRate,
+        ...(body?.preciosIncluyenIva !== undefined
+          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+          : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,

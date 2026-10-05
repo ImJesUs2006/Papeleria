@@ -144,6 +144,40 @@ async function main() {
     const stockA2 = await dbA.producto.findUnique({ where: claveProducto("X1") });
     comprobar("la devolución reingresa stock solo en A", Number(stockA2?.stockActual) === 4);
 
+    console.log("Impuestos por producto (persistencia real)");
+    await dbA.producto.create({
+      data: { codigoItem: "MED", descripcion: "Medicina tasa 0", precioUnitario: 50, stockActual: 10, tasaIva: 0 },
+    });
+    await dbA.producto.create({
+      data: { codigoItem: "REF", descripcion: "Refresco con IEPS", precioUnitario: 125.28, stockActual: 10, tasaIeps: 8 },
+    });
+    const fiscal = await dbA.$transaction((tx) =>
+      executeSale(
+        tx,
+        { items: [{ codigoItem: "MED", cantidad: 2 }, { codigoItem: "REF", cantidad: 1 }], metodoPago: "EFECTIVO" },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, ivaRate: 16, preciosIncluyenIva: true }
+      )
+    );
+    const ventaFiscal = await dbA.venta.findUnique({
+      where: { folioVenta: fiscal.folioVenta },
+      include: { lineasDetalle: true },
+    });
+    const lMed = ventaFiscal?.lineasDetalle.find((l) => l.codigoItem === "MED");
+    const lRef = ventaFiscal?.lineasDetalle.find((l) => l.codigoItem === "REF");
+    comprobar("con precios que incluyen impuestos se cobra la etiqueta (2×50 + 125.28)",
+      Number(ventaFiscal?.totalNeto) === 225.28, ventaFiscal?.totalNeto);
+    comprobar("la venta guarda base, IVA e IEPS",
+      Number(ventaFiscal?.subtotal) === 200 && Number(ventaFiscal?.iva) === 17.28 && Number(ventaFiscal?.ieps) === 8,
+      { s: ventaFiscal?.subtotal, i: ventaFiscal?.iva, e: ventaFiscal?.ieps });
+    comprobar("cada línea guarda su tasa e impuestos",
+      Number(lMed?.tasaIva) === 0 && Number(lMed?.ivaLinea) === 0 &&
+      Number(lRef?.tasaIva) === 16 && Number(lRef?.ivaLinea) === 17.28 && Number(lRef?.iepsLinea) === 8);
+    const devFiscal = await dbA.$transaction((tx) =>
+      executeReturn(tx, { folioVenta: fiscal.folioVenta, items: [{ codigoItem: "REF", cantidad: 1 }], metodoReembolso: "EFECTIVO" },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja })
+    );
+    comprobar("la devolución reembolsa exactamente lo cobrado por la línea", devFiscal.totalNeto === 125.28, devFiscal);
+
     console.log("Configuración");
     const cfgA = await getBusinessConfig(a.idNegocio);
     const cfgB = await getBusinessConfig(b.idNegocio);

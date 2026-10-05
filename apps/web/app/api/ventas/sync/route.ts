@@ -5,7 +5,8 @@ import { puedeCobrar } from "@/lib/permisos";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
-import { elegirPrecioUnitario, ivaFraccion, sufijoFolio, fechaFolio } from "@/lib/sales";
+import { elegirPrecioUnitario, sufijoFolio, fechaFolio } from "@/lib/sales";
+import { calcularImpuestos, tasasProducto } from "@/lib/impuestos";
 import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
 
@@ -159,6 +160,10 @@ export async function POST(request: Request) {
             precioMomento: number;
             subtotalLinea: number;
             esServicio: boolean;
+            tasaIva: number;
+            tasaIeps: number;
+            ivaLinea: number;
+            iepsLinea: number;
           }> = [];
 
           for (const item of items) {
@@ -213,14 +218,15 @@ export async function POST(request: Request) {
             }
 
             const precioMomento = precioServidor; // se liquida a precio vigente
-            const subtotalLinea = Math.round(precioMomento * cantidad * 100) / 100;
-            subtotal += subtotalLinea;
             lineas.push({
               codigoItem: codigo,
               cantidad,
               precioMomento,
-              subtotalLinea,
+              subtotalLinea: Math.round(precioMomento * cantidad * 100) / 100,
               esServicio,
+              ...tasasProducto(producto, config.ivaRate),
+              ivaLinea: 0,
+              iepsLinea: 0,
             });
           }
 
@@ -248,8 +254,21 @@ export async function POST(request: Request) {
           }
 
           // 5. Liquidación: IVA y totales SIEMPRE recalculados en servidor.
-          const iva = Math.round(subtotal * ivaFraccion(config.ivaRate) * 100) / 100;
-          const totalNeto = Math.round((subtotal + iva) * 100) / 100;
+          //    Mismo motor fiscal que la venta en línea (IVA por producto, IEPS,
+          //    precios con impuestos incluidos).
+          const fiscal = calcularImpuestos(
+            lineas.map((l) => ({ importe: l.subtotalLinea, tasaIva: l.tasaIva, tasaIeps: l.tasaIeps })),
+            { preciosIncluyenIva: config.preciosIncluyenIva }
+          );
+          fiscal.lineas.forEach((f, i) => {
+            lineas[i].subtotalLinea = f.base;
+            lineas[i].ivaLinea = f.iva;
+            lineas[i].iepsLinea = f.ieps;
+          });
+          subtotal = fiscal.subtotal;
+          const iva = fiscal.iva;
+          const ieps = fiscal.ieps;
+          const totalNeto = fiscal.total;
           const folioVenta = generarFolioSync();
 
           // 6. Caja: si existe una ABIERTA (de este u otro dispositivo),
@@ -270,6 +289,7 @@ export async function POST(request: Request) {
               fechaHora: v.fechaHoraCliente ? new Date(v.fechaHoraCliente) : new Date(),
               subtotal: Math.round(subtotal * 100) / 100,
               iva,
+              ieps,
               totalNeto,
               idUsuario: cajero.idPersona,
               idCaja: cajaAbierta?.idCaja ?? null,
@@ -292,6 +312,9 @@ export async function POST(request: Request) {
                 precioMomento: l.precioMomento,
                 descuentoLinea: 0,
                 subtotalLinea: l.subtotalLinea,
+                tasaIva: l.tasaIva,
+                ivaLinea: l.ivaLinea,
+                iepsLinea: l.iepsLinea,
               },
             });
             if (!l.esServicio) {

@@ -179,6 +179,13 @@ model Producto {
   // Precio de mayoreo (opcional). Si es null o 0, el producto NO tiene
   // precio de mayoreo y el interruptor del POS lo omite (usa menudeo).
   precioMayoreo      Decimal?       @db.Decimal(10, 2)
+  // ---- Impuestos por producto ----
+  // IVA propio en porcentaje (16, 8, 0). Null = hereda la tasa del negocio.
+  tasaIva            Decimal?       @db.Decimal(5, 2)
+  // Exento de IVA (distinto de tasa 0% para efectos fiscales).
+  exentoIva          Boolean        @default(false)
+  // IEPS en porcentaje (bebidas azucaradas, tabaco…). Null = no causa.
+  tasaIeps           Decimal?       @db.Decimal(5, 2)
   // ---- Fase 12 · Imágenes Cloudinary ----
   // URL pública de la imagen en Cloudinary (o data URI). Solo se usa cuando
   // el feature flag `imagenesCloudinary` está activo en Configuración.
@@ -311,6 +318,7 @@ model Venta {
   fechaHora               DateTime    @default(now())
   subtotal                Decimal     @db.Decimal(10, 2)
   iva                     Decimal     @db.Decimal(10, 2)
+  ieps                    Decimal     @default(0) @db.Decimal(10, 2)
   totalNeto               Decimal     @db.Decimal(10, 2)
   idUsuario               String
   idCaja                  String?
@@ -351,16 +359,22 @@ model Venta {
 }
 
 model LineaDetalleVenta {
-  idNegocio      String  @default("default")
-  idLinea        String  @id @default(uuid())
+  idNegocio      String   @default("default")
+  idLinea        String   @id @default(uuid())
   folioVenta     String
   codigoItem     String
   // Fase 10: Decimal para ventas a granel (0.5 kg); las unidades enteras
   // se siguen escribiendo como 1, 2, 3...
-  cantidad       Decimal @db.Decimal(10, 3)
-  precioMomento  Decimal @db.Decimal(10, 2)
-  descuentoLinea Decimal @default(0) @db.Decimal(10, 2)
-  subtotalLinea  Decimal @db.Decimal(10, 2)
+  cantidad       Decimal  @db.Decimal(10, 3)
+  precioMomento  Decimal  @db.Decimal(10, 2)
+  descuentoLinea Decimal  @default(0) @db.Decimal(10, 2)
+  subtotalLinea  Decimal  @db.Decimal(10, 2)
+  // ---- Impuestos por línea (los exigirá el CFDI) ----
+  // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
+  // IVA se deduce de los totales de la venta.
+  tasaIva        Decimal? @db.Decimal(5, 2)
+  ivaLinea       Decimal? @db.Decimal(10, 2)
+  iepsLinea      Decimal  @default(0) @db.Decimal(10, 2)
 
   venta    Venta    @relation(fields: [folioVenta], references: [folioVenta])
   producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
@@ -427,6 +441,9 @@ model ConfiguracionNegocio {
   tipoNegocio          TipoNegocio @default(PAPELERIA_RETAIL)
   moneda               String      @default("MXN")
   ivaRate              Decimal     @default(16) @db.Decimal(5, 2)
+  // true = los precios de lista YA incluyen impuestos (lo usual en mostrador):
+  // el ticket los desglosa hacia atrás. false = se suman al cobrar.
+  preciosIncluyenIva   Boolean     @default(false)
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
   featureFlags         Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
@@ -539,6 +556,7 @@ model Devolucion {
   motivo          String?
   subtotal        Decimal        @db.Decimal(10, 2)
   iva             Decimal        @db.Decimal(10, 2)
+  ieps            Decimal        @default(0) @db.Decimal(10, 2)
   totalNeto       Decimal        @db.Decimal(10, 2)
   metodoReembolso String         @default("EFECTIVO")
   idUsuario       String
@@ -710,14 +728,20 @@ model Apartado {
 // Líneas del apartado: mismas reglas que la venta (Producto + cantidad
 // Decimal para granel), pero el subtotal guarda el precio acordado.
 model ApartadoLinea {
-  idNegocio       String  @default("default")
-  idLineaApartado String  @id @default(uuid())
+  idNegocio       String   @default("default")
+  idLineaApartado String   @id @default(uuid())
   idApartado      String
   codigoItem      String
-  cantidad        Decimal @db.Decimal(10, 3)
-  precioMomento   Decimal @db.Decimal(10, 2)
-  descuentoLinea  Decimal @default(0) @db.Decimal(10, 2)
-  subtotalLinea   Decimal @db.Decimal(10, 2)
+  cantidad        Decimal  @db.Decimal(10, 3)
+  precioMomento   Decimal  @db.Decimal(10, 2)
+  descuentoLinea  Decimal  @default(0) @db.Decimal(10, 2)
+  subtotalLinea   Decimal  @db.Decimal(10, 2)
+  // ---- Impuestos por línea (los exigirá el CFDI) ----
+  // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
+  // IVA se deduce de los totales de el apartado.
+  tasaIva         Decimal? @db.Decimal(5, 2)
+  ivaLinea        Decimal? @db.Decimal(10, 2)
+  iepsLinea       Decimal  @default(0) @db.Decimal(10, 2)
 
   apartado Apartado @relation(fields: [idApartado], references: [idApartado])
   producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])

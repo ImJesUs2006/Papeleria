@@ -112,6 +112,7 @@ function normalizeConfig(raw: any): BusinessConfig {
     tipoNegocio,
     moneda: typeof raw?.moneda === "string" ? raw.moneda : "MXN",
     ivaRate: Number.isFinite(iva) ? iva : 16,
+    preciosIncluyenIva: raw?.preciosIncluyenIva === true,
     featureFlags,
     metodosPago,
     politicaStockOffline:
@@ -370,6 +371,7 @@ const guardar = async () => {
           tipoNegocio: config.tipoNegocio,
           moneda: config.moneda,
           ivaRate: Number(config.ivaRate),
+          preciosIncluyenIva: config.preciosIncluyenIva === true,
           featureFlags: config.featureFlags,
           metodosPago: config.metodosPago,
           politicaStockOffline: config.politicaStockOffline,
@@ -549,6 +551,25 @@ const guardar = async () => {
           />
         </label>
       </div>
+
+      <label className="flex items-start gap-3 rounded-xl border border-surface-600 bg-surface-700/40 p-3">
+        <input
+          type="checkbox"
+          checked={config.preciosIncluyenIva === true}
+          onChange={(e) => setConfig({ ...config, preciosIncluyenIva: e.target.checked })}
+          className="mt-1"
+        />
+        <span>
+          <span className="block text-sm font-bold text-gray-100">
+            Mis precios ya incluyen impuestos
+          </span>
+          <span className="block text-xs text-muted">
+            Activado: el cliente paga el precio de etiqueta y el ticket desglosa el IVA. Desactivado:
+            el IVA se suma al precio al cobrar. Cada producto puede tener su propia tasa (0%, exento,
+            IEPS) desde Inventario.
+          </span>
+        </span>
+      </label>
 
       <div className="border-t border-surface-600 pt-4">
         <div className="flex items-center gap-2 mb-3">

@@ -66,6 +66,10 @@ const BASE_PRODUCTO = z.object({
   // Fase 12: precio de mayoreo (opcional). Si se captura, debe ser MENOR al
   // de venta (si no, el interruptor de mayoreo no aportaría nada).
   precioMayoreo: precioSchema("Precio de mayoreo").nullable().optional(),
+  // Impuestos por producto: IVA propio (null = el del negocio), exento e IEPS.
+  tasaIva: z.number().min(0, "IVA inválido").max(100, "IVA inválido").nullable().optional(),
+  exentoIva: z.boolean().optional(),
+  tasaIeps: z.number().min(0, "IEPS inválido").max(100, "IEPS inválido").nullable().optional(),
   // Fase 12: imagen del producto (URL de Cloudinary o data URI).
   imagenUrl: z
     .string()

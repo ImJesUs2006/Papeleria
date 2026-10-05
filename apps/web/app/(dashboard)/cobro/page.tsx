@@ -20,6 +20,10 @@ interface ProductoRapido {
   stockActual: number;
   permiteDecimales?: boolean;
   esServicio?: boolean;
+  precioMayoreo?: number | null;
+  tasaIva?: number | null;
+  exentoIva?: boolean;
+  tasaIeps?: number | null;
 }
 
 export default function CobroPage() {
@@ -116,6 +120,10 @@ export default function CobroPage() {
         cantidad: 1,
         permiteDecimales: p.permiteDecimales,
         esServicio: p.esServicio,
+        precioMayoreo: p.precioMayoreo ?? null,
+        tasaIva: p.tasaIva ?? null,
+        exentoIva: p.exentoIva === true,
+        tasaIeps: p.tasaIeps ?? null,
       });
     } catch {
       setCodigoError("No se pudo conectar con el servidor");

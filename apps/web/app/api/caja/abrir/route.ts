@@ -39,36 +39,46 @@ export async function POST(request: Request) {
   const fondoInicial = trajoFondo ? fondoBruto : 0;
 
   try {
-    const existingOpen = await prisma.sesionCaja.findFirst({
-      where: { estado: { in: ["ABIERTA", "EN_CIERRE"] } },
-    });
+    // Transacción serializable: dos aperturas simultáneas no crean dos
+    // sesiones abiertas ni repiten el folio correlativo.
+    const resultado = await prisma.$transaction(
+      async (tx) => {
+        const existingOpen = await tx.sesionCaja.findFirst({
+          where: { estado: { in: ["ABIERTA", "EN_CIERRE"] } },
+          select: { idCaja: true },
+        });
+        if (existingOpen) return null;
 
-    if (existingOpen) {
+        // Folio correlativo CAJA-### (numérico, para que CAJA-10 > CAJA-9).
+        const anteriores = await tx.sesionCaja.findMany({
+          where: { folioCaja: { not: null } },
+          select: { folioCaja: true },
+        });
+        const numeros = anteriores
+          .map((s) => parseInt((s.folioCaja ?? "").replace(/[^\d]/g, ""), 10))
+          .filter((n) => !Number.isNaN(n));
+        const siguiente = (numeros.length ? Math.max(...numeros) : 0) + 1;
+
+        return tx.sesionCaja.create({
+          data: {
+            idUsuario: user.idPersona,
+            fondoInicial: Math.round(fondoInicial * 100) / 100,
+            estado: "ABIERTA",
+            folioCaja: `CAJA-${String(siguiente).padStart(3, "0")}`,
+          },
+        });
+      },
+      { isolationLevel: "Serializable" }
+    );
+
+    if (!resultado) {
       return NextResponse.json(
         { error: "Ya existe una sesión de caja abierta o en cierre" },
         { status: 409 }
       );
     }
-
-    // Folio correlativo CAJA-### (numérico, para que CAJA-10 > CAJA-9).
-    const anteriores = await prisma.sesionCaja.findMany({
-      where: { folioCaja: { not: null } },
-      select: { folioCaja: true },
-    });
-    const numeros = anteriores
-      .map((s) => parseInt((s.folioCaja ?? "").replace(/[^\d]/g, ""), 10))
-      .filter((n) => !Number.isNaN(n));
-    const siguiente = (numeros.length ? Math.max(...numeros) : 0) + 1;
-    const folioCaja = `CAJA-${String(siguiente).padStart(3, "0")}`;
-
-    const sesion = await prisma.sesionCaja.create({
-      data: {
-        idUsuario: user.idPersona,
-        fondoInicial: Math.round(fondoInicial * 100) / 100,
-        estado: "ABIERTA",
-        folioCaja,
-      },
-    });
+    const sesion = resultado;
+    const folioCaja = sesion.folioCaja;
 
     await prisma.bitacoraLog.create({
       data: {
@@ -80,7 +90,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(sesion);
-  } catch (error) {
+  } catch (error: any) {
+    // P2034 (serialización) / P2002 (folio repetido): otra apertura ganó la carrera.
+    if (error?.code === "P2034" || error?.code === "P2002") {
+      return NextResponse.json(
+        { error: "Otra apertura de caja está en curso; intenta de nuevo" },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: "Error al abrir caja" }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { BarcodeScanner } from "@/components/pos/barcode-scanner";
 import { CartPanel } from "@/components/pos/cart-panel";
 import { ProductGrid } from "@/components/pos/product-grid";
+import { PosToastHost } from "@/components/pos/pos-toast";
 import { useCartStore } from "@/store/cart";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
@@ -125,6 +126,7 @@ export default function CobroPage() {
 
   return (
     <DashboardLayout>
+      <PosToastHost />
       <div className="flex flex-1 h-full">
         {/* Left: Scanner + catálogo visual */}
         <div className="flex-1 flex flex-col p-6 overflow-y-auto">

@@ -15,15 +15,18 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
-  WifiOff,
   PackagePlus,
+  Coins,
+  BadgePercent,
 } from "lucide-react";
-import { useCartStore, CartItem } from "@/store/cart";
+import { useCartStore, CartItem, type MetodoPagoPOS } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
-import { registrarVentaClient } from "@/lib/sales-client";
+import { registrarVentaClient, type ResultadoVenta } from "@/lib/sales-client";
+import { puntosRequeridos } from "@/lib/fidelidad";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { ClientSelectModal } from "@/components/pos/client-select";
+import { VentaExitosaModal } from "@/components/pos/venta-exitosa";
 import { cn } from "@/lib/utils";
 
 function CartItemRow({ item, index }: { item: CartItem; index: number }) {
@@ -100,12 +103,22 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
   );
 }
 
-interface VentaResult {
-  folioVenta: string;
-  totalNeto: number;
-  cambio: number | null;
-  offline: boolean;
+interface BtnMetodo {
+  uiKey: "EFECTIVO" | "TARJETA" | "DIGITAL" | "PUNTOS_MONEDERO";
+  /** Clave real de la config del negocio (Marca Blanca). */
+  configKey: string;
+  icon: typeof Banknote;
+  label: string;
+  cls: string;
 }
+
+/** Mapa UI → config de métodos de pago (Fase 12). "Crédito" fue eliminado. */
+const METODOS_POS: BtnMetodo[] = [
+  { uiKey: "EFECTIVO", configKey: "EFECTIVO", icon: Banknote, label: "Efectivo", cls: "text-emerald-400 border-emerald-400/50 bg-emerald-400/10" },
+  { uiKey: "TARJETA", configKey: "TARJETA_TERMINAL", icon: CreditCard, label: "Tarjeta", cls: "text-sky-400 border-sky-400/50 bg-sky-400/10" },
+  { uiKey: "DIGITAL", configKey: "TRANSFERENCIA", icon: Smartphone, label: "Transferencia", cls: "text-indigo-400 border-indigo-400/50 bg-indigo-400/10" },
+  { uiKey: "PUNTOS_MONEDERO", configKey: "PUNTOS_MONEDERO", icon: Coins, label: "Puntos", cls: "text-amber-300 border-amber-400/50 bg-amber-400/10" },
+];
 
 function ApartadoModal({
   open,
@@ -369,14 +382,19 @@ export function CartPanel() {
     setReferenciaTransferencia,
     idCliente,
     nombreCliente,
+    puntosCliente,
+    nivelCliente,
     setCliente,
+    esMayoreo,
+    setEsMayoreo,
+    getTieneMayoreo,
   } = useCartStore();
   const { idPersona, nombre } = useAuthStore();
   const config = useConfigStore((s) => s.config);
 
   const [estado, setEstado] = useState<"idle" | "cobrando" | "error">("idle");
   const [mensajeError, setMensajeError] = useState("");
-  const [resultado, setResultado] = useState<VentaResult | null>(null);
+  const [resultado, setResultado] = useState<ResultadoVenta | null>(null);
   const [montoRecibido, setMontoRecibido] = useState("");
   const [showTransferencia, setShowTransferencia] = useState(false);
   const [referenciaInput, setReferenciaInput] = useState("");
@@ -390,10 +408,16 @@ export function CartPanel() {
   const iva = getIVA();
   const total = getTotal();
   const itemCount = getItemCount();
+  const tieneMayoreo = getTieneMayoreo();
 
   const esEfectivo = metodoPago === "EFECTIVO";
   const esTransferencia = metodoPago === "DIGITAL";
-  const esCredito = metodoPago === "CREDITO_TIENDA";
+  const esMonedero = metodoPago === "PUNTOS_MONEDERO";
+  // Fase 12: tasa del negocio (defaults = 1 punto por $100; 1pt = $1).
+  const valorPunto = config?.puntosConfig?.valorPuntoPesos ?? 1;
+  const necesitaCliente = esMonedero;
+  const ptsNecesarios = esMonedero && idCliente ? puntosRequeridos(total, valorPunto) : 0;
+  const monederoAlcanza = esMonedero ? puntosCliente >= ptsNecesarios : true;
   const recibido = esEfectivo && montoRecibido ? parseFloat(montoRecibido) : 0;
   const cambio =
     esEfectivo && recibido >= total
@@ -408,9 +432,17 @@ export function CartPanel() {
       setShowTransferencia(true);
       return;
     }
-    // CRM: la venta a crédito exige un cliente asignado.
-    if (esCredito && !idCliente) {
+    // CRM/Monedero: la venta exige un cliente asignado.
+    if (necesitaCliente && !idCliente) {
       setClienteModalOpen(true);
+      return;
+    }
+    // Monedero: bloquea el pago si los puntos no cubren el total (el servidor
+    // también lo valida; esto evita el viaje redondo con error).
+    if (esMonedero && !monederoAlcanza) {
+      setMensajeError(
+        "El saldo de puntos no alcanza a cubrir el total de la venta"
+      );
       return;
     }
     setEstado("cobrando");
@@ -421,9 +453,13 @@ export function CartPanel() {
         tipoVenta: tipoVenta === "RECARGA" ? "RECARGA" : "PAPELERIA",
         montoRecibido: esEfectivo && montoRecibido ? Number(montoRecibido) : null,
         referenciaTransferencia: esTransferencia ? referenciaTransferencia : null,
-        idCliente: esCredito ? idCliente : null,
+        // El cliente es obligatorio para canjar puntos y opcional en el resto
+        // de los métodos (donde solo acumula fidelidad).
+        idCliente,
         idUsuario: idPersona ?? "",
         nombreUsuario: nombre ?? "",
+        // Fase 12: el servidor reaplica el precio de mayoreo vigente.
+        esMayoreo,
       });
       setResultado(data);
       clearCart();
@@ -435,17 +471,21 @@ export function CartPanel() {
     }
   };
 
-  const seleccionMetodo = (key: typeof metodoPago) => {
+  const seleccionMetodo = (key: MetodoPagoPOS) => {
     setReferenciaTransferencia(null);
-    if (key !== "CREDITO_TIENDA") setCliente(null, null);
+    // Al cambiar de método se reinicia el cliente; en efectivo/tarjeta/
+    // transferencia puede reasignarse desde la tarjeta del carrito.
+    if (key !== "PUNTOS_MONEDERO") {
+      setReferenciaInput("");
+    }
     setMetodoPago(key);
     // Transferencia exige el captura de referencia antes de cobrar.
     if (key === "DIGITAL") {
       setReferenciaInput("");
       setShowTransferencia(true);
     }
-    // Crédito de Tienda: abre el buscador/alta de cliente.
-    if (key === "CREDITO_TIENDA") {
+    // Puntos Monedero: abre el buscador de cliente (obligatorio).
+    if (key === "PUNTOS_MONEDERO") {
       setClienteModalOpen(true);
     }
   };
@@ -516,46 +556,127 @@ export function CartPanel() {
         </AnimatePresence>
       </div>
 
+      {/* Fase 12: interruptor de precios de mayoreo (reprecia todo el carrito). */}
+      <div className="px-4 py-2.5 border-t border-surface-600">
+        <button
+          type="button"
+          onClick={() => setEsMayoreo(!esMayoreo)}
+          disabled={!items.length || !tieneMayoreo}
+          aria-pressed={esMayoreo}
+          className={cn(
+            "w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-all text-xs",
+            !items.length || !tieneMayoreo
+              ? "border-surface-500 bg-surface-700 text-muted/60 cursor-not-allowed"
+              : esMayoreo
+                ? "border-teal-500/60 bg-teal-500/10 text-teal-300"
+                : "border-surface-500 bg-surface-700 text-muted hover:border-teal-500/50 hover:text-teal-300"
+          )}
+        >
+          <span className="flex items-center gap-2 font-medium">
+            <BadgePercent className="h-4 w-4 shrink-0" />
+            Precios de Mayoreo
+          </span>
+          <span
+            className={cn(
+              "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+              esMayoreo ? "bg-teal-500" : "bg-surface-600"
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                esMayoreo ? "translate-x-5" : "translate-x-1"
+              )}
+            />
+          </span>
+        </button>
+        {!tieneMayoreo && items.length > 0 && (
+          <p className="mt-1 text-[11px] text-muted">
+            Ningún producto del carrito tiene precio de mayoreo configurado.
+          </p>
+        )}
+      </div>
+
       {/* Payment method selector */}
       <div className="px-4 py-3 border-t border-surface-600">
         <p className="text-xs text-muted mb-2 uppercase tracking-wider">
           Método de pago
         </p>
         <div className="grid grid-cols-4 gap-1.5">
-          {[
-            { key: "EFECTIVO" as const, icon: Banknote, label: "Efectivo", cls: "text-neon-green border-neon-green/50 bg-neon-green/10" },
-            { key: "TARJETA" as const, icon: CreditCard, label: "Tarjeta", cls: "text-neon-cyan border-neon-cyan/50 bg-neon-cyan/10" },
-            { key: "DIGITAL" as const, icon: Smartphone, label: "Transferencia", cls: "text-neon-purple border-neon-purple/50 bg-neon-purple/10" },
-            { key: "CREDITO_TIENDA" as const, icon: Users, label: "Crédito", cls: "text-amber-400 border-amber-400/50 bg-amber-400/10" },
-          ].map(({ key, icon: Icon, label, cls }) => (
-            <button
-              key={key}
-              onClick={() => seleccionMetodo(key)}
-              className={cn(
-                "flex flex-col items-center gap-1 py-2 rounded-lg border transition-all",
-                metodoPago === key ? cls : "border-surface-500 bg-surface-700 text-muted hover:border-surface-400"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              <span className="text-xs">{label}</span>
-            </button>
-          ))}
+          {METODOS_POS.filter((m) => m.uiKey !== "PUNTOS_MONEDERO")
+            .filter((m) => !config?.metodosPago?.length || config.metodosPago.includes(m.configKey as any))
+            .map(({ uiKey, icon: Icon, label, cls }) => (
+              <button
+                key={uiKey}
+                onClick={() => seleccionMetodo(uiKey)}
+                className={cn(
+                  "flex flex-col items-center gap-1 py-2 rounded-lg border transition-all",
+                  metodoPago === uiKey ? cls : "border-surface-500 bg-surface-700 text-muted hover:border-surface-400"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="text-xs">{label}</span>
+              </button>
+            ))}
         </div>
+        {/* Fase 12: Puntos Monedero (canje de fidelidad), ancho completo. */}
+        {(!config?.metodosPago?.length ||
+          config.metodosPago.includes("PUNTOS_MONEDERO")) && (
+          <button
+            onClick={() => seleccionMetodo("PUNTOS_MONEDERO")}
+            className={cn(
+              "mt-1.5 w-full flex items-center justify-center gap-2 py-1.5 rounded-lg border transition-all text-xs",
+              esMonedero
+                ? "text-neon-yellow border-neon-yellow/50 bg-neon-yellow/10"
+                : "border-surface-500 bg-surface-700 text-muted hover:border-neon-yellow/50 hover:text-neon-yellow"
+            )}
+          >
+            <Coins className="h-3.5 w-3.5" /> Puntos Monedero
+          </button>
+        )}
 
-        {esCredito && (
+        {necesitaCliente && (
           <div className="mt-3">
             {idCliente ? (
-              <div className="flex items-center justify-between bg-amber-400/10 border border-amber-400/40 rounded-lg px-3 py-2.5">
+              <div
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-3 py-2.5",
+                  esMonedero
+                    ? "bg-neon-yellow/10 border border-neon-yellow/40"
+                    : "bg-amber-400/10 border border-amber-400/40"
+                )}
+              >
                 <div className="flex items-center gap-2 min-w-0">
-                  <Users className="h-4 w-4 text-amber-400 shrink-0" />
+                  {esMonedero ? (
+                    <Coins className="h-4 w-4 text-neon-yellow shrink-0" />
+                  ) : (
+                    <Users className="h-4 w-4 text-amber-400 shrink-0" />
+                  )}
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-gray-100 truncate">{nombreCliente}</p>
-                    <p className="text-xs text-muted">Se cargará a su saldo deudor</p>
+                    <p className="text-xs text-muted">
+                      {esMonedero ? (
+                        <>
+                          {monederoAlcanza ? (
+                            <>Canjeará {ptsNecesarios} pts de {puntosCliente} disponibles</>
+                          ) : (
+                            <span className="text-neon-red font-bold">
+                              Saldo insuficiente: {puntosCliente} pts &lt; {ptsNecesarios}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>Se cargará a su saldo deudor</>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setClienteModalOpen(true)}
-                  className="text-xs text-amber-400 font-bold hover:text-amber-300 shrink-0"
+                  className={cn(
+                    "text-xs font-bold hover:opacity-80 shrink-0",
+                    esMonedero ? "text-neon-yellow" : "text-amber-400"
+                  )}
                 >
                   Cambiar
                 </button>
@@ -563,9 +684,16 @@ export function CartPanel() {
             ) : (
               <button
                 onClick={() => setClienteModalOpen(true)}
-                className="w-full text-xs text-amber-400 font-bold border border-dashed border-amber-400/50 rounded-lg px-3 py-2.5 hover:bg-amber-400/5 transition-colors"
+                className={cn(
+                  "w-full text-xs font-bold border border-dashed rounded-lg px-3 py-2.5 transition-colors",
+                  esMonedero
+                    ? "text-neon-yellow border-neon-yellow/50 hover:bg-neon-yellow/5"
+                    : "text-amber-400 border-amber-400/50 hover:bg-amber-400/5"
+                )}
               >
-                Asignar cliente para la venta a crédito
+                {esMonedero
+                  ? "Seleccionar cliente para canjear sus puntos"
+                  : "Asignar cliente para la venta a crédito"}
               </button>
             )}
           </div>
@@ -669,59 +797,15 @@ export function CartPanel() {
         </button>
       </div>
 
-      {/* Éxito de venta */}
+      {/* Éxito de venta: impresora + ticket + cambio gigante (Fase 12) */}
       <AnimatePresence>
         {resultado && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
-            onClick={() => setResultado(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.85, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.85, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-surface-800 border-2 border-neon-green/40 rounded-3xl p-8 max-w-sm w-full text-center shadow-neon"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
-                className="h-16 w-16 mx-auto rounded-full bg-neon-green/10 flex items-center justify-center mb-4"
-              >
-                <CheckCircle2 className="h-9 w-9 text-neon-green" />
-              </motion.div>
-              <h3 className="text-xl font-black text-gray-100 mb-1">
-                {resultado.offline ? "¡Venta guardada offline!" : "¡Venta registrada!"}
-              </h3>
-              <p className="text-sm text-muted mb-4">Folio: {resultado.folioVenta}</p>
-              {resultado.offline && (
-                <div className="flex items-center gap-2 bg-neon-yellow/10 border border-neon-yellow/40 rounded-xl px-3 py-2 mb-4 text-left">
-                  <WifiOff className="h-4 w-4 text-warning shrink-0" />
-                  <p className="text-[11px] text-gray-200">
-                    Sin conexión: la venta se sincronizará automáticamente al recuperar la red.
-                  </p>
-                </div>
-              )}
-              <p className="text-3xl font-black text-neon-green text-glow-green mb-1">
-                ${resultado.totalNeto.toFixed(2)}
-              </p>
-              {resultado.cambio != null && resultado.cambio > 0 && (
-                <p className="text-sm text-warning font-bold mb-3">
-                  Cambio: ${resultado.cambio.toFixed(2)}
-                </p>
-              )}
-              <button
-                onClick={() => setResultado(null)}
-                className={cn("w-full py-3 rounded-xl font-bold mt-2", "bg-neon-green text-btn-ink")}
-              >
-                Nuevo cobro
-              </button>
-            </motion.div>
-          </motion.div>
+          <VentaExitosaModal
+            result={resultado}
+            anchoTicket={config?.anchoTicket ?? "80mm"}
+            nombreNegocio={config?.datosFiscales?.razonSocial || config?.nombreNegocio || "Papelería"}
+            onClose={() => setResultado(null)}
+          />
         )}
       </AnimatePresence>
     {/* Modal de transferencia (Blindaje Financiero) */}
@@ -826,15 +910,18 @@ export function CartPanel() {
         )}
       </AnimatePresence>
 
-      {/* Modal de selección/alta de cliente (crédito de tienda / apartado) */}
+      {/* Modal de selección/alta de cliente (crédito de tienda / puntos / apartado) */}
       <ClientSelectModal
         open={clienteModalOpen}
+        modo={esMonedero ? "monedero" : "credito"}
+        totalVenta={total}
+        valorPuntoPesos={valorPunto}
         onClose={() => {
           setClienteModalOpen(false);
           setModoApartado(false);
         }}
         onSelect={(c) => {
-          setCliente(c.idCliente, c.nombre);
+          setCliente(c.idCliente, c.nombre, c.puntosFidelidad, c.nivel, c.montoHistorico);
           if (modoApartado) setApartadoModalOpen(true);
           setModoApartado(false);
         }}

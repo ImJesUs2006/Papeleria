@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { compare } from "bcryptjs";
 import { signToken } from "@/lib/auth";
+import { limpiarIntentos, registrarFallo, segundosBloqueado } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
@@ -14,24 +15,54 @@ export async function POST(request: Request) {
       );
     }
 
+    if (typeof username !== "string" || typeof password !== "string") {
+      return NextResponse.json(
+        { error: "Usuario y contraseña requeridos" },
+        { status: 400 }
+      );
+    }
+
+    // Anti fuerza bruta: 5 fallos en 15 min bloquean la combinación
+    // usuario + IP durante 15 min.
+    const ip =
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-real-ip") ||
+      "local";
+    const llave = `${username.trim().toLowerCase()}|${ip}`;
+    const espera = segundosBloqueado(llave);
+    if (espera > 0) {
+      return NextResponse.json(
+        { error: `Demasiados intentos fallidos. Intenta de nuevo en ${Math.ceil(espera / 60)} min.` },
+        { status: 429, headers: { "Retry-After": String(espera) } }
+      );
+    }
+
     const user = await prisma.usuario.findUnique({
       where: { username },
     });
 
-    if (!user || !user.activa) {
+    const validPassword =
+      user && user.activa ? await compare(password, user.passwordHash) : false;
+    if (!user || !validPassword) {
+      const bloqueada = registrarFallo(llave);
+      if (bloqueada) {
+        await prisma.bitacoraLog
+          .create({
+            data: {
+              idUsuario: user?.idPersona ?? null,
+              accion: `Login bloqueado por intentos fallidos (usuario "${username.slice(0, 60)}")`,
+              moduloSistema: "SEGURIDAD",
+              ipOrigen: ip,
+            },
+          })
+          .catch(() => {});
+      }
       return NextResponse.json(
         { error: "Credenciales inválidas" },
         { status: 401 }
       );
     }
-
-    const validPassword = await compare(password, user.passwordHash);
-    if (!validPassword) {
-      return NextResponse.json(
-        { error: "Credenciales inválidas" },
-        { status: 401 }
-      );
-    }
+    limpiarIntentos(llave);
 
     const token = await signToken({
       idPersona: user.idPersona,
@@ -89,6 +120,8 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
+    // Nunca se registra el cuerpo de la petición (contiene la contraseña).
+    console.error("[auth:login]", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }

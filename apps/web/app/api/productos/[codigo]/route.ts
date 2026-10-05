@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { normalizarFechaCaducidad } from "@/lib/validate-product";
+import { registrarMovimientosKardex } from "@/lib/kardex";
 
 export async function GET(
   request: Request,
@@ -25,6 +26,8 @@ export async function GET(
       descripcion: producto.descripcion,
       precioUnitario: Number(producto.precioUnitario),
       precioCompra: producto.precioCompra != null ? Number(producto.precioCompra) : null,
+      precioMayoreo: producto.precioMayoreo != null ? Number(producto.precioMayoreo) : null,
+      imagenUrl: producto.imagenUrl ?? null,
       stockActual: producto.stockActual,
       stockMinimo: producto.stockMinimo,
       permiteDecimales: producto.permiteDecimales,
@@ -128,6 +131,66 @@ export async function PATCH(
         { error: "El precio de venta no puede ser menor al de compra" },
         { status: 400 }
       );
+    }
+
+    // ---- Fase 12: precio de mayoreo ----
+    let mayoreoFinal: number | null =
+      existente.precioMayoreo != null ? Number(existente.precioMayoreo) : null;
+    if (body.precioMayoreo !== undefined) {
+      if (body.precioMayoreo === null || body.precioMayoreo === "") {
+        data.precioMayoreo = null;
+        mayoreoFinal = null;
+      } else {
+        const mayoreo = Number(body.precioMayoreo);
+        if (!Number.isFinite(mayoreo) || mayoreo < 0) {
+          return NextResponse.json(
+            { error: "Precio de mayoreo inválido" },
+            { status: 400 }
+          );
+        }
+        // 0 significa "sin precio de mayoreo" (el POS usa menudeo).
+        if (mayoreo === 0) {
+          data.precioMayoreo = null;
+          mayoreoFinal = null;
+        } else {
+          if (mayoreo >= ventaFinal) {
+            return NextResponse.json(
+              { error: "El precio de mayoreo debe ser menor al de venta" },
+              { status: 400 }
+            );
+          }
+          data.precioMayoreo = Math.round(mayoreo * 100) / 100;
+          mayoreoFinal = data.precioMayoreo;
+        }
+      }
+    } else if (
+      body.precioUnitario !== undefined &&
+      mayoreoFinal != null &&
+      mayoreoFinal >= ventaFinal
+    ) {
+      // Subió el precio de venta y el mayoreo quedó igual o por encima.
+      return NextResponse.json(
+        { error: "Actualiza el precio de mayoreo: ya no es menor al de venta" },
+        { status: 400 }
+      );
+    }
+
+    // ---- Fase 12: imagen del producto (Cloudinary) ----
+    if (body.imagenUrl !== undefined) {
+      const url = typeof body.imagenUrl === "string" ? body.imagenUrl.trim() : "";
+      if (url === "") {
+        data.imagenUrl = null;
+      } else if (
+        url.startsWith("data:image/") ||
+        /^https:\/\/[\w.-]+\.cloudinary\.com\//i.test(url)
+      ) {
+        data.imagenUrl = url;
+      } else {
+        return NextResponse.json(
+          { error: "La imagen debe ser una URL de Cloudinary o un data URI" },
+          { status: 400 }
+        );
+      }
     }
 
     if (body.tipoImpresion !== undefined) {
@@ -239,8 +302,23 @@ export async function PATCH(
           `Precio ${Number(existente.precioUnitario).toFixed(2)} → ${data.precioUnitario.toFixed(2)}`
         );
       }
-      if (data.stockActual !== undefined && data.stockActual !== existente.stockActual) {
+      const deltaStock =
+        data.stockActual !== undefined
+          ? Math.round((data.stockActual - Number(existente.stockActual)) * 1000) / 1000
+          : 0;
+      if (deltaStock !== 0) {
         cambios.push(`Stock ${existente.stockActual} → ${data.stockActual}`);
+        // Kardex inmutable: todo cambio manual de existencia es un AJUSTE
+        // con signo (recuento físico, merma, corrección).
+        await registrarMovimientosKardex(tx, [
+          {
+            codigoItem: codigo,
+            tipo: "AJUSTE",
+            cantidad: deltaStock,
+            motivo: "Ajuste manual de inventario",
+            idUsuario: user.idPersona,
+          },
+        ]);
       }
 
       if (cambios.length > 0) {

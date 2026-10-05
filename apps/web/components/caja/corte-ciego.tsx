@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Lock,
@@ -16,6 +16,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/store/config";
+import {
+  imprimirTicket,
+  type AnchoTicketImpresion,
+} from "@/lib/print-ticket";
 
 // ============================================================
 // CORTE CIEGO
@@ -53,6 +57,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
     anchoTicket: s.config?.anchoTicket ?? "80mm",
     mensajeTicket: s.config?.mensajeTicket ?? null,
   }));
+  const areaImpresion = useRef<HTMLDivElement>(null);
   const [fase, setFase] = useState<Fase>("iniciando");
   const [token, setToken] = useState<string | null>(null);
   const [horaInicio, setHoraInicio] = useState<string | null>(null);
@@ -144,7 +149,16 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
       if (!res.ok) throw new Error(data.error || "Error al cerrar");
       setResultado(data.arqueo);
       setFase("resultado");
-      window.print(); // tique de corte (área impresa queda en tique)
+      // Tique de corte (área impresa queda en tique): imprimimos el bloque
+      // de resultado ya montado a través de un iframe oculto de 58/80mm.
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          imprimirTicket(
+            areaImpresion.current,
+            configCaja.anchoTicket as AnchoTicketImpresion
+          );
+        }, 80);
+      });
     } catch (err: any) {
       setError(err.message);
       setFase("error");
@@ -168,8 +182,8 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
       >
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-neon-red/10 flex items-center justify-center">
-              <Lock className="h-5 w-5 text-neon-red" />
+            <div className="h-11 w-11 rounded-2xl bg-rose-500/10 flex items-center justify-center">
+              <Lock className="h-5 w-5 text-rose-400" />
             </div>
             <div>
               <h3 className="font-black text-gray-100">Corte Ciego</h3>
@@ -189,7 +203,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
         {/* FASE INICIAR */}
         {fase === "iniciando" && (
           <div className="space-y-5">
-            <div className="flex items-start gap-3 bg-neon-yellow/5 border border-neon-yellow/20 rounded-2xl p-4">
+            <div className="flex items-start gap-3 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
               <EyeOff className="h-5 w-5 text-warning shrink-0 mt-0.5" />
               <div className="text-sm text-gray-200">
                 <p className="font-bold mb-1">¿Sabes cómo funciona?</p>
@@ -209,7 +223,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={iniciarCorte}
-              className="w-full py-3.5 rounded-2xl bg-neon-red text-white font-bold shadow-neon-magenta flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center justify-center gap-2"
             >
               <Loader2 className="h-4 w-4 animate-spin" /> Iniciar corte ciego
             </motion.button>
@@ -246,20 +260,20 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
               cls="focus:border-acento"
             />
             <CampoMonto
-              icon={<Receipt className="h-4 w-4 text-neon-cyan" />}
+              icon={<Receipt className="h-4 w-4 text-sky-400" />}
               label="Vouchers terminal / transferencias ($)"
               value={vouchers}
               onChange={setVouchers}
               placeholder="Ej. 340.00"
-              cls="focus:border-neon-cyan"
+              cls="focus:border-sky-500"
             />
             <CampoMonto
-              icon={<Smartphone className="h-4 w-4 text-neon-purple" />}
+              icon={<Smartphone className="h-4 w-4 text-indigo-400" />}
               label="Recargas contadas ($)"
               value={recargas}
               onChange={setRecargas}
               placeholder="Ej. 100.00"
-              cls="focus:border-neon-purple"
+              cls="focus:border-indigo-500"
             />
 
             <input
@@ -276,7 +290,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
               className={cn(
                 "w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
                 puedeConcluir
-                  ? "bg-acento text-btn-ink shadow-neon"
+                  ? "bg-acento text-btn-ink shadow-card"
                   : "bg-surface-600 text-muted cursor-not-allowed"
               )}
             >
@@ -294,6 +308,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
         {/* FASE RESULTADO */}
         {fase === "resultado" && resultado && (
           <div
+            ref={areaImpresion}
             className={cn(
               "space-y-4 print-label-area",
               configCaja.anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80"
@@ -303,12 +318,12 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
               className={cn(
                 "flex items-center gap-3 rounded-2xl p-4 border",
                 resultado.descuadre
-                  ? "bg-neon-red/10 border-neon-red/40"
+                  ? "bg-rose-500/10 border-rose-500/40"
                   : "bg-acento/10 border-acento/40"
               )}
             >
               {resultado.descuadre ? (
-                <AlertTriangle className="h-8 w-8 text-neon-red shrink-0" />
+                <AlertTriangle className="h-8 w-8 text-rose-400 shrink-0" />
               ) : (
                 <CheckCircle2 className="h-8 w-8 text-acento shrink-0" />
               )}
@@ -356,7 +371,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
                 <span
                   className={cn(
                     "font-black text-xl",
-                    resultado.descuadre ? "text-neon-red" : "text-acento"
+                    resultado.descuadre ? "text-rose-400" : "text-acento"
                   )}
                 >
                   ${resultado.diferenciaTotal.toFixed(2)}
@@ -367,7 +382,7 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={onCerrada}
-              className="w-full py-3.5 rounded-2xl bg-acento text-btn-ink font-bold shadow-neon"
+              className="w-full py-3.5 rounded-2xl bg-acento text-btn-ink font-bold shadow-card"
             >
               Terminar
             </motion.button>
@@ -385,8 +400,8 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
         {/* FASE ERROR */}
         {fase === "error" && (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 bg-neon-red/10 border border-neon-red/40 rounded-2xl p-4">
-              <AlertTriangle className="h-5 w-5 text-neon-red shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/40 rounded-2xl p-4">
+              <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
               <p className="text-sm text-gray-100">{error}</p>
             </div>
             <div className="grid grid-cols-2 gap-3">

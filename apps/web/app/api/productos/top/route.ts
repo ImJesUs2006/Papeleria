@@ -93,6 +93,8 @@ export async function GET(request: Request) {
       codigoItem: p.codigoItem,
       descripcion: p.descripcion,
       precioUnitario: Number(p.precioUnitario),
+      precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+      imagenUrl: p.imagenUrl ?? null,
       stockActual: p.stockActual,
       tipoImpresion: p.tipoImpresion ?? null,
       codigoBarras: p.codigoBarras ?? null,

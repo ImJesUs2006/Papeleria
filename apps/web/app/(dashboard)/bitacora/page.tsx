@@ -63,12 +63,13 @@ export default function BitacoraPage() {
   const PAGE_SIZE = 50;
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cargandoMas, setCargandoMas] = useState(false);
-  const [tieneMas, setTieneMas] = useState(false);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [modulo, setModulo] = useState<string>("TODOS");
+  const [usuario, setUsuario] = useState("");
   const [exportando, setExportando] = useState(false);
   const canPurge = useAuthStore((s) => s.canPurge);
   const [modalPurga, setModalPurga] = useState(false);
@@ -78,53 +79,45 @@ export default function BitacoraPage() {
     if (desde) params.set("desde", desde);
     if (hasta) params.set("hasta", hasta);
     if (modulo !== "TODOS") params.set("modulo", modulo);
+    if (usuario.trim()) params.set("usuario", usuario.trim());
     return params;
-  }, [desde, hasta, modulo]);
+  }, [desde, hasta, modulo, usuario]);
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (pagina: number = page) => {
     setLoading(true);
-    setTieneMas(false);
     try {
       const params = paramsFiltros();
+      params.set("page", String(pagina));
       params.set("limit", String(PAGE_SIZE));
-      params.set("offset", "0");
 
       const res = await fetch(`/api/bitacora?${params.toString()}`);
       if (!res.ok) throw new Error("error");
       const data = await res.json();
       setLogs(data.data ?? []);
       setTotal(data.total ?? (data.data ?? []).length);
-      setTieneMas(Boolean(data.tieneMas));
+      setTotalPaginas(data.totalPaginas ?? 1);
+      setPage(Math.min(pagina, data.totalPaginas ?? 1));
     } catch {
       setLogs([]);
       setTotal(0);
-      setTieneMas(false);
+      setTotalPaginas(1);
+      setPage(1);
     } finally {
       setLoading(false);
     }
-  }, [paramsFiltros]);
-
-  const cargarMas = useCallback(async () => {
-    if (cargandoMas || !tieneMas) return;
-    setCargandoMas(true);
-    try {
-      const params = paramsFiltros();
-      params.set("limit", String(PAGE_SIZE));
-      params.set("offset", String(logs.length));
-
-      const res = await fetch(`/api/bitacora?${params.toString()}`);
-      if (!res.ok) throw new Error("error");
-      const data = await res.json();
-      setLogs((prev) => [...prev, ...(data.data ?? [])]);
-      setTieneMas(Boolean(data.tieneMas));
-    } finally {
-      setCargandoMas(false);
-    }
-  }, [cargandoMas, tieneMas, logs.length, paramsFiltros]);
+  }, [page, paramsFiltros]);
 
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  const irPagina = useCallback(
+    (destino: number) => {
+      const siguiente = Math.min(Math.max(1, destino), totalPaginas);
+      if (siguiente !== page) setPage(siguiente);
+    },
+    [page, totalPaginas]
+  );
 
   const exportarExcel = async () => {
     setExportando(true);
@@ -175,7 +168,7 @@ export default function BitacoraPage() {
               Filtrar por fechas y módulo
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <label className="block">
               <span className="text-xs text-muted mb-1 flex items-center gap-1">
                 <CalendarDays className="h-3 w-3" /> Desde
@@ -214,10 +207,22 @@ export default function BitacoraPage() {
                 ))}
               </select>
             </label>
+            <label className="block">
+              <span className="text-xs text-muted mb-1 flex items-center gap-1">
+                <User className="h-3 w-3" /> Usuario
+              </span>
+              <input
+                type="text"
+                value={usuario}
+                onChange={(e) => setUsuario(e.target.value)}
+                placeholder="Nombre o username"
+                className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-sm text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:shadow-neon focus:outline-none transition-all"
+              />
+            </label>
             <div className="flex items-end">
               <motion.button
                 whileTap={{ scale: 0.96 }}
-                onClick={cargar}
+                onClick={() => cargar(1)}
                 className="w-full py-2.5 rounded-xl bg-neon-green text-btn-ink font-bold text-sm shadow-neon hover:brightness-110 transition-all"
               >
                 Aplicar filtros
@@ -345,20 +350,28 @@ export default function BitacoraPage() {
                 </tbody>
               </table>
             )}
-            {!loading && tieneMas && (
-              <div className="flex justify-center py-4 border-t border-surface-600">
-                <button
-                  onClick={cargarMas}
-                  disabled={cargandoMas}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-surface-700 hover:bg-surface-600 text-sm font-bold text-gray-100 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {cargandoMas ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <History className="h-4 w-4" />
-                  )}
-                  {cargandoMas ? "Cargando…" : "Cargar más registros"}
-                </button>
+            {!loading && total > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-t border-surface-600">
+                <span className="text-xs text-muted">
+                  {total.toLocaleString("es-MX")} registros · Página {page} de{" "}
+                  {totalPaginas.toLocaleString("es-MX")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => irPagina(page - 1)}
+                    disabled={page <= 1 || loading}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-surface-700 hover:bg-surface-600 text-xs font-bold text-gray-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    onClick={() => irPagina(page + 1)}
+                    disabled={page >= totalPaginas || loading}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-surface-700 hover:bg-surface-600 text-xs font-bold text-gray-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Siguiente
+                  </button>
+                </div>
               </div>
             )}
           </div>

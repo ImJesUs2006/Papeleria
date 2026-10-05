@@ -122,6 +122,7 @@ model Usuario {
   retirosAutorizados RetiroEfectivo[]       @relation("RetiroAutorizadoPor")
   movimientosKardex  MovimientoKardex[]
   apartadosCreados   Apartado[]
+  facturasEmitidas   Factura[]
 
   @@map("usuarios")
 }
@@ -131,6 +132,14 @@ model Producto {
   descripcion        String
   precioUnitario     Decimal        @db.Decimal(10, 2)
   precioCompra       Decimal?       @db.Decimal(10, 2)
+  // ---- Fase 12 · Venta a Mayoreo ----
+  // Precio de mayoreo (opcional). Si es null o 0, el producto NO tiene
+  // precio de mayoreo y el interruptor del POS lo omite (usa menudeo).
+  precioMayoreo      Decimal?       @db.Decimal(10, 2)
+  // ---- Fase 12 · Imágenes Cloudinary ----
+  // URL pública de la imagen en Cloudinary (o data URI). Solo se usa cuando
+  // el feature flag `imagenesCloudinary` está activo en Configuración.
+  imagenUrl          String?        @db.Text
   // ---- Fase 10 · Plantilla Universal ----
   // Ventas a granel: el carrito y el ticket aceptan fracciones (0.5 kg, 8 m).
   // El stock se modela en Decimal(10,3) para poder rastrear kilos/metros.
@@ -217,6 +226,7 @@ model PedidoProveedor {
   usuario   Usuario               @relation(fields: [createdBy], references: [idPersona])
   items     ItemPedidoProveedor[]
 
+  @@index([idProveedor])
   @@map("pedidos_proveedor")
 }
 
@@ -230,6 +240,7 @@ model ItemPedidoProveedor {
   pedido   PedidoProveedor @relation(fields: [idPedido], references: [idPedido])
   producto Producto        @relation(fields: [codigoItem], references: [codigoItem])
 
+  @@index([idPedido])
   @@map("items_pedido_proveedor")
 }
 
@@ -241,9 +252,9 @@ model Venta {
   totalNeto               Decimal     @db.Decimal(10, 2)
   idUsuario               String
   idCaja                  String?
-  // ---- CRM y Cuentas por Cobrar (Fase 3) ----
-  // Cliente asociado cuando el pago se hace con "Crédito de Tienda"
-  // (el total pasa a `saldoDeudor` en lugar de ingresar a caja).
+  // ---- CRM y fidelización ----
+  // Cliente asociado al ticket. Con PUNTOS_MONEDERO es obligatorio (dueño
+  // del monedero); en los demás métodos es opcional y solo acumula puntos.
   idCliente               String?
   estado                  EstadoVenta @default(ACTIVA)
   metodoPago              String      @default("EFECTIVO")
@@ -254,6 +265,7 @@ model Venta {
   createdAt               DateTime    @default(now())
   // ---- Offline-first (idempotencia + traza de origen) ----
   idLocal                 String?     @unique
+  // "ONLINE" | "OFFLINE" (sincronizada) | "APARTADO" (liquidación de apartado)
   origen                  String      @default("ONLINE")
   dispositivoId           String?
   fechaHoraCliente        DateTime?
@@ -263,7 +275,14 @@ model Venta {
   cliente       Cliente?            @relation(fields: [idCliente], references: [idCliente])
   lineasDetalle LineaDetalleVenta[]
   devoluciones  Devolucion[]
+  // Fase 12: un ticket genera como máximo una factura.
+  factura       Factura?
 
+  // Reportes, dashboard y corte filtran por fecha, caja y cliente.
+  @@index([fechaHora])
+  @@index([idCaja])
+  @@index([idCliente])
+  @@index([estado, fechaHora])
   @@map("ventas")
 }
 
@@ -281,6 +300,8 @@ model LineaDetalleVenta {
   venta    Venta    @relation(fields: [folioVenta], references: [folioVenta])
   producto Producto @relation(fields: [codigoItem], references: [codigoItem])
 
+  @@index([folioVenta])
+  @@index([codigoItem])
   @@map("lineas_detalle_venta")
 }
 
@@ -324,6 +345,8 @@ model SesionCaja {
   retiros        RetiroEfectivo[]
   apartados      Apartado[]
 
+  // "La caja ABIERTA" se consulta en cada venta.
+  @@index([estado])
   @@map("sesiones_caja")
 }
 
@@ -375,6 +398,10 @@ model ConfiguracionNegocio {
   // true = la apertura de caja exige capturar el fondo inicial (por defecto).
   // false = la caja puede abrirse sin fondo (caja de puesto rápido en ferias).
   requerirFondoInicial  Boolean     @default(true)
+  // ---- Puntos Monedero (Fase 12) ----
+  // Tasa del programa de fidelización: cuánto gastar para ganar 1 punto y
+  // cuánto cubre 1 punto al pagar. Ej: { pesosCompraPorPunto: 100, valorPuntoPesos: 1 }
+  puntosConfig          Json?
   configVersion         Int         @default(1)
   setupPendiente        Boolean     @default(true)
   updatedById           String?
@@ -456,6 +483,7 @@ model DevolucionLinea {
   devolucion Devolucion @relation(fields: [idDevolucion], references: [idDevolucion])
   producto   Producto   @relation(fields: [codigoItem], references: [codigoItem])
 
+  @@index([idDevolucion])
   @@map("devolucion_lineas")
 }
 
@@ -489,13 +517,56 @@ model Cliente {
   telefono        String?
   saldoDeudor     Decimal  @default(0) @db.Decimal(10, 2)
   puntosFidelidad Int      @default(0)
+  // ---- Fase 12 · Facturación estricta ----
+  // Datos fiscales del receptor del CFDI. Opcionales en el padrón (el POS
+  // solo necesita nombre), pero se exigen al emitir la factura.
+  rfc             String?
+  razonSocial     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   ventas    Venta[]
   apartados Apartado[]
+  facturas  Factura[]
 
   @@map("clientes")
+}
+
+// ============================================================
+// FASE 12 — Facturación estricta (CFDI 4.0)
+// ============================================================
+
+enum EstadoFactura {
+  EMITIDA
+  CANCELADA
+}
+
+// Una factura está siempre atada a UN cliente registrado y a UN ticket de
+// compra existente (folioVenta es único: no se puede facturar dos veces el
+// mismo ticket). Los importes se copian del ticket en el momento de emitir.
+model Factura {
+  idFactura    String        @id @default(uuid())
+  folio        String        @unique
+  fechaEmision DateTime      @default(now())
+  idCliente    String
+  folioVenta   String        @unique
+  subtotal     Decimal       @db.Decimal(10, 2)
+  iva          Decimal       @db.Decimal(10, 2)
+  totalNeto    Decimal       @db.Decimal(10, 2)
+  metodoPago   String
+  usoCfdi      String        @default("S01")
+  formaPago    String        @default("PUE")
+  estado       EstadoFactura @default(EMITIDA)
+  idUsuario    String
+  createdAt    DateTime      @default(now())
+
+  cliente Cliente @relation(fields: [idCliente], references: [idCliente])
+  venta   Venta   @relation(fields: [folioVenta], references: [folioVenta])
+  usuario Usuario @relation(fields: [idUsuario], references: [idPersona])
+
+  @@index([idCliente])
+  @@index([fechaEmision])
+  @@map("facturas")
 }
 
 // ============================================================

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { ivaFraccionCliente } from "@/store/config";
 
 export interface CartItem {
   codigoItem: string;
@@ -11,34 +12,76 @@ export interface CartItem {
   permiteDecimales?: boolean;
   /** Fase 10: servicio puro; no descuenta stock ni genera Kardex. */
   esServicio?: boolean;
+  /**
+   * Fase 12: precio de mayoreo del producto (null si no tiene). El
+   * interruptor "Precios de Mayoreo" del POS reprecia toda la venta con este
+   * valor; los productos sin mayoreo conservan su precio de menudeo.
+   */
+  precioMayoreo?: number | null;
+  /** Fase 12: imagen del producto (Cloudinary) para el catálogo táctil. */
+  imagenUrl?: string | null;
+}
+
+export type MetodoPagoPOS = "EFECTIVO" | "TARJETA" | "DIGITAL" | "PUNTOS_MONEDERO";
+
+/**
+ * Precio unitario efectivo de una línea según el modo de venta.
+ * Nunca devuelve NaN/undefined: si no hay precio de mayoreo, cae a menudeo.
+ */
+export function precioUnitarioEfectivo(
+  item: Pick<CartItem, "precioUnitario" | "precioMayoreo">,
+  esMayoreo: boolean
+): number {
+  const menudeo = Number(item.precioUnitario);
+  if (!esMayoreo) return Number.isFinite(menudeo) ? menudeo : 0;
+  const mayoreo = Number(item.precioMayoreo);
+  if (Number.isFinite(mayoreo) && mayoreo > 0) return mayoreo;
+  return Number.isFinite(menudeo) ? menudeo : 0;
 }
 
 interface CartState {
   items: CartItem[];
-  metodoPago: "EFECTIVO" | "TARJETA" | "DIGITAL" | "CREDITO_TIENDA";
+  metodoPago: MetodoPagoPOS;
   tipoVenta: "PAPELERIA" | "RECARGA";
   /** Blindaje Financiero: últimos 4 dígitos del rastreo de transferencia. */
   referenciaTransferencia: string | null;
-  /** CRM (Fase 3): cliente asignado a una venta a crédito. */
+  /** CRM (Fase 12): cliente asignado a la venta (obligatorio con puntos). */
   idCliente: string | null;
   nombreCliente: string | null;
+  /** Fase 12: saldo de puntos / nivel del cliente en el POS (tarjeta virtual). */
+  puntosCliente: number;
+  nivelCliente: "MENUDEO" | "MAYOREO";
+  montoHistoricoCliente: number;
+  /**
+   * Fase 12: interruptor de venta a mayoreo. Reprecia TODO el carrito con
+   * `precioMayoreo` de cada producto (los que no tienen, quedan igual).
+   */
+  esMayoreo: boolean;
 
   addItem: (item: Omit<CartItem, "subtotalLinea">) => void;
   removeItem: (codigoItem: string) => void;
   updateQuantity: (codigoItem: string, cantidad: number) => void;
   clearCart: () => void;
-  setMetodoPago: (metodo: "EFECTIVO" | "TARJETA" | "DIGITAL" | "CREDITO_TIENDA") => void;
+  setMetodoPago: (metodoPago: MetodoPagoPOS) => void;
   setTipoVenta: (tipo: "PAPELERIA" | "RECARGA") => void;
   setReferenciaTransferencia: (referencia: string | null) => void;
-  setCliente: (idCliente: string | null, nombreCliente: string | null) => void;
+  setCliente: (
+    idCliente: string | null,
+    nombreCliente: string | null,
+    puntosCliente?: number,
+    nivelCliente?: "MENUDEO" | "MAYOREO",
+    montoHistoricoCliente?: number
+  ) => void;
+  /** Activa/desactiva el precio de mayoreo en todo el carrito. */
+  setEsMayoreo: (esMayoreo: boolean) => void;
+  /** ¿Al menos una línea del carrito tiene precio de mayoreo? */
+  getTieneMayoreo: () => boolean;
 
   getSubtotal: () => number;
   getIVA: () => number;
   getTotal: () => number;
   getItemCount: () => number;
 }
-
-const IVA_RATE = 0.16;
 
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
@@ -47,12 +90,18 @@ export const useCartStore = create<CartState>((set, get) => ({
   referenciaTransferencia: null,
   idCliente: null,
   nombreCliente: null,
+  puntosCliente: 0,
+  nivelCliente: "MENUDEO",
+  montoHistoricoCliente: 0,
+  esMayoreo: false,
 
   addItem: (item) =>
     set((state) => {
       const existing = state.items.find(
         (i) => i.codigoItem === item.codigoItem
       );
+      // Si el carrito está en mayoreo, la línea nueva entra a ese precio.
+      const precioUnitario = precioUnitarioEfectivo(item, state.esMayoreo);
 
       if (existing) {
         return {
@@ -72,7 +121,11 @@ export const useCartStore = create<CartState>((set, get) => ({
       return {
         items: [
           ...state.items,
-          { ...item, subtotalLinea: item.cantidad * item.precioUnitario },
+          {
+            ...item,
+            precioUnitario,
+            subtotalLinea: item.cantidad * precioUnitario,
+          },
         ],
       };
     }),
@@ -89,18 +142,56 @@ export const useCartStore = create<CartState>((set, get) => ({
           ? state.items.filter((i) => i.codigoItem !== codigoItem)
           : state.items.map((i) =>
               i.codigoItem === codigoItem
-                ? { ...i, cantidad, subtotalLinea: cantidad * i.precioUnitario }
+                ? {
+                    ...i,
+                    cantidad,
+                    // Respeta el modo mayoreo al cambiar la cantidad.
+                    subtotalLinea:
+                      cantidad * precioUnitarioEfectivo(i, state.esMayoreo),
+                  }
                 : i
             ),
     })),
 
-  clearCart: () => set({ items: [], referenciaTransferencia: null, idCliente: null, nombreCliente: null }),
+  clearCart: () =>
+    set({
+      items: [],
+      referenciaTransferencia: null,
+      idCliente: null,
+      nombreCliente: null,
+      esMayoreo: false,
+    }),
 
   setMetodoPago: (metodoPago) => set({ metodoPago }),
   setTipoVenta: (tipoVenta) => set({ tipoVenta }),
   setReferenciaTransferencia: (referenciaTransferencia) =>
     set({ referenciaTransferencia }),
-  setCliente: (idCliente, nombreCliente) => set({ idCliente, nombreCliente }),
+  setCliente: (idCliente, nombreCliente, puntosCliente, nivelCliente, montoHistoricoCliente) =>
+    set({
+      idCliente,
+      nombreCliente,
+      puntosCliente: idCliente ? (puntosCliente ?? 0) : 0,
+      nivelCliente: idCliente ? (nivelCliente ?? "MENUDEO") : "MENUDEO",
+      montoHistoricoCliente: idCliente ? (montoHistoricoCliente ?? 0) : 0,
+    }),
+
+  setEsMayoreo: (esMayoreo) =>
+    set((state) => ({
+      esMayoreo,
+      // Repricing integral SIN perder el precio de menudeo: `precioUnitario`
+      // siempre guarda el precio de lista y `subtotalLinea` se recalcula con
+      // el precio efectivo del modo actual (así volver a menudeo es exacto).
+      items: state.items.map((i) => {
+        const precio = precioUnitarioEfectivo(i, esMayoreo);
+        return { ...i, subtotalLinea: i.cantidad * precio };
+      }),
+    })),
+
+  getTieneMayoreo: () =>
+    get().items.some((i) => {
+      const m = Number(i.precioMayoreo);
+      return Number.isFinite(m) && m > 0;
+    }),
 
   getSubtotal: () => {
     const { items } = get();
@@ -109,12 +200,12 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   getIVA: () => {
     const subtotal = get().getSubtotal();
-    return subtotal * IVA_RATE;
+    return subtotal * ivaFraccionCliente();
   },
 
   getTotal: () => {
     const subtotal = get().getSubtotal();
-    return subtotal * (1 + IVA_RATE);
+    return subtotal * (1 + ivaFraccionCliente());
   },
 
   getItemCount: () => {

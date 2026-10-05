@@ -3,13 +3,14 @@ import { z } from "zod";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { round2 } from "@/lib/sales";
+import { calcularNivel } from "@/lib/fidelidad";
+import { RFC_CLIENTE_SCHEMA, RAZON_SOCIAL_SCHEMA } from "@/lib/cliente-fiscal";
 
 // ============================================================
-// GET /api/clientes?q=...&idCaja=...
-//   Lista/busca clientes del Crédito de Tienda (CRM, Fase 3).
-//   Cada cliente muestra su saldo deudor y puntos de fidelidad.
+// GET /api/clientes?q=...&limit=...&soloConDeuda=...
+//   Lista/busca clientes del CRM con su monedero de puntos y su nivel.
 // POST /api/clientes
-//   Alta rápida desde el POS: { nombre, telefono? }
+//   Alta rápida desde el POS o desde el módulo /clientes
 // ============================================================
 
 export async function GET(request: Request) {
@@ -21,12 +22,19 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";
   const soloConDeuda = searchParams.get("soloConDeuda") === "true";
+  const limit = Math.min(
+    Math.max(parseInt(searchParams.get("limit") ?? "50", 10) || 50, 1),
+    200
+  );
 
   const where: Record<string, unknown> = {};
   if (q.length > 0) {
     where.OR = [
       { nombre: { contains: q, mode: "insensitive" as const } },
       { telefono: { contains: q } },
+      // Fase 12: se puede buscar por RFC o razón social (facturación).
+      { rfc: { contains: q, mode: "insensitive" as const } },
+      { razonSocial: { contains: q, mode: "insensitive" as const } },
     ];
   }
   if (soloConDeuda) {
@@ -37,17 +45,39 @@ export async function GET(request: Request) {
     const clientes = await prisma.cliente.findMany({
       where,
       orderBy: q.length > 0 ? undefined : [{ saldoDeudor: "desc" }, { nombre: "asc" }],
-      take: 50,
+      take: limit,
     });
 
+    // Fase 12: nivel Menudeo/Mayoreo según historial de compras (una sola
+    // consulta agregada para el lote, indexada por Map: sin N+1 ni O(n²)).
+    const ids = clientes.map((c) => c.idCliente);
+    const grupo = ids.length
+      ? await prisma.venta.groupBy({
+          by: ["idCliente"],
+          where: { idCliente: { in: ids }, estado: { not: "CANCELADA" } },
+          _sum: { totalNeto: true },
+        })
+      : [];
+    const historicoPorCliente = new Map<string, number>(
+      grupo.map((g) => [String(g.idCliente), Number(g._sum.totalNeto ?? 0)])
+    );
+
     return NextResponse.json({
-      clientes: clientes.map((c) => ({
-        idCliente: c.idCliente,
-        nombre: c.nombre,
-        telefono: c.telefono,
-        saldoDeudor: Number(c.saldoDeudor),
-        puntosFidelidad: c.puntosFidelidad,
-      })),
+      clientes: clientes.map((c) => {
+        const montoHistorico = historicoPorCliente.get(c.idCliente) ?? 0;
+        return {
+          idCliente: c.idCliente,
+          nombre: c.nombre,
+          telefono: c.telefono,
+          saldoDeudor: Number(c.saldoDeudor ?? 0),
+          puntosFidelidad: Number(c.puntosFidelidad ?? 0),
+          nivel: calcularNivel(montoHistorico),
+          montoHistorico,
+          // Fase 12: datos fiscales para la facturación (pueden venir vacíos).
+          rfc: c.rfc ?? null,
+          razonSocial: c.razonSocial ?? null,
+        };
+      }),
     });
   } catch (error) {
     return NextResponse.json({ error: "Error al consultar clientes" }, { status: 500 });
@@ -61,6 +91,9 @@ const CREATE_CLIENTE_SCHEMA = z
       .union([z.string().trim().max(20), z.null()])
       .optional()
       .transform((v) => (v ? v : null)),
+    // Fase 12: datos fiscales para poder facturar.
+    rfc: RFC_CLIENTE_SCHEMA,
+    razonSocial: RAZON_SOCIAL_SCHEMA,
   })
   .strict();
 
@@ -90,6 +123,8 @@ export async function POST(request: Request) {
       data: {
         nombre: parsed.data.nombre,
         telefono: parsed.data.telefono,
+        rfc: parsed.data.rfc ?? null,
+        razonSocial: parsed.data.razonSocial ?? null,
       },
     });
 
@@ -110,6 +145,10 @@ export async function POST(request: Request) {
           telefono: cliente.telefono,
           saldoDeudor: Number(cliente.saldoDeudor),
           puntosFidelidad: cliente.puntosFidelidad,
+          nivel: "MENUDEO",
+          montoHistorico: 0,
+          rfc: cliente.rfc ?? null,
+          razonSocial: cliente.razonSocial ?? null,
         },
       },
       { status: 201 }

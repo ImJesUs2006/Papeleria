@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma, Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { puedeCobrar } from "@/lib/permisos";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { elegirPrecioUnitario, ivaFraccion, sufijoFolio, fechaFolio } from "@/lib/sales";
+
+// Equivalencias entre el método que envía el POS y el catálogo del negocio.
+const MAPA_METODO: Record<string, string> = {
+  EFECTIVO: "EFECTIVO",
+  TARJETA: "TARJETA_TERMINAL",
+  TARJETA_TERMINAL: "TARJETA_TERMINAL",
+  DIGITAL: "TRANSFERENCIA",
+  TRANSFERENCIA: "TRANSFERENCIA",
+};
 
 // ============================================================
 // POST /api/ventas/sync
@@ -27,6 +38,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  if (!puedeCobrar(user)) {
+    return NextResponse.json({ error: "Tu usuario no tiene permiso de cobro" }, { status: 403 });
+  }
 
   let body: any;
   try {
@@ -88,6 +102,14 @@ export async function POST(request: Request) {
             out.push({ ...resumenBase, estado: "rechazada", error: "Método de pago inválido" });
             continue;
           }
+          if (!config.metodosPago.includes(MAPA_METODO[v.metodoPago] as any)) {
+            out.push({
+              ...resumenBase,
+              estado: "rechazada",
+              error: `El método de pago ${v.metodoPago} no está habilitado para este negocio`,
+            });
+            continue;
+          }
 
           // 2. Idempotencia: la primera aparición gana.
           const yaExiste = await tx.venta.findUnique({ where: { idLocal } });
@@ -96,8 +118,21 @@ export async function POST(request: Request) {
             continue;
           }
 
-          // 3. Usuario vigente (la que encara el turno).
-          const cajero = await tx.usuario.findUnique({ where: { idPersona: v.idUsuario } });
+          // 3. Autoría: el servidor NO confía en el idUsuario del cuerpo. Solo
+          //    una administradora puede sincronizar ventas a nombre de otra
+          //    persona (cambio de turno); en cualquier otro caso la venta se
+          //    atribuye a la sesión autenticada y el dato declarado se audita.
+          const alertas: string[] = [];
+          const idDeclarado = typeof v.idUsuario === "string" ? v.idUsuario : user.idPersona;
+          const puedeDelegar = user.rol === "ADMINISTRADORA";
+          const idAutor =
+            idDeclarado !== user.idPersona && !puedeDelegar ? user.idPersona : idDeclarado;
+          if (idAutor !== idDeclarado) {
+            alertas.push(
+              `Autoría reasignada: el dispositivo declaró al usuario ${idDeclarado}; se atribuye a la sesión ${user.idPersona}`
+            );
+          }
+          const cajero = await tx.usuario.findUnique({ where: { idPersona: idAutor } });
           if (!cajero || !cajero.activa) {
             out.push({ ...resumenBase, estado: "rechazada", error: "Usuario inexistente o desactivado" });
             continue;
@@ -110,8 +145,11 @@ export async function POST(request: Request) {
           });
           const mapaProductos = new Map(productos.map((p) => [p.codigoItem, p]));
 
-          const alertas: string[] = [];
           let subtotal = 0;
+          // Una venta se aplica COMPLETA o no se aplica: si un ítem falla se
+          // descarta toda y se restaura el stock simulado de este lote.
+          let rechazo: string | null = null;
+          const stockAntes = new Map(inventarioSimulado);
           const lineas: Array<{
             codigoItem: string;
             cantidad: number;
@@ -124,45 +162,33 @@ export async function POST(request: Request) {
             const codigo = item.codigoItem;
             const cantidad = Math.round(Number(item.cantidad) * 1000) / 1000;
             if (!Number.isFinite(cantidad) || cantidad <= 0 || cantidad > 999) {
-              out.push({
-                ...resumenBase,
-                estado: "rechazada",
-                error: `Cantidad inválida ${codigo}`,
-              });
+              rechazo = `Cantidad inválida ${codigo}`;
               break;
             }
             const producto = mapaProductos.get(codigo);
             if (!producto || !producto.activo) {
-              out.push({
-                ...resumenBase,
-                estado: "rechazada",
-                error: `Producto inexistente o desactivado: ${codigo}`,
-              });
+              rechazo = `Producto inexistente o desactivado: ${codigo}`;
               break;
             }
             const esServicio = producto.esServicio;
             if (!esServicio && !producto.permiteDecimales && !Number.isInteger(cantidad)) {
-              out.push({
-                ...resumenBase,
-                estado: "rechazada",
-                error: `Cantidad entera requerida para ${codigo}`,
-              });
+              rechazo = `Cantidad entera requerida para ${codigo}`;
               break;
             }
 
-            // Tolerancia de precio vs. catálogo.
-            const precioServidor = Number(producto.precioUnitario);
+            // Tolerancia de precio vs. catálogo. Con venta a mayoreo el precio
+            // de referencia es el de mayoreo del producto (si existe).
+            const precioServidor = elegirPrecioUnitario(
+              producto,
+              v.esMayoreo === true
+            );
             const precioCliente = Number(item.precioMomento);
             const devio =
               precioServidor > 0
                 ? Math.abs(precioCliente - precioServidor) / precioServidor
                 : Math.abs(precioCliente - precioServidor);
             if (devio > 0.15) {
-              out.push({
-                ...resumenBase,
-                estado: "rechazada",
-                error: `Precio fuera de tolerancia (15%) para ${codigo}: local ${precioCliente}, vigente ${precioServidor}`,
-              });
+              rechazo = `Precio fuera de tolerancia (15%) para ${codigo}: local ${precioCliente}, vigente ${precioServidor}`;
               break;
             }
 
@@ -173,11 +199,7 @@ export async function POST(request: Request) {
               const stockFinal = stockPrevio - cantidad;
               inventarioSimulado.set(codigo, stockFinal);
               if (stockFinal < 0 && politicaStockOffline === "RECHAZAR") {
-                out.push({
-                  ...resumenBase,
-                  estado: "rechazada",
-                  error: `Existencia insuficiente (política RECHAZAR) para ${codigo}`,
-                });
+                rechazo = `Existencia insuficiente (política RECHAZAR) para ${codigo}`;
                 break;
               }
               if (stockFinal < 0) {
@@ -199,7 +221,12 @@ export async function POST(request: Request) {
             });
           }
 
-          if (lineas.length === 0) continue; // ya se marcó rechazo dentro del loop
+          if (rechazo) {
+            inventarioSimulado.clear();
+            for (const [k, val] of stockAntes) inventarioSimulado.set(k, val);
+            out.push({ ...resumenBase, estado: "rechazada", error: rechazo });
+            continue;
+          }
 
           // Blindaje Financiero: transferencias exigen la referencia (4 dígitos).
           const esTransferencia = v.metodoPago === "DIGITAL" || v.metodoPago === "TRANSFERENCIA";
@@ -207,6 +234,8 @@ export async function POST(request: Request) {
             ? String(v.referenciaTransferencia ?? "").trim()
             : null;
           if (esTransferencia && !/^\d{4}$/.test(referenciaTransferencia ?? "")) {
+            inventarioSimulado.clear();
+            for (const [k, val] of stockAntes) inventarioSimulado.set(k, val);
             out.push({
               ...resumenBase,
               estado: "rechazada",
@@ -216,7 +245,7 @@ export async function POST(request: Request) {
           }
 
           // 5. Liquidación: IVA y totales SIEMPRE recalculados en servidor.
-          const iva = Math.round(subtotal * Number(config.ivaRate) / 100 * 100) / 100;
+          const iva = Math.round(subtotal * ivaFraccion(config.ivaRate) * 100) / 100;
           const totalNeto = Math.round((subtotal + iva) * 100) / 100;
           const folioVenta = generarFolioSync();
 
@@ -227,6 +256,9 @@ export async function POST(request: Request) {
             orderBy: { horaApertura: "desc" },
             select: { idCaja: true },
           });
+          if (!cajaAbierta) {
+            alertas.push("Sin caja abierta al sincronizar: el ingreso no quedó asignado a ningún arqueo");
+          }
 
           // 7. Persistencia de la venta.
           await tx.venta.create({
@@ -345,7 +377,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ resultados });
   } catch (error: any) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P4001") {
+    // P2034: conflicto de escritura / fallo de serialización (reintentable).
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
       return NextResponse.json(
         { error: "Conflicto de serialización; reintenta el lote" },
         { status: 409 }
@@ -358,15 +391,6 @@ export async function POST(request: Request) {
   }
 }
 
-let folioSeq = 0;
 function generarFolioSync(): string {
-  const d = new Date();
-  const fecha = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-  folioSeq = (folioSeq + 1) % 10000;
-  return `S-${fecha}-${String(folioSeq).padStart(4, "0")}-${Math.random()
-    .toString(36)
-    .slice(2, 4)
-    .toUpperCase()}`;
+  return `S-${fechaFolio()}-${sufijoFolio()}`;
 }

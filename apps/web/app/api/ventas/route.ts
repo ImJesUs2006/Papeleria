@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { puedeCobrar } from "@/lib/permisos";
 import { executeSale, SaleError } from "@/lib/sales";
 import { getBusinessConfig } from "@/lib/feature-flags";
 
@@ -10,7 +11,7 @@ const MAPA_METODO: Record<string, string> = {
   TARJETA_TERMINAL: "TARJETA_TERMINAL",
   DIGITAL: "TRANSFERENCIA",
   TRANSFERENCIA: "TRANSFERENCIA",
-  CREDITO_TIENDA: "CREDITO_TIENDA",
+  PUNTOS_MONEDERO: "PUNTOS_MONEDERO",
 };
 
 export async function POST(request: Request) {
@@ -19,6 +20,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  if (!puedeCobrar(user)) {
+    return NextResponse.json({ error: "Tu usuario no tiene permiso de cobro" }, { status: 403 });
+  }
 
   let body: any;
   try {
@@ -37,6 +41,9 @@ export async function POST(request: Request) {
     );
   }
 
+  // Fase 12 · interruptor de mayoreo: solo se acepta booleano real.
+  const esMayoreo = body.esMayoreo === true;
+
   try {
     // Caja abierta (si existe) para asignar el ingreso financiero.
     const sesion = await prisma.sesionCaja.findFirst({
@@ -45,13 +52,27 @@ export async function POST(request: Request) {
     });
 
     const resultado = await prisma.$transaction((tx) =>
-      executeSale(tx, body, {
+      executeSale(tx, { ...body, esMayoreo }, {
         idUsuario: user.idPersona,
         idCaja: sesion?.idCaja ?? null,
+        ivaRate: config.ivaRate,
+        puntos: config.puntosConfig,
       })
     );
 
-    return NextResponse.json(resultado, { status: 201 });
+    return NextResponse.json(
+      {
+        ...resultado,
+        // Fase 12: el cliente (POS) arma el ticket con los datos reales.
+        items: resultado.items,
+        subtotal: resultado.subtotal,
+        iva: resultado.iva,
+        metodoPago: resultado.metodoPago,
+        nombreCliente: resultado.nombreCliente,
+        fechaHora: resultado.fechaHora,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     if (error instanceof SaleError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

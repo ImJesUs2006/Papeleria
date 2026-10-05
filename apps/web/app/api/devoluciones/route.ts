@@ -9,6 +9,8 @@ const MAPA_REEMBOLSO: Record<string, string> = {
   TRANSFERENCIA: "TRANSFERENCIA",
   TARJETA_TERMINAL: "TARJETA_TERMINAL",
   TARJETA: "TARJETA_TERMINAL",
+  NOTA_CREDITO: "NOTA_CREDITO",
+  PUNTOS_MONEDERO: "PUNTOS_MONEDERO",
 };
 
 export async function GET(request: Request) {
@@ -75,7 +77,10 @@ export async function POST(request: Request) {
   const tipo = body.tipo === "NOTA_CREDITO" ? "NOTA_CREDITO" : "DEVOLUCION";
 
   // Valida el método de reembolso contra los habilitados por el negocio.
-  if (tipo === "DEVOLUCION") {
+  // Excepción (Fase 12): PUNTOS_MONEDERO se permite aunque hoy esté
+  // desactivado, porque una venta pagada con puntos DEBE poder devolverse;
+  // `executeReturn` confirma que la venta original fue de puntos.
+  if (tipo === "DEVOLUCION" && body.metodoReembolso !== "PUNTOS_MONEDERO") {
     const config = await getBusinessConfig();
     const requerido = MAPA_REEMBOLSO[body.metodoReembolso as string];
     if (!requerido || !config.metodosPago.includes(requerido as any)) {
@@ -92,6 +97,7 @@ export async function POST(request: Request) {
       orderBy: { horaApertura: "desc" },
     });
 
+    const config = await getBusinessConfig();
     const resultado = await prisma.$transaction((tx) =>
       executeReturn(
         tx,
@@ -102,7 +108,12 @@ export async function POST(request: Request) {
           metodoReembolso: tipo === "NOTA_CREDITO" ? "NOTA_CREDITO" : body.metodoReembolso,
           motivo: body.motivo,
         },
-        { idUsuario: user.idPersona, idCaja: sesion?.idCaja ?? null }
+        {
+          idUsuario: user.idPersona,
+          idCaja: sesion?.idCaja ?? null,
+          puntos: config.puntosConfig,
+          ivaRate: config.ivaRate,
+        }
       )
     );
 

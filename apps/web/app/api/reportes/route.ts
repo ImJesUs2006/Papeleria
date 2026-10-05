@@ -26,8 +26,10 @@ export async function GET(request: Request) {
     const desde = searchParams.get("desde");
     const hasta = searchParams.get("hasta");
     const idCaja = searchParams.get("idCaja");
+    const usuario = searchParams.get("usuario");
+    const modulo = searchParams.get("modulo");
 
-    const reporte = await getReporteData(tipo, { desde, hasta, idCaja });
+    const reporte = await getReporteData(tipo, { desde, hasta, idCaja, usuario, modulo });
 
     // Reportes Dinámicos (Fase 2): el encabezado usa el color de marca
     // del negocio y el inventario resalta en rojo el stock bajo su mínimo.

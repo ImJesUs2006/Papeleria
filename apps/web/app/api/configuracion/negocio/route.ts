@@ -71,6 +71,7 @@ export async function PUT(request: Request) {
         usarCaducidad: parsed.data.usarCaducidad,
         usarUbicaciones: parsed.data.usarUbicaciones,
         requerirFondoInicial: parsed.data.requerirFondoInicial,
+        puntosConfig: parsed.data.puntosConfig ?? Prisma.DbNull,
         configVersion: proximaVersion,
         setupPendiente: false,
         updatedById: user.idPersona,

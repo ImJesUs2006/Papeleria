@@ -5,6 +5,7 @@ import type {
   DatosBancarios,
   DatosFiscales,
   FeatureFlags,
+  PuntosConfig,
   TemaBase,
 } from "@/lib/business-types";
 import {
@@ -17,6 +18,7 @@ import {
   DEFAULT_USAR_CADUCIDAD,
   DEFAULT_USAR_UBICACIONES,
   DEFAULT_REQUERIR_FONDO_INICIAL,
+  DEFAULT_PUNTOS_CONFIG,
 } from "@/lib/business-types";
 import { buildSignedConfig } from "@/lib/config-signing";
 
@@ -70,8 +72,25 @@ function normalizeMetodosPago(raw: Prisma.JsonValue | null): string[] {
   return raw.filter(
     (m): m is string =>
       typeof m === "string" &&
-      ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "CREDITO_TIENDA"].includes(m)
+      ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA", "PUNTOS_MONEDERO"].includes(m)
   );
+}
+
+/** Normaliza la tasa del Puntos Monedero (Fase 12) con valores seguros. */
+function normalizePuntosConfig(raw: Prisma.JsonValue | null): PuntosConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...DEFAULT_PUNTOS_CONFIG };
+  }
+  const obj = raw as Record<string, unknown>;
+  const pesos =
+    typeof obj.pesosCompraPorPunto === "number" && Number.isFinite(obj.pesosCompraPorPunto)
+      ? Math.min(Math.max(obj.pesosCompraPorPunto, 1), 100000)
+      : DEFAULT_PUNTOS_CONFIG.pesosCompraPorPunto;
+  const valor =
+    typeof obj.valorPuntoPesos === "number" && Number.isFinite(obj.valorPuntoPesos)
+      ? Math.min(Math.max(obj.valorPuntoPesos, 0.01), 10000)
+      : DEFAULT_PUNTOS_CONFIG.valorPuntoPesos;
+  return { pesosCompraPorPunto: pesos, valorPuntoPesos: valor };
 }
 
 /** Normaliza datosBancarios a un objeto tipado (filtra tipos no deseados). */
@@ -93,7 +112,21 @@ function normalizeDatosFiscales(raw: Prisma.JsonValue | null): DatosFiscales | n
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
   const pick = (k: string) => (typeof obj[k] === "string" ? String(obj[k]) : undefined);
-  const out: DatosFiscales = { rfc: pick("rfc"), razonSocial: pick("razonSocial"), regimenFiscal: pick("regimenFiscal"), codigoPostal: pick("codigoPostal") };
+  const out: DatosFiscales = {
+    rfc: pick("rfc"),
+    razonSocial: pick("razonSocial"),
+    curp: pick("curp"),
+    regimenFiscal: pick("regimenFiscal"),
+    usoCFDI: pick("usoCFDI"),
+    codigoPostal: pick("codigoPostal"),
+    calle: pick("calle"),
+    numExt: pick("numExt"),
+    numInt: pick("numInt"),
+    colonia: pick("colonia"),
+    municipio: pick("municipio"),
+    estado: pick("estado"),
+    cp: pick("cp") || pick("codigoPostal"),
+  };
   for (const key of Object.keys(out) as Array<keyof DatosFiscales>) {
     if (out[key] === undefined) delete out[key];
   }
@@ -125,6 +158,7 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       usarCaducidad: DEFAULT_USAR_CADUCIDAD,
       usarUbicaciones: DEFAULT_USAR_UBICACIONES,
       requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
+      puntosConfig: { ...DEFAULT_PUNTOS_CONFIG },
       configVersion: 1,
       setupPendiente: true,
     };
@@ -158,6 +192,7 @@ export async function getBusinessConfig(): Promise<BusinessConfig> {
       typeof row.requerirFondoInicial === "boolean"
         ? row.requerirFondoInicial
         : DEFAULT_REQUERIR_FONDO_INICIAL,
+    puntosConfig: normalizePuntosConfig(row.puntosConfig),
     configVersion: row.configVersion,
     setupPendiente: row.setupPendiente,
   };

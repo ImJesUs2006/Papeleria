@@ -24,9 +24,11 @@ export async function GET(request: Request) {
   const desde = searchParams.get("desde");
   const hasta = searchParams.get("hasta");
   const idCaja = searchParams.get("idCaja");
+  const usuario = searchParams.get("usuario");
+  const modulo = searchParams.get("modulo");
 
   try {
-    const reporte = await getReporteData(tipo, { desde, hasta, idCaja });
+    const reporte = await getReporteData(tipo, { desde, hasta, idCaja, usuario, modulo });
     const totalFilas = reporte.rows.length;
     const rows = reporte.rows.slice(0, MAX_PREVIEW).map((r) =>
       r.map((c) => (typeof c === "number" ? c : String(c ?? "")))

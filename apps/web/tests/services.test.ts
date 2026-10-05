@@ -29,6 +29,7 @@ function crearTxMock(producto: any) {
     producto: {
       findUnique: vi.fn(async () => producto),
       update: vi.fn(async () => producto),
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
     venta: { create: vi.fn(async () => ({ folioVenta: "F-TEST" })) },
     lineaDetalleVenta: { create: vi.fn(async () => ({})) },
@@ -44,7 +45,8 @@ function crearTxMock(producto: any) {
 async function postVenta(tx: any, body: any) {
   const prisma = {
     configuracionNegocio: { findUnique: vi.fn(async () => null) },
-    sesionCaja: { findFirst: vi.fn(async () => null) },
+    // Desde la auditoría de caja, toda venta exige una sesión ABIERTA.
+    sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
     $transaction: vi.fn(async (cb: any) => cb(tx as any)),
   };
   vi.doMock("@papeleria/database", () => ({ prisma }));
@@ -78,7 +80,7 @@ describe("Venta de servicios (esServicio) y granel (permiteDecimales) — C2", (
     expect(body.totalNeto).toBe(232);
 
     // Un servicio NO descuenta stock
-    expect(tx.producto.update).not.toHaveBeenCalled();
+    expect(tx.producto.updateMany).not.toHaveBeenCalled();
     // Y NO genera movimiento físico de kardex
     expect(tx.movimientoKardex.createMany).not.toHaveBeenCalled();
   });
@@ -94,8 +96,8 @@ describe("Venta de servicios (esServicio) y granel (permiteDecimales) — C2", (
 
     expect(res.status).toBe(201);
     // 12.50? no: el producto base cuesta 200; 1.5 x 200 = 300 + 16% = 348
-    expect(tx.producto.update).toHaveBeenCalledWith({
-      where: { codigoItem: "GRANEL-1" },
+    expect(tx.producto.updateMany).toHaveBeenCalledWith({
+      where: { codigoItem: "GRANEL-1", stockActual: { gte: 1.5 } },
       data: { stockActual: { decrement: 1.5 } },
     });
     expect(tx.movimientoKardex.createMany).toHaveBeenCalled();
@@ -129,6 +131,6 @@ describe("Venta de servicios (esServicio) y granel (permiteDecimales) — C2", (
     });
 
     expect(res.status).toBe(201);
-    expect(tx.producto.update).not.toHaveBeenCalled();
+    expect(tx.producto.updateMany).not.toHaveBeenCalled();
   });
 });

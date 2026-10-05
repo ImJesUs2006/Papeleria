@@ -19,8 +19,21 @@ import type { BusinessConfig } from "@/lib/business-types";
 //      la autoridad final es siempre la BD.
 // ============================================================
 
+// En producción el secreto es obligatorio (se valida al firmar, no al
+// importar, para no romper `next build`).
 const MASTER_SECRET =
   process.env.CONFIG_SIGNING_SECRET || process.env.JWT_SECRET || "insecure-cfg-secret";
+
+function masterSecret(): string {
+  if (
+    process.env.NODE_ENV === "production" &&
+    !process.env.CONFIG_SIGNING_SECRET &&
+    !process.env.JWT_SECRET
+  ) {
+    throw new Error("Define CONFIG_SIGNING_SECRET o JWT_SECRET antes de arrancar en producción.");
+  }
+  return MASTER_SECRET;
+}
 
 /** Serializa de forma canónica y estable (orden de llaves). */
 export function canonicalize(obj: unknown): string {
@@ -38,7 +51,7 @@ export function newSessionId(): string {
 
 /** Derivación de la llave de sesión: HMAC(master, "session:" + sessionId). */
 export function deriveSessionKey(sessionId: string): string {
-  return createHmac("sha256", MASTER_SECRET).update(`session:${sessionId}`).digest("hex");
+  return createHmac("sha256", masterSecret()).update(`session:${sessionId}`).digest("hex");
 }
 
 export function signConfigWithKey(config: BusinessConfig, sessionKey: string): string {

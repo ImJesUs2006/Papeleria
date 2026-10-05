@@ -15,6 +15,7 @@ import {
   LogOut,
   RotateCcw,
   FileText,
+  PackageOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
@@ -49,6 +50,12 @@ const NAV_ITEMS: Array<{
     permission: "caja.abrir",
   },
   {
+    label: "Apartados",
+    href: "/apartados",
+    icon: PackageOpen,
+    permission: "cobro.realizar",
+  },
+  {
     label: "Devoluciones",
     href: "/devoluciones",
     icon: RotateCcw,
@@ -75,11 +82,18 @@ const NAV_ITEMS: Array<{
     permission: "pedidos.ver",
     flag: "proveedores",
   },
+{
+    label: "Clientes",
+    href: "/clientes",
+    icon: Users,
+    permission: "clientes.ver",
+  },
   {
     label: "Reportes",
     href: "/reportes",
     icon: BarChart3,
     permission: "reportes.ver",
+    flag: "dashboard",
   },
   {
     label: "Bitácora",
@@ -159,16 +173,17 @@ export function Sidebar() {
           const Icon = item.icon;
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                isActive
-                  ? "text-neon-green bg-neon-green/10"
-                  : "text-muted hover:text-gray-100 hover:bg-surface-700"
-              )}
-            >
+              <Link
+                key={item.href}
+                href={item.href}
+                prefetch
+                className={cn(
+                  "group flex items-center gap-3 px-4 py-2 rounded-xl transition-all",
+                  isActive
+                    ? "bg-acento/20 text-acento shadow-neon"
+                    : "text-muted hover:bg-surface-700 hover:text-gray-100"
+                )}
+              >
               {isActive && (
                 <motion.div
                   layoutId="sidebar-active"

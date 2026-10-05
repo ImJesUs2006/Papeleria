@@ -95,6 +95,9 @@ function serializarVenta(v: VentaOffline) {
     iva: v.iva,
     totalNeto: v.totalNeto,
     montoRecibido: v.montoRecibido ?? null,
+    referenciaTransferencia: v.referenciaTransferencia ?? null,
+    // Fase 12: el servidor debe reaplicar el precio de mayoreo al sincronizar.
+    esMayoreo: v.esMayoreo === true,
   };
 }
 

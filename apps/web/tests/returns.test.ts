@@ -204,4 +204,76 @@ describe("executeReturn (devoluciones y notas de crédito)", () => {
       executeReturn(tx, { folioVenta: "F-TEST-0001", items: [], metodoReembolso: "EFECTIVO" }, ctx)
     ).rejects.toThrow(/No hay artículos por devolver/);
   });
+
+  it("reembolso en puntos (venta original de PUNTOS_MONEDERO): restituye puntos, sin tocar caja", async () => {
+    const venta = makeVenta({ metodoPago: "PUNTOS_MONEDERO", idCliente: "CLI-1" });
+    const tx = makeTx(venta);
+    const r = await executeReturn(
+      tx,
+      { folioVenta: "F-TEST-0001", items: [{ codigoItem: "P001", cantidad: 1 }], metodoReembolso: "PUNTOS_MONEDERO" },
+      { idUsuario: "u1", idCaja: "caja-1", puntos: { valorPuntoPesos: 1 } }
+    );
+
+    expect(r.metodoReembolso).toBe("PUNTOS_MONEDERO");
+    // 1 × P001 = $100 subtotal → $116 total → restituye 116 puntos (1pt = $1).
+    expect(tx.cliente.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idCliente: "CLI-1" },
+        data: { puntosFidelidad: { increment: 116 } },
+      })
+    );
+    expect(tx.sesionCaja.update).not.toHaveBeenCalled();
+  });
+
+  it("fuerza el reembolso en puntos si la venta original se pagó con puntos", async () => {
+    const venta = makeVenta({ metodoPago: "PUNTOS_MONEDERO", idCliente: "CLI-1" });
+    const tx = makeTx(venta);
+    await expect(
+      executeReturn(
+        tx,
+        { folioVenta: "F-TEST-0001", items: [{ codigoItem: "P001", cantidad: 1 }], metodoReembolso: "EFECTIVO" },
+        { idUsuario: "u1", idCaja: "caja-1", puntos: { valorPuntoPesos: 1 } }
+      )
+    ).rejects.toThrow(/se pagó con puntos/);
+    expect(tx.sesionCaja.update).not.toHaveBeenCalled();
+  });
+
+  it("rechaza reembolsar en puntos si la venta no tiene cliente", async () => {
+    // Cobrada con puntos pero sin cliente asignado (dato inconsistente).
+    const tx = makeTx(makeVenta({ metodoPago: "PUNTOS_MONEDERO" }));
+    await expect(
+      executeReturn(
+        tx,
+        { folioVenta: "F-TEST-0001", items: [{ codigoItem: "P001", cantidad: 1 }], metodoReembolso: "PUNTOS_MONEDERO" },
+        { idUsuario: "u1", idCaja: "caja-1", puntos: { valorPuntoPesos: 1 } }
+      )
+    ).rejects.toThrow(/No hay cliente asociado/);
+  });
+
+  // Blindaje financiero: una venta normal NO se puede "reembolsar" en puntos
+  // (con eso se convertiría efectivo en lealtad).
+  it("rechaza reembolsar en puntos una venta que se cobró en efectivo", async () => {
+    const tx = makeTx(makeVenta({ metodoPago: "EFECTIVO", idCliente: "CLI-1" }));
+    await expect(
+      executeReturn(
+        tx,
+        { folioVenta: "F-TEST-0001", items: [{ codigoItem: "P001", cantidad: 1 }], metodoReembolso: "PUNTOS_MONEDERO" },
+        { idUsuario: "u1", idCaja: "caja-1", puntos: { valorPuntoPesos: 1 } }
+      )
+    ).rejects.toThrow(/método de pago original/);
+    expect(tx.cliente.update).not.toHaveBeenCalled();
+    expect(tx.sesionCaja.update).not.toHaveBeenCalled();
+  });
+
+  it("rechaza reembolsar en puntos una venta con tarjeta", async () => {
+    const tx = makeTx(makeVenta({ metodoPago: "TARJETA_TERMINAL", idCliente: "CLI-1" }));
+    await expect(
+      executeReturn(
+        tx,
+        { folioVenta: "F-TEST-0001", items: [{ codigoItem: "P001", cantidad: 1 }], metodoReembolso: "PUNTOS_MONEDERO" },
+        { idUsuario: "u1", idCaja: "caja-1", puntos: { valorPuntoPesos: 1 } }
+      )
+    ).rejects.toThrow(/método de pago original/);
+    expect(tx.cliente.update).not.toHaveBeenCalled();
+  });
 });

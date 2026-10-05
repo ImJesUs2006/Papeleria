@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   History,
@@ -17,6 +17,10 @@ import {
 import { useConfigStore } from "@/store/config";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
+import {
+  imprimirTicket,
+  type AnchoTicketImpresion,
+} from "@/lib/print-ticket";
 
 interface ArqueoHistorial {
   esperadoEfectivo: number;
@@ -66,15 +70,18 @@ function TicketCorte({
   negocio,
   anchoTicket,
   mensajeTicket,
+  printRef,
 }: {
   sesion: SesionHistorial;
   negocio: string;
   anchoTicket: string;
   mensajeTicket: string | null;
+  printRef?: React.Ref<HTMLDivElement>;
 }) {
   const a = sesion.arqueo;
   return (
     <div
+      ref={printRef}
       className={cn(
         "print-label-area space-y-1.5 text-[11px] font-mono",
         anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80"
@@ -140,6 +147,7 @@ export function HistorialCaja() {
   const [motivoAnulacion, setMotivoAnulacion] = useState("");
   const [anulando, setAnulando] = useState(false);
   const [anulacionHecha, setAnulacionHecha] = useState(false);
+  const areaImpresion = useRef<HTMLDivElement>(null);
   const negocio = useConfigStore((s) => s.config?.nombreNegocio ?? "Mi Negocio");
   const rol = useAuthStore((s) => s.rol);
   const esAdmin = rol === "ADMINISTRADORA";
@@ -168,7 +176,10 @@ export function HistorialCaja() {
     setTicketParaImprimir(s);
     // La impresión se dispara tras pintar el área imprimible.
     setTimeout(() => {
-      window.print();
+      imprimirTicket(
+        areaImpresion.current,
+        configCaja.anchoTicket as AnchoTicketImpresion
+      );
       setImprimiendo(null);
       setTimeout(() => setTicketParaImprimir(null), 300);
     }, 120);
@@ -204,8 +215,8 @@ export function HistorialCaja() {
   return (
     <div className="space-y-4">
       {error && (
-        <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-          <AlertTriangle className="h-4 w-4 text-neon-red" /> {error}
+        <div className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
+          <AlertTriangle className="h-4 w-4 text-rose-400" /> {error}
         </div>
       )}
 
@@ -232,7 +243,7 @@ export function HistorialCaja() {
             transition={{ delay: i * 0.04 }}
             className={cn(
               "bg-surface-800 border rounded-2xl p-5",
-              s.descuadre ? "border-neon-red/40" : "border-surface-600"
+              s.descuadre ? "border-rose-500/40" : "border-surface-600"
             )}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -240,13 +251,13 @@ export function HistorialCaja() {
                 <span
                   className={cn(
                     "h-2.5 w-2.5 rounded-full",
-                    s.anulada ? "bg-neon-red" : s.descuadre ? "bg-neon-red animate-pulse" : "bg-acento"
+                    s.anulada ? "bg-rose-500" : s.descuadre ? "bg-rose-500 animate-pulse" : "bg-acento"
                   )}
                 />
                 <div>
                   <p className="text-sm font-bold text-gray-100 flex items-center gap-2">
                     {s.anulada && (
-                      <span className="inline-flex items-center gap-1 bg-neon-red/10 border border-neon-red/40 text-neon-red text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide">
+                      <span className="inline-flex items-center gap-1 bg-rose-500/10 border border-rose-500/40 text-rose-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide">
                         <Ban className="h-3 w-3" /> Anulada
                       </span>
                     )}
@@ -264,7 +275,7 @@ export function HistorialCaja() {
                 <span
                   className={cn(
                     "text-sm font-black",
-                    s.anulada ? "text-neon-red" : s.descuadre ? "text-neon-red" : "text-acento"
+                    s.anulada ? "text-rose-400" : s.descuadre ? "text-rose-400" : "text-acento"
                   )}
                 >
                   {s.anulada
@@ -292,7 +303,7 @@ export function HistorialCaja() {
                       setAnulacionHecha(false);
                       setMotivoAnulacion("");
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neon-red/10 border border-neon-red/40 hover:bg-neon-red/20 text-neon-red text-xs font-bold transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/40 hover:bg-rose-500/20 text-rose-400 text-xs font-bold transition-colors"
                   >
                     <Ban className="h-3.5 w-3.5" />
                     Anular
@@ -302,7 +313,7 @@ export function HistorialCaja() {
             </div>
 
             {s.anulada && s.motivoAnulacion && (
-              <p className="mt-3 text-[11px] text-neon-red flex items-center gap-1.5 bg-neon-red/5 border border-neon-red/20 rounded-lg px-3 py-2">
+              <p className="mt-3 text-[11px] text-rose-400 flex items-center gap-1.5 bg-rose-500/5 border border-rose-500/20 rounded-lg px-3 py-2">
                 <ShieldCheck className="h-3 w-3 shrink-0" />
                 Motivo de anulación: {s.motivoAnulacion}
               </p>
@@ -314,7 +325,7 @@ export function HistorialCaja() {
                 <p
                   className={cn(
                     "font-bold",
-                    a.faltanteEfectivo !== 0 ? "text-neon-red" : "text-gray-100"
+                    a.faltanteEfectivo !== 0 ? "text-rose-400" : "text-gray-100"
                   )}
                 >
                   ${a.declaradoEfectivo.toFixed(2)}
@@ -326,7 +337,7 @@ export function HistorialCaja() {
                 <p
                   className={cn(
                     "font-bold",
-                    a.faltanteDigital !== 0 ? "text-neon-red" : "text-gray-100"
+                    a.faltanteDigital !== 0 ? "text-rose-400" : "text-gray-100"
                   )}
                 >
                   ${a.declaradoDigital.toFixed(2)}
@@ -338,7 +349,7 @@ export function HistorialCaja() {
                 <p
                   className={cn(
                     "font-bold",
-                    a.faltanteRecargas !== 0 ? "text-neon-red" : "text-gray-100"
+                    a.faltanteRecargas !== 0 ? "text-rose-400" : "text-gray-100"
                   )}
                 >
                   ${a.declaradoRecargas.toFixed(2)}
@@ -357,7 +368,7 @@ export function HistorialCaja() {
                       className="flex justify-between items-center bg-surface-700 border border-surface-600 rounded-lg px-3 py-2"
                     >
                       <span className="text-gray-100 truncate">{r.motivo}</span>
-                      <span className="text-neon-red font-bold shrink-0">
+                      <span className="text-rose-400 font-bold shrink-0">
                         -${r.monto.toFixed(2)}
                       </span>
                     </div>
@@ -367,7 +378,7 @@ export function HistorialCaja() {
             )}
 
             {s.descuadre && (
-              <p className="mt-3 text-[11px] text-neon-red flex items-center gap-1.5">
+              <p className="mt-3 text-[11px] text-rose-400 flex items-center gap-1.5">
                 <AlertTriangle className="h-3 w-3" />
                 {s.notasCierre || "Descuadre registrado en el cierre"}
               </p>
@@ -398,11 +409,11 @@ export function HistorialCaja() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 16 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-surface-800 border border-neon-red/40 rounded-3xl p-6 max-w-md w-full"
+              className="bg-surface-800 border border-rose-500/40 rounded-3xl p-6 max-w-md w-full"
             >
               {anulacionHecha ? (
                 <div className="text-center py-2">
-                  <CheckCircle2 className="h-10 w-10 text-neon-green mx-auto mb-3" />
+                  <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto mb-3" />
                   <h3 className="font-black text-gray-100 mb-1">Sesión anulada</h3>
                   <p className="text-sm text-muted mb-5">
                     The session was permanently cancelled and excluded from reports.
@@ -411,7 +422,7 @@ export function HistorialCaja() {
                     <button
                       type="button"
                       onClick={cerrarAnulacion}
-                      className="px-5 py-2.5 rounded-xl bg-neon-green text-btn-ink font-bold text-sm shadow-neon"
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 font-bold text-sm"
                     >
                       Hecho
                     </button>
@@ -420,7 +431,7 @@ export function HistorialCaja() {
               ) : (
                 <>
                   <div className="flex items-center gap-2 mb-3">
-                    <Ban className="h-5 w-5 text-neon-red" />
+                    <Ban className="h-5 w-5 text-rose-400" />
                     <h3 className="font-black text-gray-100">Anular sesión de caja</h3>
                   </div>
                   <p className="text-sm text-muted mb-4">
@@ -436,11 +447,11 @@ export function HistorialCaja() {
                       placeholder="Ej: sesión duplicada, error de arqueo, fraude detectado"
                       rows={3}
                       disabled={anulando}
-                      className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-neon-red focus:outline-none transition-all resize-none"
+                      className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-gray-100 placeholder:text-muted/50 focus:border-rose-500 focus:outline-none transition-all resize-none"
                     />
                   </label>
                   {motivoAnulacion.trim().length > 0 && motivoAnulacion.trim().length < 4 && (
-                    <p className="text-[11px] text-neon-red mb-1">El motivo debe tener al menos 4 caracteres</p>
+                    <p className="text-[11px] text-rose-400 mb-1">El motivo debe tener al menos 4 caracteres</p>
                   )}
                   <div className="grid grid-cols-2 gap-2 mt-4">
                     <button
@@ -458,7 +469,7 @@ export function HistorialCaja() {
                       className={cn(
                         "flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-sm transition-all",
                         !anulando && motivoAnulacion.trim().length >= 4
-                          ? "bg-neon-red text-btn-ink shadow-neon-red"
+                          ? "bg-rose-600 text-white hover:bg-rose-500"
                           : "bg-surface-600 text-muted cursor-not-allowed"
                       )}
                     >
@@ -481,6 +492,7 @@ export function HistorialCaja() {
             negocio={negocio}
             anchoTicket={configCaja.anchoTicket}
             mensajeTicket={configCaja.mensajeTicket}
+            printRef={areaImpresion}
           />
         </div>
       )}

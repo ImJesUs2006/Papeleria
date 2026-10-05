@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { Prisma } from "@prisma/client";
 import { requireAuth } from "@/lib/auth";
+import { registrarMovimientosKardex } from "@/lib/kardex";
 import {
   validateProductoInput,
   sanitizeText,
@@ -141,6 +142,8 @@ export async function GET(request: Request) {
         descripcion: p.descripcion,
         precioUnitario: Number(p.precioUnitario),
         precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
+precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+        imagenUrl: p.imagenUrl ?? null,
         stockActual: p.stockActual,
         stockMinimo: p.stockMinimo,
         permiteDecimales: p.permiteDecimales,
@@ -219,8 +222,14 @@ export async function POST(request: Request) {
           codigoItem: data.codigoItem,
           descripcion: sanitizeText(data.descripcion),
           precioUnitario: new Prisma.Decimal(data.precioUnitario),
-          precioCompra:
+precioCompra:
             data.precioCompra != null ? new Prisma.Decimal(data.precioCompra) : null,
+          // Fase 12: mayoreo (0/null = sin precio de mayoreo) e imagen.
+          precioMayoreo:
+            data.precioMayoreo != null && data.precioMayoreo > 0
+              ? new Prisma.Decimal(data.precioMayoreo)
+              : null,
+          imagenUrl: data.imagenUrl || null,
           stockActual: data.stockActual,
           stockMinimo: data.stockMinimo,
           permiteDecimales: data.permiteDecimales === true,
@@ -238,6 +247,18 @@ export async function POST(request: Request) {
               : null,
         },
       });
+
+      if (Number(producto.stockActual) > 0 && !producto.esServicio) {
+        await registrarMovimientosKardex(tx, [
+          {
+            codigoItem: producto.codigoItem,
+            tipo: "ENTRADA",
+            cantidad: Number(producto.stockActual),
+            motivo: "Inventario inicial (alta de producto)",
+            idUsuario: user.idPersona,
+          },
+        ]);
+      }
 
       await tx.bitacoraLog.create({
         data: {
@@ -263,6 +284,8 @@ export async function POST(request: Request) {
           descripcion: creado.descripcion,
           precioUnitario: Number(creado.precioUnitario),
           precioCompra: creado.precioCompra != null ? Number(creado.precioCompra) : null,
+        precioMayoreo: creado.precioMayoreo != null ? Number(creado.precioMayoreo) : null,
+        imagenUrl: creado.imagenUrl ?? null,
           stockActual: creado.stockActual,
           stockMinimo: creado.stockMinimo,
           permiteDecimales: creado.permiteDecimales,

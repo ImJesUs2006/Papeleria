@@ -18,12 +18,15 @@ import {
   BarChart3,
   Truck,
   ScrollText,
+  Smartphone,
+  ImagePlus,
   ShieldCheck,
   AlertTriangle,
   Loader2,
   RotateCcw,
   Users,
   Sparkles,
+  Coins,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -94,10 +97,10 @@ const METODO_UI: Record<
   EFECTIVO: { label: "Efectivo", desc: "Cobro en caja", icon: Banknote },
   TARJETA_TERMINAL: { label: "Terminal", desc: "Tarjeta física / chip", icon: CreditCard },
   TRANSFERENCIA: { label: "Transferencia", desc: "SPEI / pago digital", icon: Landmark },
-  CREDITO_TIENDA: {
-    label: "Crédito de Tienda",
-    desc: "Cargar a saldo del cliente (CRM)",
-    icon: Users,
+  PUNTOS_MONEDERO: {
+    label: "Monedero (Puntos)",
+    desc: "Canjear puntos de fidelidad del cliente",
+    icon: Coins,
   },
 };
 
@@ -107,6 +110,12 @@ const FLAG_UI: Record<keyof FeatureFlags, { label: string; desc: string; icon: R
   dashboard: { label: "Dashboard", desc: "Métricas y gráficas", icon: BarChart3 },
   proveedores: { label: "Proveedores", desc: "Cadena de suministro", icon: Truck },
   bitacora: { label: "Bitácora", desc: "Auditoría de acciones", icon: ScrollText },
+  recargas: { label: "Recargas", desc: "Recargas en Control de Caja", icon: Smartphone },
+  imagenesCloudinary: {
+    label: "Imágenes Cloudinary",
+    desc: "Fotos de producto en la nube",
+    icon: ImagePlus,
+  },
 };
 
 const PASOS = ["tipo", "pagos", "modulos", "resumen"] as const;

@@ -15,6 +15,7 @@ import {
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
+import { ivaFraccionCliente } from "@/store/config";
 
 interface VentaItem {
   codigoItem: string;
@@ -55,13 +56,13 @@ interface DevolucionResumen {
   items: Array<{ descripcion: string; cantidad: number }>;
 }
 
-const IVA_RATE = 0.16;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const METODOS_REEMBOLSO = [
   { value: "EFECTIVO", label: "Efectivo" },
   { value: "TRANSFERENCIA", label: "Transferencia" },
   { value: "TARJETA_TERMINAL", label: "Tarjeta (terminal)" },
+  { value: "PUNTOS_MONEDERO", label: "Puntos de fidelidad" },
 ];
 
 export default function DevolucionesPage() {
@@ -134,7 +135,7 @@ export default function DevolucionesPage() {
       const c = seleccion[item.codigoItem] ?? 0;
       if (c > 0) subtotal = round2(subtotal + item.precioUnitario * c);
     }
-    const iva = round2(subtotal * IVA_RATE);
+    const iva = round2(subtotal * ivaFraccionCliente());
     return { subtotal, iva, total: round2(subtotal + iva), hay: subtotal > 0 };
   }, [venta, seleccion]);
 

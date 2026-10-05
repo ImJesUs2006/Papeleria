@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { puedeCobrar } from "@/lib/permisos";
 import { crearApartado, ApartadoError } from "@/lib/apartados";
+import { getBusinessConfig } from "@/lib/feature-flags";
 
 // ============================================================
 // POST /api/apartados — crea un apartado (reserva stock + anticipo).
@@ -14,6 +16,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const user = auth.user;
+  if (!puedeCobrar(user)) {
+    return NextResponse.json({ error: "Tu usuario no tiene permiso de cobro" }, { status: 403 });
+  }
 
   let body: any;
   try {
@@ -28,10 +33,12 @@ export async function POST(request: Request) {
       orderBy: { horaApertura: "desc" },
     });
 
+    const config = await getBusinessConfig();
     const resultado = await prisma.$transaction((tx) =>
       crearApartado(tx, body, {
         idUsuario: user.idPersona,
         idCaja: sesion?.idCaja ?? null,
+        ivaRate: config.ivaRate,
       })
     );
 

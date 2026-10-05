@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
+import { registrarMovimientosKardex } from "@/lib/kardex";
 
 const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA"];
 
@@ -45,17 +46,62 @@ export async function PATCH(
   try {
     const existente = await prisma.pedidoProveedor.findUnique({
       where: { idPedido: id },
-      include: { proveedor: { select: { nombre: true } } },
+      include: {
+        proveedor: { select: { nombre: true } },
+        items: { include: { producto: { select: { esServicio: true } } } },
+      },
     });
     if (!existente) {
       return NextResponse.json({ error: "Pedido no encontrado" }, { status: 404 });
     }
 
+    // ENTREGADO y CANCELADO son estados finales: reabrir un pedido ya
+    // recibido duplicaría (o dejaría huérfana) la entrada de mercancía.
+    const esFinal = existente.estado === "ENTREGADO" || existente.estado === "CANCELADO";
+    if (data.estado !== undefined && data.estado !== existente.estado && esFinal) {
+      return NextResponse.json(
+        { error: `El pedido ya está ${existente.estado} y no puede cambiar de estado` },
+        { status: 409 }
+      );
+    }
+    const recibe = data.estado === "ENTREGADO" && existente.estado !== "ENTREGADO";
+    if (recibe && data.fechaEntrega === undefined && !existente.fechaEntrega) {
+      data.fechaEntrega = new Date();
+    }
+
     const actualizado = await prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedidoProveedor.update({
-        where: { idPedido: id },
+      // Transición condicionada: dos recepciones simultáneas no duplican stock.
+      const transicion = await tx.pedidoProveedor.updateMany({
+        where: recibe
+          ? { idPedido: id, estado: { notIn: ["ENTREGADO", "CANCELADO"] } }
+          : { idPedido: id },
         data,
       });
+      if (transicion.count === 0) {
+        throw Object.assign(new Error("El pedido ya fue recibido o cancelado"), { status: 409 });
+      }
+      const pedido = await tx.pedidoProveedor.findUniqueOrThrow({ where: { idPedido: id } });
+
+      // Recepción: la mercancía entra al inventario con su trazo en Kardex.
+      if (recibe) {
+        const fisicos = existente.items.filter((i) => !i.producto.esServicio && i.cantidad > 0);
+        for (const item of fisicos) {
+          await tx.producto.update({
+            where: { codigoItem: item.codigoItem },
+            data: { stockActual: { increment: item.cantidad } },
+          });
+        }
+        await registrarMovimientosKardex(
+          tx,
+          fisicos.map((item) => ({
+            codigoItem: item.codigoItem,
+            tipo: "ENTRADA" as const,
+            cantidad: item.cantidad,
+            motivo: `Recepción de pedido a ${existente.proveedor.nombre}`.slice(0, 190),
+            idUsuario: user.idPersona,
+          }))
+        );
+      }
       await tx.bitacoraLog.create({
         data: {
           idUsuario: user.idPersona,
@@ -71,7 +117,10 @@ export async function PATCH(
       idPedido: actualizado.idPedido,
       estado: actualizado.estado,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 409) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json({ error: "Error al actualizar pedido" }, { status: 500 });
   }
 }

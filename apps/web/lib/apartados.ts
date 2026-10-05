@@ -1,6 +1,6 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
-import { IVA_RATE, round2 } from "./sales";
+import { ivaFraccion, round2, sufijoFolio, fechaFolio } from "./sales";
 
 // ============================================================
 // Sistema de Apartados (Layaways) — Fase 10 / C3.
@@ -27,12 +27,7 @@ export class ApartadoError extends Error {
 }
 
 function generarFolioApartado(): string {
-  const d = new Date();
-  const fecha = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-  const aleatorio = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `APT-${fecha}-${aleatorio}`;
+  return `APT-${fechaFolio()}-${sufijoFolio()}`;
 }
 
 export interface ApartadoLineaInput {
@@ -53,6 +48,8 @@ export interface ApartadoInput {
 export interface ApartadoContext {
   idUsuario: string;
   idCaja: string | null;
+  /** Tasa de IVA del negocio en porcentaje (ej. 16). Default: 16. */
+  ivaRate?: number;
 }
 
 export interface ApartadoResult {
@@ -147,7 +144,7 @@ export async function crearApartado(
     });
   }
 
-  const iva = round2(subtotal * IVA_RATE);
+  const iva = round2(subtotal * ivaFraccion(ctx.ivaRate));
   const total = round2(subtotal + iva);
   if (anticipo < 0 || anticipo > total) {
     throw new ApartadoError(
@@ -171,7 +168,7 @@ export async function crearApartado(
 
   const folio = generarFolioApartado();
 
-  await tx.apartado.create({
+  const apartado = await tx.apartado.create({
     data: {
       folio,
       idCliente,
@@ -187,7 +184,7 @@ export async function crearApartado(
   for (const l of lineas) {
     await tx.apartadoLinea.create({
       data: {
-        idApartado: folio,
+        idApartado: apartado.idApartado,
         codigoItem: l.codigoItem,
         cantidad: l.cantidad,
         precioMomento: l.precioUnitario,
@@ -200,10 +197,17 @@ export async function crearApartado(
   // Reserva física de stock + kardex SALIDA (los servicios no tocan inventario).
   for (const l of lineas) {
     if (l.esServicio) continue;
-    await tx.producto.update({
-      where: { codigoItem: l.codigoItem },
+    // UPDATE condicionado: la reserva no puede sobregirar el stock.
+    const r = await tx.producto.updateMany({
+      where: { codigoItem: l.codigoItem, stockActual: { gte: l.cantidad } },
       data: { stockActual: { decrement: l.cantidad } },
     });
+    if (r.count === 0) {
+      throw new ApartadoError(
+        `Stock insuficiente para "${l.descripcion}": otra operación tomó la existencia`,
+        409
+      );
+    }
   }
   await registrarMovimientosKardex(
     tx,

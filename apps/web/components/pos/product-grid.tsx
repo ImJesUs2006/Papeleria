@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PackagePlus, Star, ShoppingCart, TrendingUp } from "lucide-react";
 import { useCartStore } from "@/store/cart";
+import { usePosFeedback } from "@/store/pos-feedback";
 import { cn } from "@/lib/utils";
 
 interface GridProducto {
@@ -19,6 +20,10 @@ interface GridProducto {
   permiteDecimales?: boolean;
   /** Fase 10: servicio puro, disponible sin importar el stock. */
   esServicio?: boolean;
+  /** Fase 12: precio de mayoreo (null si el producto no lo tiene). */
+  precioMayoreo?: number | null;
+  /** Fase 12: imagen del producto en Cloudinary. */
+  imagenUrl?: string | null;
 }
 
 // ============================================================
@@ -28,6 +33,7 @@ interface GridProducto {
 
 export function ProductGrid() {
   const addItem = useCartStore((s) => s.addItem);
+  const pushToast = usePosFeedback((s) => s.push);
   const [productos, setProductos] = useState<GridProducto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +70,12 @@ export function ProductGrid() {
       tipoImpresion: p.tipoImpresion ?? undefined,
       permiteDecimales: p.permiteDecimales,
       esServicio: p.esServicio,
+      // Fase 12: mayoreo e imagen viajan al carrito (el store decide el precio).
+      precioMayoreo: p.precioMayoreo ?? null,
+      imagenUrl: p.imagenUrl ?? null,
     });
+    // Fase 12: feedback instantáneo al tocar una tarjeta del catálogo.
+    pushToast(`Producto ${p.descripcion} agregado`);
   };
 
   if (loading) {
@@ -134,8 +145,19 @@ export function ProductGrid() {
               )}
             >
               <div className="flex items-start justify-between gap-1 mb-2">
-                <div className="h-12 w-12 rounded-lg bg-surface-600 flex items-center justify-center shrink-0">
-                  <ShoppingCart className="h-5 w-5 text-muted" />
+                <div className="h-12 w-12 rounded-lg bg-surface-600 flex items-center justify-center shrink-0 overflow-hidden">
+                  {/* Fase 12: imagen del producto (Cloudinary) con fallback */}
+                  {p.imagenUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.imagenUrl}
+                      alt={p.descripcion}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <ShoppingCart className="h-5 w-5 text-muted" />
+                  )}
                 </div>
                 {p.favorito && (
                   <span className="flex items-center gap-0.5 text-[10px] text-warning font-bold shrink-0">
@@ -153,6 +175,10 @@ export function ProductGrid() {
                 {p.esServicio ? (
                   <span className="text-[10px] font-bold text-neon-purple border border-neon-purple/40 rounded px-1 py-0.5 shrink-0">
                     Servicio
+                  </span>
+                ) : Number(p.precioMayoreo) > 0 ? (
+                  <span className="text-[10px] font-bold text-teal-300 border border-teal-500/40 rounded px-1 py-0.5 shrink-0">
+                    Mayoreo
                   </span>
                 ) : p.permiteDecimales ? (
                   <span className="text-[10px] font-bold text-neon-cyan border border-neon-cyan/40 rounded px-1 py-0.5 shrink-0">

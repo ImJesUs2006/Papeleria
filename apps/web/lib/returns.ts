@@ -1,6 +1,7 @@
 import type { Prisma } from "@papeleria/database";
-import { round2, IVA_RATE } from "./sales";
+import { round2, ivaFraccion, sufijoFolio, fechaFolio } from "./sales";
 import { registrarMovimientosKardex } from "./kardex";
+import { puntosGanadosPorCompra, puntosRequeridos } from "./fidelidad";
 
 export const TIPOS_DEVOLUCION = ["DEVOLUCION", "NOTA_CREDITO"] as const;
 export const METODOS_REEMBOLSO = [
@@ -8,6 +9,7 @@ export const METODOS_REEMBOLSO = [
   "TRANSFERENCIA",
   "TARJETA_TERMINAL",
   "NOTA_CREDITO",
+  "PUNTOS_MONEDERO",
 ] as const;
 
 export type TipoDevolucion = (typeof TIPOS_DEVOLUCION)[number];
@@ -41,6 +43,13 @@ export interface ReturnInput {
 export interface ReturnContext {
   idUsuario: string;
   idCaja: string | null;
+  /**
+   * Fase 12: `valorPuntoPesos` de la tasa del Puntos Monedero para
+   * reembolsar en puntos de fidelidad (cuántos puntos se restituyen).
+   */
+  puntos?: { valorPuntoPesos: number; pesosCompraPorPunto?: number };
+  /** Tasa de IVA del negocio (porcentaje); solo rige si la venta no la trae. */
+  ivaRate?: number;
 }
 
 export interface ReturnResult {
@@ -62,12 +71,7 @@ export interface ReturnResult {
 }
 
 function generarFolioDevolucion(): string {
-  const d = new Date();
-  const fecha = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-  const aleatorio = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `D-${fecha}-${aleatorio}`;
+  return `D-${fechaFolio()}-${sufijoFolio()}`;
 }
 
 /** Cantidad ya devuelta por código de artículo para una venta. */
@@ -135,8 +139,40 @@ export async function executeReturn(
   if (venta.estado === "CANCELADA") {
     throw new ReturnError("No se puede devolver una venta cancelada", 409);
   }
-  // CRM: si la venta original fue a crédito, el reembolso abona a la deuda.
-  const ventaCredito = venta.metodoPago === "CREDITO_TIENDA" && venta.idCliente != null;
+  // Monedero (Fase 12): si la venta original se pagó con puntos, el
+  // reembolso siempre restituye puntos (jamás efectivo desde la caja).
+  // Dato inconsistente heredado: cobro con puntos sin cliente asignado.
+  const ventaPagoConPuntos = venta.metodoPago === "PUNTOS_MONEDERO";
+  if (ventaPagoConPuntos && !venta.idCliente) {
+    throw new ReturnError(
+      "No hay cliente asociado para reembolsar en puntos de fidelidad",
+      409
+    );
+  }
+  const ventaMonedero = ventaPagoConPuntos && venta.idCliente != null;
+  if (ventaMonedero) {
+    if (input.metodoReembolso !== "PUNTOS_MONEDERO") {
+      throw new ReturnError(
+        "Esta venta se pagó con puntos: el reembolso se hace en puntos de fidelidad"
+      );
+    }
+    metodoReembolso = "PUNTOS_MONEDERO";
+  } else if (metodoReembolso === "PUNTOS_MONEDERO") {
+    // Blindaje financiero: los puntos solo se restituyen si ASÍ se cobró la
+    // venta. Sin esto, una venta normal de $1,000 en efectivo podría
+    // "reembolsarse" en puntos y convertir dinero en lealtad.
+    throw new ReturnError(
+      "Los puntos solo se reembolsan en ventas pagadas con puntos: devuelve esta venta con su método de pago original",
+      409
+    );
+  }
+  if (metodoReembolso === "PUNTOS_MONEDERO" && !venta.idCliente) {
+    // Cubierto arriba; se conserva como red de seguridad.
+    throw new ReturnError(
+      "No hay cliente asociado para reembolsar en puntos de fidelidad",
+      409
+    );
+  }
 
   const originales = new Map<string, {
     cantidad: number;
@@ -197,7 +233,15 @@ export async function executeReturn(
     cantidades.push({ codigoItem: item.codigoItem, cantidad });
   }
 
-  const iva = round2(subtotal * IVA_RATE);
+  // El IVA devuelto usa la MISMA tasa con la que se cobró la venta (si el
+  // negocio cambió su tasa después, el reembolso no debe diferir del cobro).
+  const subtotalVenta = Number((venta as any).subtotal);
+  const ivaVenta = Number((venta as any).iva);
+  const tasaIva =
+    Number.isFinite(subtotalVenta) && subtotalVenta > 0 && Number.isFinite(ivaVenta)
+      ? ivaVenta / subtotalVenta
+      : ivaFraccion(ctx.ivaRate);
+  const iva = round2(subtotal * tasaIva);
   const totalNeto = round2(subtotal + iva);
   const folioDevolucion = generarFolioDevolucion();
 
@@ -226,22 +270,19 @@ export async function executeReturn(
 
   // Devolución o abono a la deuda del cliente (venta original a crédito).
   let idCaja = ctx.idCaja;
-  if (metodoReembolso === "EFECTIVO") {
-    if (ventaCredito && venta.idCliente) {
-      const cliente = await tx.cliente.findUnique({
-        where: { idCliente: venta.idCliente },
-        select: { saldoDeudor: true },
-      });
-      if (!cliente) {
-        throw new ReturnError("Cliente no encontrado", 404);
-      }
-      const deuda = round2(Math.max(Number(cliente.saldoDeudor) - totalNeto, 0));
-      await tx.cliente.update({
-        where: { idCliente: venta.idCliente },
-        data: { saldoDeudor: deuda },
-      });
-      idCaja = null;
-    } else {
+  if (metodoReembolso === "PUNTOS_MONEDERO" && venta.idCliente) {
+    // Monedero (Fase 12): el reembolso restituye los puntos que el cliente
+    // habría usado para pagar la venta (al valor vigente de la tasa).
+    // No toca la caja.
+    const valorPunto = ctx.puntos?.valorPuntoPesos ?? 1;
+    await tx.cliente.update({
+      where: { idCliente: venta.idCliente },
+      data: {
+        puntosFidelidad: { increment: puntosRequeridos(totalNeto, valorPunto) },
+      },
+    });
+    idCaja = null;
+  } else if (metodoReembolso === "EFECTIVO") {
     if (!idCaja) {
       throw new ReturnError(
         "La caja no está abierta; no se puede reembolsar en efectivo",
@@ -262,9 +303,47 @@ export async function executeReturn(
       where: { idCaja },
       data: { totalEgresos: { increment: totalNeto } },
     });
+  } else if (
+    (metodoReembolso === "TRANSFERENCIA" || metodoReembolso === "TARJETA_TERMINAL") &&
+    idCaja
+  ) {
+    // Reembolso digital: reduce lo que la terminal/banco reportará en el
+    // corte de vouchers de la caja abierta. Sin caja abierta no se asigna.
+    const sesion = await tx.sesionCaja.findUnique({
+      where: { idCaja },
+      select: { estado: true },
+    });
+    if (sesion?.estado === "ABIERTA") {
+      await tx.sesionCaja.update({
+        where: { idCaja },
+        data: { totalVentasDigital: { decrement: totalNeto } },
+      });
+    } else {
+      idCaja = null;
     }
   } else {
     idCaja = null;
+  }
+
+  // Fidelización: la venta original (no monedero) generó puntos; al
+  // devolverla se retiran en proporción para que comprar-y-devolver no
+  // regale puntos. Nunca deja el saldo en negativo.
+  let puntosRevertidos = 0;
+  if (!ventaMonedero && venta.idCliente && ctx.puntos?.pesosCompraPorPunto) {
+    const aRevertir = puntosGanadosPorCompra(totalNeto, ctx.puntos.pesosCompraPorPunto);
+    if (aRevertir > 0) {
+      const cliente = await tx.cliente.findUnique({
+        where: { idCliente: venta.idCliente },
+        select: { puntosFidelidad: true },
+      });
+      puntosRevertidos = Math.min(aRevertir, Math.max(cliente?.puntosFidelidad ?? 0, 0));
+      if (puntosRevertidos > 0) {
+        await tx.cliente.update({
+          where: { idCliente: venta.idCliente },
+          data: { puntosFidelidad: { decrement: puntosRevertidos } },
+        });
+      }
+    }
   }
 
   await tx.devolucion.create({
@@ -314,7 +393,8 @@ export async function executeReturn(
         metodoReembolso,
         totalNeto,
         ventaCompleta,
-        abonoDeudaCliente: ventaCredito ? venta.idCliente : undefined,
+        puntosRestituidos: ventaMonedero ? venta.idCliente : undefined,
+        puntosRevertidos: puntosRevertidos || undefined,
         items: cantidades,
       },
     },

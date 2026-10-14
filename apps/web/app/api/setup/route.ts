@@ -76,49 +76,43 @@ export async function POST(request: Request) {
       (parsed.data.featureFlags ?? {}) as Record<string, unknown>
     );
 
+    // Lo que el asistente siempre define.
+    const base = {
+      nombreNegocio: parsed.data.nombreNegocio,
+      tipoNegocio: parsed.data.tipoNegocio,
+      metodosPago: parsed.data.metodosPago,
+      featureFlags: flagsMerged,
+      ivaRate: parsed.data.ivaRate,
+      usarCaducidad: parsed.data.usarCaducidad,
+      usarUbicaciones: parsed.data.usarUbicaciones,
+      requerirFondoInicial: parsed.data.requerirFondoInicial,
+      configVersion: proximaVersion,
+      setupPendiente: false,
+      updatedById: user.idPersona,
+      ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
+    };
+    // El resto solo se toca si viene en la petición: volver a correr el
+    // asistente NO debe borrar logo, tema, datos fiscales ni el mensaje del
+    // ticket que el negocio ya había capturado.
+    const enviado = (k: string) => body?.[k] !== undefined;
+    const opcionales = {
+      ...(enviado("preciosIncluyenIva") ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva } : {}),
+      ...(enviado("descuentoMaxCajera") ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera } : {}),
+      ...(enviado("politicaStockOffline") ? { politicaStockOffline: parsed.data.politicaStockOffline } : {}),
+      ...(enviado("logo") ? { logo: parsed.data.logo ?? null } : {}),
+      ...(enviado("temaBase") ? { temaBase: parsed.data.temaBase } : {}),
+      ...(enviado("colorAcento") ? { colorAcento: parsed.data.colorAcento } : {}),
+      ...(enviado("mensajeTicket") ? { mensajeTicket: parsed.data.mensajeTicket ?? null } : {}),
+      ...(enviado("anchoTicket") ? { anchoTicket: parsed.data.anchoTicket } : {}),
+      ...(enviado("vistaDefectoPOS") ? { vistaDefectoPOS: parsed.data.vistaDefectoPOS } : {}),
+      ...(enviado("datosFiscales") ? { datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull } : {}),
+    };
+
     const guardada = await prisma.configuracionNegocio.upsert({
       where: CONFIG_PROPIA,
-      update: {
-        nombreNegocio: parsed.data.nombreNegocio,
-        tipoNegocio: parsed.data.tipoNegocio,
-        metodosPago: parsed.data.metodosPago,
-        featureFlags: flagsMerged,
-        ivaRate: parsed.data.ivaRate,
-        ...(body?.preciosIncluyenIva !== undefined
-          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
-          : {}),
-        ...(body?.descuentoMaxCajera !== undefined
-          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
-          : {}),
-        ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
-        politicaStockOffline: parsed.data.politicaStockOffline,
-        logo: parsed.data.logo ?? null,
-        temaBase: parsed.data.temaBase,
-        colorAcento: parsed.data.colorAcento,
-        mensajeTicket: parsed.data.mensajeTicket ?? null,
-        anchoTicket: parsed.data.anchoTicket,
-        vistaDefectoPOS: parsed.data.vistaDefectoPOS,
-        datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
-        usarCaducidad: parsed.data.usarCaducidad,
-        usarUbicaciones: parsed.data.usarUbicaciones,
-        requerirFondoInicial: parsed.data.requerirFondoInicial,
-        configVersion: proximaVersion,
-        setupPendiente: false,
-        updatedById: user.idPersona,
-      },
+      update: { ...base, ...opcionales },
       create: {
-        nombreNegocio: parsed.data.nombreNegocio,
-        tipoNegocio: parsed.data.tipoNegocio,
-        metodosPago: parsed.data.metodosPago,
-        featureFlags: flagsMerged,
-        ivaRate: parsed.data.ivaRate,
-        ...(body?.preciosIncluyenIva !== undefined
-          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
-          : {}),
-        ...(body?.descuentoMaxCajera !== undefined
-          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
-          : {}),
-        ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
+        ...base,
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
@@ -127,12 +121,7 @@ export async function POST(request: Request) {
         anchoTicket: parsed.data.anchoTicket,
         vistaDefectoPOS: parsed.data.vistaDefectoPOS,
         datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
-        usarCaducidad: parsed.data.usarCaducidad,
-        usarUbicaciones: parsed.data.usarUbicaciones,
-        requerirFondoInicial: parsed.data.requerirFondoInicial,
-        configVersion: proximaVersion,
-        setupPendiente: false,
-        updatedById: user.idPersona,
+        ...opcionales,
       },
     });
 

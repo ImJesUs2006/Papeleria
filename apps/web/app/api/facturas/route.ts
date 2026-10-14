@@ -53,7 +53,7 @@ async function siguienteFolio(tx: any): Promise<string> {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAuth()();
+  const auth = await requireAuth(undefined, { modulo: "facturacion" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAuth()();
+  const auth = await requireAuth(undefined, { modulo: "facturacion" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

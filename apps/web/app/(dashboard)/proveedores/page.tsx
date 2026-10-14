@@ -17,7 +17,6 @@ import {
   HandCoins,
   History,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
 
 interface Proveedor {
@@ -202,7 +201,7 @@ export default function ProveedoresPage() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <h2 className="text-2xl font-black text-gray-100 mb-1">Proveedores</h2>
@@ -567,6 +566,6 @@ export default function ProveedoresPage() {
           )}
         </AnimatePresence>
       </div>
-    </DashboardLayout>
+    </>
   );
 }

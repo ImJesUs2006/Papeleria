@@ -4,13 +4,11 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { AlertTriangle, Lock, Loader2, ArrowLeft } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { porCodigo } from "@/lib/offline/catalogo";
 import { catalogoLocal } from "@/lib/offline/catalogo-cliente";
 import { BarcodeScanner } from "@/components/pos/barcode-scanner";
 import { CartPanel } from "@/components/pos/cart-panel";
 import { ProductGrid } from "@/components/pos/product-grid";
-import { PosToastHost } from "@/components/pos/pos-toast";
 import { useCartStore } from "@/store/cart";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
@@ -57,17 +55,17 @@ export default function CobroPage() {
   // registrara de todos modos caería en /api/ventas con idCaja null.
   if (!cargaCajaDone) {
     return (
-      <DashboardLayout>
+      <>
         <div className="flex flex-1 items-center justify-center gap-2 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" /> Verificando caja...
         </div>
-      </DashboardLayout>
+      </>
     );
   }
 
   if (cajaAbierta === false) {
     return (
-      <DashboardLayout>
+      <>
         <div className="flex flex-1 items-center justify-center p-6">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -94,7 +92,7 @@ export default function CobroPage() {
             </div>
           </motion.div>
         </div>
-      </DashboardLayout>
+      </>
     );
   }
 
@@ -150,8 +148,7 @@ export default function CobroPage() {
   };
 
   return (
-    <DashboardLayout>
-      <PosToastHost />
+    <>
       <div className="flex flex-1 h-full">
         {/* Left: Scanner + catálogo visual */}
         <div className="flex-1 flex flex-col p-6 overflow-y-auto">
@@ -208,6 +205,6 @@ export default function CobroPage() {
           <CartPanel />
         </div>
       </div>
-    </DashboardLayout>
+    </>
   );
 }

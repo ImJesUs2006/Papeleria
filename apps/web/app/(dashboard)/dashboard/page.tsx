@@ -25,8 +25,8 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
+import { useColoresTema } from "@/hooks/use-colores-tema";
 
 interface DashboardData {
   resumen: { totalVentas: number; numVentas: number; ticketPromedio: number; agotados: number; alertaBaja: number };
@@ -36,9 +36,10 @@ interface DashboardData {
   caja: { fondoInicial: number; totalVentasEfectivo: number; totalVentasDigital: number; totalRecargas: number } | null;
 }
 
-const PIE_COLORS = ["#00ff88", "#00d4ff", "#ff0080"];
 
 export default function DashboardPage() {
+  // Gráficas legibles en cualquier tema (claro u oscuro).
+  const colores = useColoresTema();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
 
@@ -60,7 +61,7 @@ export default function DashboardPage() {
     : [];
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <h2 className="text-2xl font-black text-gray-100 mb-1">Dashboard</h2>
@@ -111,7 +112,7 @@ export default function DashboardPage() {
               <div className="flex flex-wrap gap-6 bg-surface-800 border border-surface-600 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-xs text-muted uppercase tracking-wider self-center"><Clock className="h-4 w-4 text-neon-green" /> Caja abierta</div>
                 <div><p className="text-[10px] text-muted uppercase">Fondo</p><p className="text-sm font-bold text-gray-100">${data.caja.fondoInicial.toFixed(2)}</p></div>
-                <div><p className="text-[10px] text-neon-green uppercase">Papelería</p><p className="text-sm font-bold text-neon-green">${data.caja.totalVentasEfectivo.toFixed(2)}</p></div>
+                <div><p className="text-[10px] text-neon-green uppercase">Efectivo</p><p className="text-sm font-bold text-neon-green">${data.caja.totalVentasEfectivo.toFixed(2)}</p></div>
                 <div><p className="text-[10px] text-neon-cyan uppercase">Digital</p><p className="text-sm font-bold text-neon-cyan">${data.caja.totalVentasDigital.toFixed(2)}</p></div>
                 <div><p className="text-[10px] text-neon-magenta uppercase">Recargas</p><p className="text-sm font-bold text-neon-magenta">${data.caja.totalRecargas.toFixed(2)}</p></div>
               </div>
@@ -133,12 +134,12 @@ export default function DashboardPage() {
                           <stop offset="100%" stopColor="var(--marca-color)" stopOpacity={0.3} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#2e2e2e" />
-                      <XAxis dataKey="hora" tick={{ fill: "#9ca3af", fontSize: 10 }} interval={3} />
-                      <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={colores.rejilla} />
+                      <XAxis dataKey="hora" tick={{ fill: colores.textoSuave, fontSize: 10 }} interval={3} />
+                      <YAxis tick={{ fill: colores.textoSuave, fontSize: 11 }} />
                       <Tooltip
-                        contentStyle={{ background: "#111111", border: "1px solid #333", borderRadius: 12, color: "#f3f4f6" }}
-                        labelStyle={{ color: "#00d4ff", fontWeight: 700 }}
+                        contentStyle={{ background: colores.tooltipFondo, border: `1px solid ${colores.tooltipBorde}`, borderRadius: 12, color: colores.texto }}
+                        labelStyle={{ color: colores.serie[1], fontWeight: 700 }}
                         formatter={(v: any) => [`$${Number(v).toFixed(2)}`, "Monto"]}
                       />
                       <Bar dataKey="monto" fill="url(#gradMarca)" radius={[4, 4, 0, 0]} />
@@ -158,11 +159,11 @@ export default function DashboardPage() {
                     <PieChart>
                       <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={65} paddingAngle={4}>
                         {pieData.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i]} />
+                          <Cell key={i} fill={colores.serie[i]} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ background: "#111111", border: "1px solid #333", borderRadius: 12, color: "#f3f4f6" }} />
-                      <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: colores.tooltipFondo, border: `1px solid ${colores.tooltipBorde}`, borderRadius: 12, color: colores.texto }} />
+                      <Legend wrapperStyle={{ color: colores.textoSuave, fontSize: 11 }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -197,11 +198,11 @@ export default function DashboardPage() {
                         <stop offset="100%" stopColor="var(--marca-color)" stopOpacity={1} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2e2e2e" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                    <YAxis type="category" dataKey="descripcion" width={170} tick={{ fill: "#e5e7eb", fontSize: 11 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={colores.rejilla} horizontal={false} />
+                    <XAxis type="number" tick={{ fill: colores.textoSuave, fontSize: 11 }} />
+                    <YAxis type="category" dataKey="descripcion" width={170} tick={{ fill: colores.texto, fontSize: 11 }} />
                     <Tooltip
-                      contentStyle={{ background: "#111111", border: "1px solid #333", borderRadius: 12, color: "#f3f4f6" }}
+                      contentStyle={{ background: colores.tooltipFondo, border: `1px solid ${colores.tooltipBorde}`, borderRadius: 12, color: colores.texto }}
                       formatter={(v: any) => [`${v} uds`, "Cantidad"]}
                     />
                     <Bar dataKey="cantidad" fill="url(#gradMarcaH)" radius={[0, 4, 4, 0]} />
@@ -212,6 +213,6 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </>
   );
 }

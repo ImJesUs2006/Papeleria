@@ -177,17 +177,18 @@ export function ManualSearchModal({ open, onClose }: Props) {
                         }}
                         whileTap={{ scale: 0.94 }}
                         onClick={() => agregar(p)}
-                        disabled={p.stockActual <= 0}
-                        className="bg-surface-700 hover:bg-surface-600 disabled:opacity-40 border border-surface-500 hover:border-neon-green/50 rounded-2xl p-4 text-left transition-all active:bg-neon-green/10 min-h-[96px] flex flex-col justify-between"
+                        disabled={!p.esServicio && p.stockActual <= 0}
+                        className="bg-surface-700 hover:bg-surface-600 disabled:opacity-40 border border-surface-500 hover:border-neon-green/50 rounded-2xl p-4 text-left transition-all active:bg-neon-green/10 min-h-[96px] min-w-0 flex flex-col justify-between"
+                        title={p.descripcion}
                       >
-                        <span className="text-[13px] font-semibold text-gray-100 leading-snug line-clamp-2">
+                        <span className="text-[13px] font-semibold text-gray-100 leading-snug line-clamp-2 break-anywhere">
                           {p.descripcion}
                         </span>
-                        <span className="mt-3 flex items-baseline justify-between">
-                          <span className="text-lg font-black text-neon-green text-glow-green">
+                        <span className="mt-3 flex flex-wrap items-baseline justify-between gap-x-2">
+                          <span className="text-lg font-black text-neon-green text-glow-green tabular-nums">
                             ${p.precioUnitario.toFixed(2)}
                           </span>
-                          <span className="text-[10px] text-muted">
+                          <span className="text-[10px] text-muted whitespace-nowrap">
                             {p.stockActual} uds
                           </span>
                         </span>

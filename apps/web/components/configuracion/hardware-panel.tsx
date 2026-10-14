@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Cpu, Printer, Scale, Vault } from "lucide-react";
+import { notificar } from "@/store/notificaciones";
 import {
   abrirCajon,
   elegirPuerto,
@@ -24,8 +25,6 @@ import { useConfigStore } from "@/store/config";
 export function HardwarePanel() {
   const config = useConfigStore((s) => s.config);
   const [h, setH] = useState<HardwareEquipo | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const soportado = typeof window !== "undefined" && hayWebSerial();
 
   useEffect(() => setH(leerHardware()), []);
@@ -37,12 +36,10 @@ export function HardwarePanel() {
     guardarHardware(nuevo);
   };
   const probar = async (fn: () => Promise<string>) => {
-    setMensaje(null);
-    setError(null);
     try {
-      setMensaje(await fn());
+      notificar.exito(await fn());
     } catch (e: any) {
-      setError(e?.message || "No se pudo comunicar con el dispositivo");
+      notificar.error(e?.message || "No se pudo comunicar con el dispositivo");
     }
   };
 
@@ -189,8 +186,6 @@ export function HardwarePanel() {
         )}
       </div>
 
-      {mensaje && <p className="text-sm text-emerald-300">{mensaje}</p>}
-      {error && <p className="text-sm text-rose-300">{error}</p>}
       <p className="flex items-center gap-1.5 text-xs text-muted">
         <Cpu className="h-3.5 w-3.5" /> Estos ajustes solo aplican a este equipo y navegador.
       </p>

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, Save, Loader2, Check, AlertTriangle } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { normalizarPersonalizacion } from "@/lib/personalizacion";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { FacturacionEmitir } from "@/components/facturacion/facturacion-emitir";
@@ -14,7 +13,7 @@ import type { BusinessConfig, DatosFiscales } from "@/lib/business-types";
 
 export default function FacturacionPage() {
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-5xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -38,7 +37,7 @@ export default function FacturacionPage() {
           <FacturacionDatosFiscales />
         </ErrorBoundary>
       </div>
-    </DashboardLayout>
+    </>
   );
 }
 

@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Banknote, CreditCard, Landmark, Loader2, PackageOpen, XCircle } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Modal } from "@/components/ui/modal";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 interface Apartado {
   idApartado: string;
@@ -38,7 +38,6 @@ export default function ApartadosPage() {
   const [apartados, setApartados] = useState<Apartado[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
 
   const [liquidando, setLiquidando] = useState<Apartado | null>(null);
   const [metodoPago, setMetodoPago] = useState<string>("EFECTIVO");
@@ -79,7 +78,7 @@ export default function ApartadosPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo actualizar el apartado");
-      setAviso(exito(data));
+      notificar.exito(exito(data));
       setLiquidando(null);
       setCancelando(null);
       setReferencia("");
@@ -98,7 +97,7 @@ export default function ApartadosPage() {
   const pideReferencia = metodoPago === "TRANSFERENCIA";
 
   return (
-    <DashboardLayout>
+    <>
       <ErrorBoundary>
         <div className="p-6 space-y-4">
           <div>
@@ -109,11 +108,6 @@ export default function ApartadosPage() {
             </p>
           </div>
 
-          {aviso && (
-            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-              {aviso}
-            </div>
-          )}
           {error && (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {error}
@@ -310,6 +304,6 @@ export default function ApartadosPage() {
           )}
         </Modal>
       </ErrorBoundary>
-    </DashboardLayout>
+    </>
   );
 }

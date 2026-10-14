@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { KeyRound, AlertTriangle, Check, Loader2, UserCircle, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2, UserCircle, ShieldCheck } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 export function MiCuentaPanel() {
   const idPersona = useAuthStore((s) => s.idPersona);
@@ -16,8 +17,6 @@ export function MiCuentaPanel() {
   const [passwordNuevo, setPasswordNuevo] = useState("");
   const [passwordConfirma, setPasswordConfirma] = useState("");
   const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
 
   const limpiar = () => {
     setPasswordActual("");
@@ -27,10 +26,8 @@ export function MiCuentaPanel() {
 
   const guardar = async () => {
     if (!idPersona) return;
-    setError(null);
-    setOk(false);
     if (passwordNuevo !== passwordConfirma) {
-      setError("La confirmación no coincide con la nueva contraseña.");
+      notificar.error("La confirmación no coincide con la nueva contraseña.");
       return;
     }
     setGuardando(true);
@@ -43,10 +40,9 @@ export function MiCuentaPanel() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo actualizar la contraseña");
       limpiar();
-      setOk(true);
-      setTimeout(() => setOk(false), 2500);
+      notificar.exito("Contraseña actualizada");
     } catch (e: any) {
-      setError(e.message);
+      notificar.error("No se actualizó la contraseña", e.message);
     } finally {
       setGuardando(false);
     }
@@ -125,18 +121,6 @@ export function MiCuentaPanel() {
             />
           </label>
         </div>
-
-        {error && (
-          <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-            <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" />
-            {error}
-          </div>
-        )}
-        {ok && (
-          <div className="flex items-center gap-2 bg-neon-green/10 border border-neon-green/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-            <Check className="h-4 w-4 text-neon-green" /> Contraseña actualizada
-          </div>
-        )}
 
         <button
           onClick={guardar}

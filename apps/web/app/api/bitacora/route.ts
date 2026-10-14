@@ -23,7 +23,7 @@ function parseFecha(valor: string): Date {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { modulo: "bitacora" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PackagePlus, Star, ShoppingCart, TrendingUp } from "lucide-react";
 import { useCartStore } from "@/store/cart";
-import { usePosFeedback } from "@/store/pos-feedback";
 import { destacadosDelCatalogo } from "@/lib/offline/catalogo";
 import { catalogoLocal } from "@/lib/offline/catalogo-cliente";
 import { cn } from "@/lib/utils";
@@ -35,7 +34,6 @@ interface GridProducto {
 
 export function ProductGrid() {
   const addItem = useCartStore((s) => s.addItem);
-  const pushToast = usePosFeedback((s) => s.push);
   const [productos, setProductos] = useState<GridProducto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,8 +83,6 @@ export function ProductGrid() {
       idCategoria: (p as any).idCategoria ?? null,
       usaSeries: (p as any).usaSeries === true,
     });
-    // Fase 12: feedback instantáneo al tocar una tarjeta del catálogo.
-    pushToast(`Producto ${p.descripcion} agregado`);
   };
 
   if (loading) {
@@ -97,7 +93,7 @@ export function ProductGrid() {
             Catálogo rápido
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3">
           {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={i}
@@ -111,12 +107,12 @@ export function ProductGrid() {
 
   return (
     <div data-testid="product-grid" className="mt-6">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-muted uppercase tracking-wider flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-neon-cyan" />
-          Catálogo rápido · Top ventas y favoritos
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="min-w-0 truncate text-sm font-bold text-muted uppercase tracking-wider flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 shrink-0 text-neon-cyan" />
+          <span className="truncate">Catálogo rápido · Top ventas y favoritos</span>
         </h3>
-        <span className="text-xs text-muted">{productos.length} productos</span>
+        <span className="shrink-0 text-xs text-muted">{productos.length} productos</span>
       </div>
 
       {error ? (
@@ -130,7 +126,7 @@ export function ProductGrid() {
           Escanea un código para ver el producto aquí
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3">
           {productos.map((p, i) => (
             <motion.button
               key={p.codigoItem}
@@ -147,7 +143,7 @@ export function ProductGrid() {
               onClick={() => agregar(p)}
               disabled={!p.esServicio && p.stockActual <= 0}
               className={cn(
-                "bg-surface-700 border border-surface-500 rounded-xl p-3 text-left transition-colors min-h-[110px] flex flex-col justify-between",
+                "min-w-0 bg-surface-700 border border-surface-500 rounded-xl p-3 text-left transition-colors min-h-[110px] flex flex-col justify-between",
                 !p.esServicio && p.stockActual > 0
                   ? "hover:border-neon-green/50 hover:bg-surface-600"
                   : p.esServicio
@@ -176,7 +172,7 @@ export function ProductGrid() {
                   </span>
                 )}
               </div>
-              <span className="text-[13px] font-medium text-gray-100 line-clamp-2 leading-snug">
+              <span className="text-[13px] font-medium text-gray-100 line-clamp-2 leading-snug break-anywhere" title={p.descripcion}>
                 {p.descripcion}
               </span>
               <span className="mt-2 flex items-baseline justify-between">

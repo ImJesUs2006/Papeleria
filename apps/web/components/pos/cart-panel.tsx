@@ -67,9 +67,11 @@ function CartItemRow({
       transition={{ delay: index * 0.05, type: "spring", damping: 25 }}
       className="bg-surface-700 rounded-lg p-3 group"
     >
-     <div className="flex items-center gap-3">
+     {/* Nombre completo arriba (hasta 2 renglones) y controles abajo: en
+         un carrito angosto el nombre ya no se corta a 4 letras. */}
+     <div className="flex items-start gap-2">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-100 truncate">
+        <p className="text-sm font-medium leading-snug text-gray-100 line-clamp-2 break-anywhere" title={item.descripcion}>
           {item.descripcion}
         </p>
         <p className="text-xs text-muted">
@@ -91,6 +93,17 @@ function CartItemRow({
         )}
       </div>
 
+      <button
+        type="button"
+        onClick={() => removeItem(item.codigoItem)}
+        title="Quitar del carrito"
+        aria-label="Quitar del carrito"
+        className="shrink-0 h-7 w-7 rounded-md bg-neon-red/10 opacity-70 hover:opacity-100 hover:bg-neon-red/20 flex items-center justify-center transition-all"
+      >
+        <Trash2 className="h-3 w-3 text-neon-red" />
+      </button>
+     </div>
+     <div className="mt-2 flex items-center justify-between gap-2">
       {item.usaSeries ? (
         <span className="w-16 text-center text-sm font-bold" title="Una pieza por serie">
           {item.cantidad}
@@ -148,7 +161,8 @@ function CartItemRow({
         </div>
       )}
 
-      <span className="text-sm font-bold text-neon-green w-20 text-right">
+      <div className="flex items-center gap-2">
+      <span className="min-w-[4.5rem] text-right text-sm font-bold tabular-nums text-neon-green">
         {descontado ? (
           <>
             <span className="block text-[11px] font-normal text-muted line-through">
@@ -166,18 +180,12 @@ function CartItemRow({
         onClick={() => setEditando((v) => !v)}
         title="Descuento a esta línea"
         aria-label="Descuento a esta línea"
-        className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
+        className="shrink-0 h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
       >
         <Percent className="h-3 w-3 text-teal-300" />
       </button>
 
-      <button
-        type="button"
-        onClick={() => removeItem(item.codigoItem)}
-        className="opacity-0 group-hover:opacity-100 h-7 w-7 rounded-md bg-neon-red/10 hover:bg-neon-red/20 flex items-center justify-center transition-all"
-      >
-        <Trash2 className="h-3 w-3 text-neon-red" />
-      </button>
+      </div>
      </div>
       {item.usaSeries && (item.series ?? []).length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -1042,7 +1050,8 @@ export function CartPanel() {
           <VentaExitosaModal
             result={resultado}
             anchoTicket={config?.anchoTicket ?? "80mm"}
-            nombreNegocio={config?.datosFiscales?.razonSocial || config?.nombreNegocio || "Papelería"}
+            nombreNegocio={config?.datosFiscales?.razonSocial || config?.nombreNegocio || "Mi negocio"}
+            mensajeTicket={config?.mensajeTicket ?? null}
             onClose={() => setResultado(null)}
           />
         )}

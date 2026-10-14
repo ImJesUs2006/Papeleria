@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Store,
@@ -32,6 +32,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/store/config";
 import { RecoveryHistory } from "@/components/setup/recovery-history";
+import { presetPorGiro } from "@/lib/personalizacion";
 import {
   PRESETS_POR_NEGOCIO,
   DEFAULT_USAR_CADUCIDAD,
@@ -48,19 +49,19 @@ const TIPO_UI: Record<
 > = {
   PAPELERIA_RETAIL: {
     label: "Papelería / Retail",
-    desc: "Venta de artículos con inventario, etiquetas y punto de venta",
+    desc: "Útiles, copias e impresiones, regalos y recargas; proveedores para resurtir",
     icon: Store,
     cls: "border-neon-green/40 hover:border-neon-green",
   },
   ABARROTES: {
     label: "Abarrotes",
-    desc: "Productos de consumo diario, facturación y proveedores",
+    desc: "Consumo diario con caducidad, proveedores y recargas",
     icon: ShoppingBasket,
     cls: "border-neon-cyan/40 hover:border-neon-cyan",
   },
   SERVICIOS: {
     label: "Servicios",
-    desc: "Sin inventario físico; cobro por servicios y transferencias",
+    desc: "Catálogo de servicios (sin existencias); cobro en efectivo, tarjeta o transferencia",
     icon: Wrench,
     cls: "border-neon-magenta/40 hover:border-neon-magenta",
   },
@@ -78,13 +79,13 @@ const TIPO_UI: Record<
   },
   FARMACIA: {
     label: "Farmacia",
-    desc: "Medicamentos con stock estricto y crédito a clientes",
+    desc: "Medicamentos con lote, caducidad y stock estricto",
     icon: Boxes,
     cls: "border-neon-green/40 hover:border-neon-green",
   },
   BOUTIQUE: {
     label: "Boutique",
-    desc: "Ropa y accesorios; control por talla/color e inventario fino",
+    desc: "Ropa y accesorios con variantes por talla y color",
     icon: Sparkles,
     cls: "border-neon-magenta/40 hover:border-neon-magenta",
   },
@@ -105,7 +106,7 @@ const METODO_UI: Record<
 };
 
 const FLAG_UI: Record<keyof FeatureFlags, { label: string; desc: string; icon: React.ElementType }> = {
-  inventario: { label: "Inventario", desc: "Stock, etiquetas, carga masiva", icon: Boxes },
+  inventario: { label: "Inventario", desc: "Catálogo, existencias, etiquetas y carga masiva", icon: Boxes },
   facturacion: { label: "Facturación", desc: "Comprobantes / CFDI", icon: FileText },
   dashboard: { label: "Dashboard", desc: "Métricas y gráficas", icon: BarChart3 },
   proveedores: { label: "Proveedores", desc: "Cadena de suministro", icon: Truck },
@@ -128,6 +129,7 @@ const FLAG_KEYS = Object.keys(PRESETS_POR_NEGOCIO.PAPELERIA_RETAIL.featureFlags)
 export function SetupWizard() {
   const router = useRouter();
   const refreshConfig = useConfigStore((s) => s.hydrate);
+  const configActual = useConfigStore((s) => s.config);
 
   const [paso, setPaso] = useState<Paso>("tipo");
   const [tipo, setTipo] = useState<TipoNegocio | null>(null);
@@ -136,6 +138,15 @@ export function SetupWizard() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recoveryAbierto, setRecoveryAbierto] = useState(false);
+  // Nombre real del negocio (antes se enviaba "Mi Negocio" y pisaba el nombre
+  // capturado al volver a correr el asistente).
+  const [nombre, setNombre] = useState(configActual?.nombreNegocio ?? "");
+  const [preciosConIva, setPreciosConIva] = useState(configActual?.preciosIncluyenIva ?? true);
+  useEffect(() => {
+    if (!configActual) return;
+    setNombre((n) => n || configActual.nombreNegocio || "");
+    setPreciosConIva(configActual.preciosIncluyenIva ?? true);
+  }, [configActual]);
 
   const preset = useMemo(() => (tipo ? PRESETS_POR_NEGOCIO[tipo] : null), [tipo]);
 
@@ -156,6 +167,10 @@ export function SetupWizard() {
     setFlags((prev) => (prev ? { ...prev, [k]: !prev[k] } : prev));
 
   const siguiente = () => {
+    if (paso === "tipo" && !nombre.trim()) {
+      setError("Escribe el nombre de tu negocio (aparece en tickets y reportes).");
+      return;
+    }
     if (paso === "tipo" && !tipo) {
       setError("Selecciona el tipo de negocio para precargar la interfaz.");
       return;
@@ -184,11 +199,16 @@ export function SetupWizard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nombreNegocio: "Mi Negocio",
+          nombreNegocio: nombre.trim(),
           tipoNegocio: tipo,
           ivaRate: 16,
+          preciosIncluyenIva: preciosConIva,
           featureFlags: flags,
           metodosPago: metodos,
+          politicaStockOffline: preset?.politicaStockOffline,
+          // Cambiar de giro trae su vocabulario y campos de producto; si el
+          // giro es el mismo se respeta lo que el negocio ya personalizó.
+          ...(tipo !== configActual?.tipoNegocio ? { personalizacion: presetPorGiro(tipo) } : {}),
           // Configuración personalizable (Fase 10): preset por giro.
           usarCaducidad: preset?.usarCaducidad ?? DEFAULT_USAR_CADUCIDAD,
           usarUbicaciones: preset?.usarUbicaciones ?? DEFAULT_USAR_UBICACIONES,
@@ -241,6 +261,16 @@ export function SetupWizard() {
           <AnimatePresence mode="wait">
             {paso === "tipo" && (
               <PasoClave key="tipo" titulo="¿Qué tipo de negocio?">
+                <label className="mb-4 block">
+                  <span className="mb-1 block text-xs text-muted">Nombre del negocio</span>
+                  <input
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    maxLength={80}
+                    placeholder="Ej. Papelería El Lápiz"
+                    className="input-dark"
+                  />
+                </label>
                 <div className="grid grid-cols-2 gap-3">
                   {(Object.keys(TIPO_UI) as TipoNegocio[]).map((t) => {
                     const meta = TIPO_UI[t];
@@ -301,6 +331,30 @@ export function SetupWizard() {
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setPreciosConIva((v) => !v)}
+                  className={cn(
+                    "mt-4 flex w-full items-center gap-3 rounded-xl border bg-surface-700 p-3 text-left transition-all",
+                    preciosConIva ? "border-neon-cyan/50" : "border-surface-500"
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-gray-100">Mis precios ya incluyen IVA</p>
+                    <p className="text-[11px] text-muted">
+                      Lo común en mostrador: el precio de la etiqueta es lo que paga el cliente y el
+                      ticket desglosa el impuesto. Apágalo si capturas precios antes de IVA.
+                    </p>
+                  </div>
+                  <div
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all",
+                      preciosConIva ? "border-neon-cyan bg-neon-cyan" : "border-surface-400"
+                    )}
+                  >
+                    {preciosConIva && <Check className="h-3 w-3 text-btn-ink" />}
+                  </div>
+                </button>
               </PasoClave>
             )}
 
@@ -354,7 +408,9 @@ export function SetupWizard() {
             {paso === "resumen" && tipo && flags && (
               <PasoClave key="resumen" titulo="Confirma la definición del negocio">
                 <div className="space-y-3">
+                  <ResumenRow label="Negocio" value={nombre.trim()} />
                   <ResumenRow label="Tipo de negocio" value={TIPO_UI[tipo].label} />
+                  <ResumenRow label="Precios" value={preciosConIva ? "Incluyen IVA" : "Más IVA"} />
                   <ResumenRow
                     label="Tipos de pago"
                     value={metodos.length ? metodos.length + " habilitados" : "Ninguno"}
@@ -485,9 +541,9 @@ function PasoClave({
 
 function ResumenRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between bg-surface-700 rounded-xl px-4 py-3">
-      <span className="text-sm text-muted">{label}</span>
-      <span className="text-sm font-bold text-gray-100">{value}</span>
+    <div className="flex items-center justify-between gap-3 bg-surface-700 rounded-xl px-4 py-3">
+      <span className="shrink-0 text-sm text-muted">{label}</span>
+      <span className="min-w-0 truncate text-sm font-bold text-gray-100" title={value}>{value}</span>
     </div>
   );
 }

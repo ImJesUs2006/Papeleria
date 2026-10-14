@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Barcode, Boxes, Layers, Loader2, PackageX } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 // ============================================================
 // Lotes, series y variantes (Paso 6).
@@ -42,7 +42,6 @@ async function enviar(url: string, body: unknown) {
 
 export default function LotesPage() {
   const [seccion, setSeccion] = useState<Seccion>("caducidad");
-  const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -54,7 +53,7 @@ export default function LotesPage() {
     const res = await fetch(`/api/lotes?dias=${dias}`, { cache: "no-store" });
     const data = await res.json().catch(() => ({}));
     setLotes(res.ok ? data.lotes ?? [] : []);
-    if (!res.ok) setError(data.error || "No se pudieron cargar los lotes");
+    setError(res.ok ? null : data.error || "No se pudieron cargar los lotes");
   }, [dias]);
   useEffect(() => {
     if (seccion === "caducidad") cargarLotes();
@@ -73,19 +72,17 @@ export default function LotesPage() {
 
   const ejecutar = async (fn: () => Promise<string>) => {
     setOcupado(true);
-    setError(null);
-    setAviso(null);
     try {
-      setAviso(await fn());
+      notificar.exito(await fn());
     } catch (e: any) {
-      setError(e.message);
+      notificar.error(e.message);
     } finally {
       setOcupado(false);
     }
   };
 
   return (
-    <DashboardLayout>
+    <>
       <ErrorBoundary>
         <div className="p-6 space-y-4">
           <div>
@@ -103,8 +100,6 @@ export default function LotesPage() {
                 type="button"
                 onClick={() => {
                   setSeccion(s.id);
-                  setAviso(null);
-                  setError(null);
                 }}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold",
@@ -118,11 +113,6 @@ export default function LotesPage() {
             ))}
           </div>
 
-          {aviso && (
-            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-              {aviso}
-            </div>
-          )}
           {error && (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {error}
@@ -336,6 +326,6 @@ export default function LotesPage() {
           )}
         </div>
       </ErrorBoundary>
-    </DashboardLayout>
+    </>
   );
 }

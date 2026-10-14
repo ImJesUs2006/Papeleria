@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { fiscalCliente } from "@/store/config";
+import { notificar } from "@/store/notificaciones";
 import { calcularImpuestos, tasasProducto, type ResumenFiscal } from "@/lib/impuestos";
 import {
   aplicarDescuentos,
@@ -189,7 +190,8 @@ export const useCartStore = create<CartState>((set, get) => ({
         .filter((i) => !i.usaSeries || i.cantidad > 0),
     })),
 
-  addItem: (item) =>
+  addItem: (item) => {
+    const antes = get().items.length + get().items.reduce((a, i) => a + i.cantidad, 0);
     set((state) => {
       // Producto con número de serie: primero se escanea la serie.
       if (item.usaSeries && !(item.series && item.series.length)) {
@@ -240,7 +242,18 @@ export const useCartStore = create<CartState>((set, get) => ({
           },
         ],
       };
-    }),
+    });
+    // Aviso deslizante: confirma que el producto entró (venga del escáner,
+    // de la búsqueda manual o del catálogo táctil).
+    const despues = get().items.length + get().items.reduce((a, i) => a + i.cantidad, 0);
+    if (despues !== antes) {
+      const linea = get().items.find((i) => i.codigoItem === item.codigoItem);
+      notificar.exito(
+        `${item.descripcion} agregado`,
+        linea ? `Cantidad en el carrito: ${linea.cantidad}` : undefined
+      );
+    }
+  },
 
   removeItem: (codigoItem) =>
     set((state) => ({

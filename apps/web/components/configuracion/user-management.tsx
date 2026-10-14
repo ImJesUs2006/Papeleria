@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import {
   UserPlus,
   KeyRound,
@@ -10,12 +9,11 @@ import {
   ShieldOff,
   Loader2,
   RefreshCw,
-  AlertTriangle,
-  Check,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 import { PerfilesPanel, type Perfil } from "@/components/configuracion/perfiles-panel";
 import { SucursalesPanel, type Sucursal } from "@/components/configuracion/sucursales-panel";
 import { usePersonalizacion } from "@/store/config";
@@ -35,11 +33,14 @@ interface Usuario {
   ultimoLoginAt: string | null;
 }
 
+// Errores y confirmaciones salen como notificaciones deslizantes.
+const setError = (msg: string | null) => {
+  if (msg) notificar.error(msg);
+};
+
 export function UserManagement() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [nota, setNota] = useState<string | null>(null);
   const [accionando, setAccionando] = useState<string | null>(null);
 
   const [modalNuevo, setModalNuevo] = useState(false);
@@ -97,10 +98,7 @@ export function UserManagement() {
     cargarSucursales();
   }, [cargarSucursales]);
 
-  const aviso = (msg: string) => {
-    setNota(msg);
-    setTimeout(() => setNota(null), 2600);
-  };
+  const aviso = (msg: string) => notificar.exito(msg);
 
   const cambiar = async (u: Usuario, cambios: Partial<Usuario>) => {
     setAccionando(u.idPersona);
@@ -168,25 +166,6 @@ export function UserManagement() {
           </button>
         </div>
       </div>
-
-      {nota && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-2 bg-neon-green/10 border border-neon-green/40 rounded-xl px-4 py-2.5 text-sm text-gray-100"
-        >
-          <Check className="h-4 w-4 text-neon-green" /> {nota}
-        </motion.div>
-      )}
-      {error && (
-        <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-          <AlertTriangle className="h-4 w-4 text-neon-red shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button onClick={() => setError(null)} className="text-xs text-muted hover:text-gray-100">
-            Cerrar
-          </button>
-        </div>
-      )}
 
       <SucursalesPanel
         sucursales={sucursales}

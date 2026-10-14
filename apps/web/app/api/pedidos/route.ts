@@ -5,7 +5,7 @@ import { tenantDb } from "@/lib/tenant";
 const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA", "PARCIAL"];
 
 export async function GET(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario", modulo: "proveedores" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -60,7 +60,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario", modulo: "proveedores" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

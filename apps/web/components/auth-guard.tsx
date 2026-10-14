@@ -1,28 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
 import { Loader2 } from "lucide-react";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, hydrateFromServer } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const hydrateFromServer = useAuthStore((s) => s.hydrateFromServer);
   const router = useRouter();
+  // La sesión guardada en el navegador permite pintar de inmediato; la
+  // respuesta del servidor decide. Solo se manda a /login cuando el servidor
+  // ya contestó (antes un temporizador de 100 ms expulsaba al usuario si la
+  // verificación tardaba un poco más).
+  const [verificado, setVerificado] = useState(false);
 
   useEffect(() => {
-    hydrateFromServer();
+    let vivo = true;
+    hydrateFromServer().finally(() => {
+      if (vivo) setVerificado(true);
+    });
+    return () => {
+      vivo = false;
+    };
   }, [hydrateFromServer]);
 
   useEffect(() => {
-    // Give a brief moment for hydration
-    const timer = setTimeout(() => {
-      const state = useAuthStore.getState();
-      if (!state.isAuthenticated) {
-        router.replace("/login");
-      }
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, router]);
+    if (verificado && !isAuthenticated) router.replace("/login");
+  }, [verificado, isAuthenticated, router]);
 
   if (!isAuthenticated) {
     return (

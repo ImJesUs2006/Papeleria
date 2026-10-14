@@ -16,7 +16,6 @@ import {
   UserRound,
   Boxes,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import {
   ReportsPreviewTable,
   PreviewSkeleton,
@@ -298,7 +297,7 @@ export default function ReportesPage() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-5xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -573,6 +572,6 @@ export default function ReportesPage() {
           &quot;Excel&quot; para descargar el archivo.
         </p>
       </div>
-    </DashboardLayout>
+    </>
   );
 }

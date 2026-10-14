@@ -12,7 +12,6 @@ import {
   FileText,
   Banknote,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
 
@@ -182,7 +181,7 @@ export default function DevolucionesPage() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <h2 className="text-2xl font-black text-gray-100 mb-1">Devoluciones y notas de crédito</h2>
@@ -465,6 +464,6 @@ export default function DevolucionesPage() {
           </div>
         </ErrorBoundary>
       </div>
-    </DashboardLayout>
+    </>
   );
 }

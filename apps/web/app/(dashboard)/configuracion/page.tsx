@@ -23,6 +23,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { normalizarPersonalizacion } from "@/lib/personalizacion";
 import { UserManagement } from "@/components/configuracion/user-management";
 import { PersonalizacionGiroEditor } from "@/components/configuracion/personalizacion-giro";
+import { HardwarePanel } from "@/components/configuracion/hardware-panel";
 import { MiCuentaPanel } from "@/components/configuracion/mi-cuenta";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -203,7 +204,7 @@ function normalizePuntosConfigLocal(raw: any): PuntosConfig {
 
 export default function ConfiguracionPage() {
   const { nombre, rol } = useAuthStore();
-  const [tab, setTab] = useState<"usuarios" | "negocio">("usuarios");
+  const [tab, setTab] = useState<"usuarios" | "negocio" | "equipo">("usuarios");
 
   return (
     <DashboardLayout>
@@ -227,6 +228,7 @@ export default function ConfiguracionPage() {
             [
               { id: "usuarios", label: "Usuarios", icon: Users },
               { id: "negocio", label: "Negocio", icon: Settings2 },
+              { id: "equipo", label: "Este equipo", icon: Printer },
             ] as const
           ).map(({ id, label, icon: Icon }) => (
             <button
@@ -260,6 +262,17 @@ export default function ConfiguracionPage() {
               <MiCuentaPanel />
               <ErrorBoundary label="la gestión de usuarios">
                 <UserManagement />
+              </ErrorBoundary>
+            </motion.div>
+          ) : tab === "equipo" ? (
+            <motion.div
+              key="equipo"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <ErrorBoundary label="el hardware del equipo">
+                <HardwarePanel />
               </ErrorBoundary>
             </motion.div>
           ) : (

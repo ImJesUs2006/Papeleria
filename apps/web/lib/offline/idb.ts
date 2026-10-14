@@ -5,6 +5,7 @@
 //   config-cache: replica firmada de ConfiguracionNegocio
 // ============================================================
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import type { ProductoCatalogo } from "@/lib/offline/catalogo";
 
 export interface VentaOffline {
   idLocal: string;
@@ -40,18 +41,28 @@ interface PapeleriaDB extends DBSchema {
     key: string;
     value: { key: string; config: unknown; firma: string; guardadaEn: string };
   };
+  // Paso 8: copia local del catálogo para vender sin red.
+  catalogo: {
+    key: string;
+    value: ProductoCatalogo;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<PapeleriaDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<PapeleriaDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<PapeleriaDB>("papeleria-offline", 1, {
-      upgrade(db) {
-        const ventas = db.createObjectStore("ventas", { keyPath: "idLocal" });
-        ventas.createIndex("por-estado", "estado");
-        ventas.createIndex("por-fecha", "createdAt");
-        db.createObjectStore("config", { keyPath: "key" });
+    dbPromise = openDB<PapeleriaDB>("papeleria-offline", 2, {
+      upgrade(db, versionAnterior) {
+        if (versionAnterior < 1) {
+          const ventas = db.createObjectStore("ventas", { keyPath: "idLocal" });
+          ventas.createIndex("por-estado", "estado");
+          ventas.createIndex("por-fecha", "createdAt");
+          db.createObjectStore("config", { keyPath: "key" });
+        }
+        if (versionAnterior < 2) {
+          db.createObjectStore("catalogo", { keyPath: "codigoItem" });
+        }
       },
     });
   }
@@ -108,4 +119,17 @@ export async function guardarConfigCache(
 export async function limpiarDbOffline(): Promise<void> {
   const db = await getDB();
   await db.clear("ventas");
+}
+/** Reemplaza la copia local del catálogo (una sola transacción). */
+export async function guardarCatalogoLocal(productos: ProductoCatalogo[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction("catalogo", "readwrite");
+  await tx.store.clear();
+  for (const p of productos) await tx.store.put(p);
+  await tx.done;
+}
+
+export async function leerCatalogoLocal(): Promise<ProductoCatalogo[]> {
+  const db = await getDB();
+  return db.getAll("catalogo");
 }

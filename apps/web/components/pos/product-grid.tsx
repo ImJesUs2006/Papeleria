@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { PackagePlus, Star, ShoppingCart, TrendingUp } from "lucide-react";
 import { useCartStore } from "@/store/cart";
 import { usePosFeedback } from "@/store/pos-feedback";
+import { destacadosDelCatalogo } from "@/lib/offline/catalogo";
+import { catalogoLocal } from "@/lib/offline/catalogo-cliente";
 import { cn } from "@/lib/utils";
 
 interface GridProducto {
@@ -49,7 +51,11 @@ export function ProductGrid() {
         if (!viva) return;
         setProductos(lista);
       } catch {
-        if (viva) setError("No se pudo cargar el catálogo");
+        // Sin red: favoritos de la copia local del catálogo.
+        const locales = destacadosDelCatalogo(await catalogoLocal());
+        if (!viva) return;
+        if (locales.length) setProductos(locales as unknown as GridProducto[]);
+        else setError("No se pudo cargar el catálogo");
       } finally {
         if (viva) setLoading(false);
       }

@@ -21,6 +21,7 @@ import {
   Percent,
   Split,
   Tag,
+  Scale,
 } from "lucide-react";
 import { useCartStore, CartItem, type MetodoPagoPOS } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
@@ -37,6 +38,8 @@ import {
 } from "@/components/pos/descuentos-pago";
 import type { LineaPrecio } from "@/lib/descuentos";
 import { SerieModal } from "@/components/pos/serie-modal";
+import { actualizarCatalogo } from "@/lib/offline/catalogo-cliente";
+import { abrirCajon, leerBascula, leerHardware } from "@/lib/hardware/serial";
 import { cn } from "@/lib/utils";
 
 function CartItemRow({
@@ -50,6 +53,8 @@ function CartItemRow({
 }) {
   const { removeItem, updateQuantity, setDescuentoLinea, quitarSerie } = useCartStore();
   const [editando, setEditando] = useState(false);
+  const [basculaActiva, setBasculaActiva] = useState(false);
+  useEffect(() => setBasculaActiva(leerHardware().usarBascula), []);
   const decimales = item.permiteDecimales === true || item.esServicio === true;
   const descontado = precio && precio.descuentoTotal - precio.descuentoTicket > 0;
 
@@ -91,6 +96,24 @@ function CartItemRow({
           {item.cantidad}
         </span>
       ) : decimales ? (
+        <span className="flex items-center gap-1">
+        {!item.esServicio && basculaActiva && (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                updateQuantity(item.codigoItem, await leerBascula());
+              } catch (e: any) {
+                window.alert(e?.message || "No se pudo leer la báscula");
+              }
+            }}
+            title="Leer báscula"
+            aria-label="Leer báscula"
+            className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center"
+          >
+            <Scale className="h-3 w-3 text-amber-300" />
+          </button>
+        )}
         <input
           type="number"
           value={item.cantidad}
@@ -104,6 +127,7 @@ function CartItemRow({
           }}
           className="w-20 text-center text-sm font-bold bg-surface-600 border border-surface-500 rounded-lg px-2 py-1.5 text-gray-100 focus:border-neon-cyan focus:outline-none transition-all"
         />
+        </span>
       ) : (
         <div className="flex items-center gap-1">
           <button
@@ -507,6 +531,11 @@ export function CartPanel() {
     opciones: OpcionesCobro;
   } | null>(null);
 
+  // Copia local del catálogo para vender sin red (Paso 8).
+  useEffect(() => {
+    actualizarCatalogo().catch(() => {});
+  }, []);
+
   // Promociones vigentes: se aplican solas en el carrito. Se guardan en este
   // dispositivo para seguir aplicándolas sin conexión.
   useEffect(() => {
@@ -603,6 +632,13 @@ export function CartPanel() {
         autorizacion: opciones.autorizacion ?? null,
       });
       setResultado(data);
+      // Hardware del equipo: abre el cajón si entró efectivo.
+      const cobroEfectivo = dividido
+        ? (opciones.pagos ?? []).some((x) => x.metodo === "EFECTIVO")
+        : esEfectivo;
+      if (cobroEfectivo && leerHardware().abrirCajon) {
+        abrirCajon().catch(() => {});
+      }
       setPagoDivididoOpen(false);
       setAutorizacion(null);
       clearCart();

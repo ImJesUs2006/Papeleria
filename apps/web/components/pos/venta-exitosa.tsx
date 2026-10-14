@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { Printer, FileDown, CheckCircle2, WifiOff, XCircle } from "lucide-react";
 import { numeroSeguro, type ResultadoVenta } from "@/lib/sales-client";
 import { imprimirTicket, type AnchoTicketImpresion } from "@/lib/print-ticket";
+import { enviarAImpresora, leerHardware } from "@/lib/hardware/serial";
+import { ticketEscPos } from "@/lib/hardware/escpos";
 import { descargarTicketPDF } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
 
@@ -169,7 +171,40 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
         <div className="grid grid-cols-1 gap-2">
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => imprimirTicket(ticketRef.current, ancho)}
+              onClick={async () => {
+                const h = leerHardware();
+                if (h.impresora === "ESCPOS") {
+                  try {
+                    await enviarAImpresora(
+                      ticketEscPos(
+                        {
+                          negocio: nombreNegocio || "Mi negocio",
+                          folio: result.folioVenta,
+                          fecha: new Date(result.fechaHora).toLocaleString("es-MX"),
+                          items: result.items.map((i) => ({
+                            descripcion: i.descripcion,
+                            cantidad: numeroSeguro(i.cantidad),
+                            importe: numeroSeguro(i.importe),
+                          })),
+                          subtotal: numeroSeguro(result.subtotal),
+                          descuentos: numeroSeguro(result.descuentoTotal),
+                          ieps: numeroSeguro(result.ieps),
+                          iva: numeroSeguro(result.iva),
+                          total: numeroSeguro(result.totalNeto),
+                          metodoPago: result.metodoPago,
+                          cambio: result.cambio,
+                          cliente: result.nombreCliente,
+                        },
+                        ancho
+                      )
+                    );
+                    return;
+                  } catch {
+                    // Si la térmica no responde, cae al diálogo del navegador.
+                  }
+                }
+                imprimirTicket(ticketRef.current, ancho);
+              }}
               className="flex items-center justify-center gap-2 py-3 rounded-xl bg-surface-600 hover:bg-surface-500 text-gray-100 text-sm font-bold transition-colors"
             >
               <Printer className="h-4 w-4" /> Imprimir ticket

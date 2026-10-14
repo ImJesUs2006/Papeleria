@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { AlertTriangle, Lock, Loader2, ArrowLeft } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { porCodigo } from "@/lib/offline/catalogo";
+import { catalogoLocal } from "@/lib/offline/catalogo-cliente";
 import { BarcodeScanner } from "@/components/pos/barcode-scanner";
 import { CartPanel } from "@/components/pos/cart-panel";
 import { ProductGrid } from "@/components/pos/product-grid";
@@ -100,14 +102,25 @@ export default function CobroPage() {
     setCodigoError(null);
     setBuscando(true);
     try {
-      const res = await fetch(
-        `/api/productos?q=${encodeURIComponent(codigo)}&limit=5`
-      );
-      if (!res.ok) throw new Error("error");
-      const data = await res.json();
-      const match: ProductoRapido[] = (data.data ?? []).filter(
-        (p: ProductoRapido) => (p.esServicio || p.stockActual > 0)
-      );
+      let match: ProductoRapido[];
+      try {
+        const res = await fetch(
+          `/api/productos?q=${encodeURIComponent(codigo)}&limit=5`
+        );
+        if (!res.ok) throw new Error("error");
+        const data = await res.json();
+        match = (data.data ?? []).filter(
+          (p: ProductoRapido) => (p.esServicio || p.stockActual > 0)
+        );
+      } catch {
+        // Sin red: la copia local del catálogo (Paso 8).
+        const local = porCodigo(await catalogoLocal(), codigo);
+        if (!local) {
+          setCodigoError(`Sin conexión: "${codigo}" no está en la copia local del catálogo`);
+          return;
+        }
+        match = local.esServicio || local.stockActual > 0 ? [local] : [];
+      }
       if (match.length === 0) {
         setCodigoError(
           `Código "${codigo}" no encontrado o sin stock disponible`

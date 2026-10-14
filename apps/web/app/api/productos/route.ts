@@ -8,6 +8,8 @@ import {
   normalizarFechaCaducidad,
 } from "@/lib/validate-product";
 import { tenantDb } from "@/lib/tenant";
+import { getBusinessConfig } from "@/lib/feature-flags";
+import { validarAtributos } from "@/lib/personalizacion";
 import { claveCodigoBarras, claveProducto } from "@/lib/tenant-keys";
 
 const ALLOWED_SORT = [
@@ -158,6 +160,7 @@ precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
         permiteDecimales: p.permiteDecimales,
         esServicio: p.esServicio,
         idCategoria: p.idCategoria,
+        atributos: (p.atributos as Record<string, unknown> | null) ?? null,
         ubicacionEstante: p.ubicacionEstante,
         proveedor: p.proveedor,
         tipoImpresion: p.tipoImpresion,
@@ -183,7 +186,7 @@ precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
 
 // Alta manual de un producto (solo administradora).
 export async function POST(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -202,6 +205,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validacion.error }, { status: 400 });
   }
   const data = validacion.data;
+
+  // Campos personalizados del giro (sustancia activa, marca, medida…).
+  let atributos: Record<string, string | number> | null = null;
+  if (data.atributos) {
+    try {
+      const config = await getBusinessConfig(auth.user.idNegocio);
+      const limpios = validarAtributos(data.atributos, config.personalizacion.camposProducto);
+      atributos = Object.keys(limpios).length ? limpios : null;
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+  }
 
   try {
     const existente = await prisma.producto.findUnique({
@@ -243,6 +258,7 @@ precioCompra:
           tasaIva: data.exentoIva ? null : data.tasaIva ?? null,
           exentoIva: data.exentoIva === true,
           tasaIeps: data.tasaIeps != null && data.tasaIeps > 0 ? data.tasaIeps : null,
+          ...(atributos ? { atributos } : {}),
           stockActual: data.stockActual,
           stockMinimo: data.stockMinimo,
           permiteDecimales: data.permiteDecimales === true,
@@ -307,6 +323,7 @@ precioCompra:
           permiteDecimales: creado.permiteDecimales,
           esServicio: creado.esServicio,
           idCategoria: creado.idCategoria,
+          atributos: (creado.atributos as Record<string, unknown> | null) ?? null,
           ubicacionEstante: creado.ubicacionEstante,
           proveedor: creado.proveedor,
           tipoImpresion: creado.tipoImpresion,

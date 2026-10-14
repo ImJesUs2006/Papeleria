@@ -134,6 +134,8 @@ export interface BusinessConfig {
   preciosIncluyenIva: boolean;
   /** % máximo de descuento manual que una CAJERA aplica sin autorización. */
   descuentoMaxCajera: number;
+  /** Vocabulario, nombres de rol y campos de producto del giro. */
+  personalizacion: import("./personalizacion").Personalizacion;
   featureFlags: FeatureFlags;
   metodosPago: MetodoPagoConfig[];
   politicaStockOffline: "PERMITIR_NEGATIVO" | "RECHAZAR";

@@ -70,6 +70,8 @@ const BASE_PRODUCTO = z.object({
   tasaIva: z.number().min(0, "IVA inválido").max(100, "IVA inválido").nullable().optional(),
   exentoIva: z.boolean().optional(),
   tasaIeps: z.number().min(0, "IEPS inválido").max(100, "IEPS inválido").nullable().optional(),
+  // Campos personalizados del giro; se validan contra la configuración.
+  atributos: z.record(z.unknown()).nullable().optional(),
   // Fase 12: imagen del producto (URL de Cloudinary o data URI).
   imagenUrl: z
     .string()

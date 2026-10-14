@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { presetPorGiro, type Personalizacion } from "@/lib/personalizacion";
 import type { BusinessConfig } from "@/lib/business-types";
 import { DEFAULT_FEATURE_FLAGS } from "@/lib/business-types";
 import { isConfigSignatureValidClient } from "@/lib/config-signing-client";
@@ -186,6 +187,12 @@ export function fiscalCliente(): { ivaNegocio: number; preciosIncluyenIva: boole
     ivaNegocio: ivaFraccionCliente() * 100,
     preciosIncluyenIva: useConfigStore.getState().config?.preciosIncluyenIva === true,
   };
+}
+
+/** Personalización vigente del giro (vocabulario, roles, campos). */
+export function usePersonalizacion(): Personalizacion {
+  const config = useConfigStore((s) => s.config);
+  return config?.personalizacion ?? presetPorGiro(config?.tipoNegocio);
 }
 
 export { safeFlags };

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useCartStore, CartItem, type MetodoPagoPOS } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
-import { useConfigStore } from "@/store/config";
+import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { registrarVentaClient, type ResultadoVenta } from "@/lib/sales-client";
 import { puntosRequeridos } from "@/lib/fidelidad";
 import { useHotkeys } from "@/hooks/use-hotkeys";
@@ -459,6 +459,7 @@ export function CartPanel() {
   } = useCartStore();
   const { idPersona, nombre } = useAuthStore();
   const config = useConfigStore((s) => s.config);
+  const { vocabulario } = usePersonalizacion();
 
   const [estado, setEstado] = useState<"idle" | "cobrando" | "error">("idle");
   const [mensajeError, setMensajeError] = useState("");
@@ -657,7 +658,7 @@ export function CartPanel() {
           animate={{ scale: 1 }}
           className="bg-neon-blue/20 text-neon-blue text-xs font-bold px-2 py-1 rounded-full"
         >
-          {itemCount} {itemCount === 1 ? "artículo" : "artículos"}
+          {itemCount} {(itemCount === 1 ? vocabulario.producto : vocabulario.productos).toLowerCase()}
         </motion.span>
       </div>
 

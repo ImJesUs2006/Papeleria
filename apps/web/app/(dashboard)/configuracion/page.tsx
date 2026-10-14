@@ -20,7 +20,9 @@ import {
   Coins,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { normalizarPersonalizacion } from "@/lib/personalizacion";
 import { UserManagement } from "@/components/configuracion/user-management";
+import { PersonalizacionGiroEditor } from "@/components/configuracion/personalizacion-giro";
 import { MiCuentaPanel } from "@/components/configuracion/mi-cuenta";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -114,6 +116,7 @@ function normalizeConfig(raw: any): BusinessConfig {
     ivaRate: Number.isFinite(iva) ? iva : 16,
     preciosIncluyenIva: raw?.preciosIncluyenIva === true,
     descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
+    personalizacion: normalizarPersonalizacion(raw?.personalizacion, raw?.tipoNegocio),
     featureFlags,
     metodosPago,
     politicaStockOffline:
@@ -374,6 +377,7 @@ const guardar = async () => {
           ivaRate: Number(config.ivaRate),
           preciosIncluyenIva: config.preciosIncluyenIva === true,
           descuentoMaxCajera: Number(config.descuentoMaxCajera ?? 10),
+          personalizacion: config.personalizacion,
           featureFlags: config.featureFlags,
           metodosPago: config.metodosPago,
           politicaStockOffline: config.politicaStockOffline,
@@ -587,6 +591,12 @@ const guardar = async () => {
           className="input-dark"
         />
       </label>
+
+      <PersonalizacionGiroEditor
+        valor={config.personalizacion}
+        tipoNegocio={config.tipoNegocio}
+        onChange={(personalizacion) => setConfig({ ...config, personalizacion })}
+      />
 
       <div className="border-t border-surface-600 pt-4">
         <div className="flex items-center gap-2 mb-3">

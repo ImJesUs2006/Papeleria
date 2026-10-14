@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { normalizarFechaCaducidad } from "@/lib/validate-product";
 import { registrarMovimientosKardex } from "@/lib/kardex";
 import { tenantDb } from "@/lib/tenant";
+import { getBusinessConfig } from "@/lib/feature-flags";
+import { validarAtributos } from "@/lib/personalizacion";
 import { claveProducto } from "@/lib/tenant-keys";
 
 export async function GET(
@@ -42,6 +45,7 @@ export async function GET(
       permiteDecimales: producto.permiteDecimales,
       esServicio: producto.esServicio,
       idCategoria: producto.idCategoria,
+      atributos: (producto.atributos as Record<string, unknown> | null) ?? null,
       ubicacionEstante: producto.ubicacionEstante,
       proveedor: producto.proveedor,
       tipoImpresion: producto.tipoImpresion,
@@ -61,7 +65,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ codigo: string }> }
 ) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -225,6 +229,20 @@ export async function PATCH(
           { error: "La imagen debe ser una URL de Cloudinary o un data URI" },
           { status: 400 }
         );
+      }
+    }
+
+    if (body.atributos !== undefined) {
+      if (body.atributos === null) {
+        data.atributos = Prisma.DbNull;
+      } else {
+        try {
+          const config = await getBusinessConfig(auth.user.idNegocio);
+          const limpios = validarAtributos(body.atributos, config.personalizacion.camposProducto);
+          data.atributos = Object.keys(limpios).length ? limpios : Prisma.DbNull;
+        } catch (e: any) {
+          return NextResponse.json({ error: e.message }, { status: 400 });
+        }
       }
     }
 

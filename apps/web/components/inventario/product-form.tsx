@@ -16,6 +16,7 @@ import { Modal } from "@/components/ui/modal";
 import { ImagenProductoUpload } from "@/components/inventario/imagen-producto-upload";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
 import { cn } from "@/lib/utils";
+import { usePersonalizacion } from "@/store/config";
 
 const TIPO_IMPRESION_LABELS: Record<(typeof TIPO_IMPRESION_OPCIONES)[number], string> = {
   BLANCO_NEGRO: "Blanco y negro",
@@ -193,6 +194,10 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
   const editando = Boolean(producto);
 
   const [serverError, setServerError] = useState<string | null>(null);
+  // Personalización del giro: vocabulario y campos propios del producto.
+  const personalizacion = usePersonalizacion();
+  const camposGiro = personalizacion.camposProducto;
+  const [atributos, setAtributos] = useState<Record<string, string>>({});
   const [cargando, setCargando] = useState(false);
 
   const {
@@ -243,6 +248,11 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       fetch(`/api/productos/${encodeURIComponent(producto.codigoItem)}`, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error("No se pudo cargar"))))
         .then((p) => {
+          setAtributos(
+            Object.fromEntries(
+              Object.entries((p.atributos ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+            )
+          );
           reset({
             codigoItem: p.codigoItem,
             descripcion: p.descripcion,
@@ -266,6 +276,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
         .catch((e) => setServerError(e.message))
         .finally(() => setCargando(false));
     } else {
+      setAtributos({});
       reset({
         codigoItem: "",
         descripcion: "",
@@ -308,6 +319,13 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       fechaCaducidad: values.fechaCaducidad?.trim() || null,
       permiteDecimales: values.permiteDecimales === true,
       esServicio: values.esServicio === true,
+      atributos: camposGiro.length
+        ? Object.fromEntries(
+            camposGiro
+              .filter((c) => (atributos[c.clave] ?? "").trim() !== "")
+              .map((c) => [c.clave, c.tipo === "numero" ? Number(atributos[c.clave]) : atributos[c.clave].trim()])
+          )
+        : undefined,
     };
 
     try {
@@ -339,7 +357,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
     <Modal
       open={open}
       onClose={onClose}
-      title={editando ? "Editar producto" : "Nuevo producto"}
+      title={`${editando ? "Editar" : "Nuevo"} ${personalizacion.vocabulario.producto.toLowerCase()}`}
       subtitle={editando ? producto?.codigoItem : "Alta manual en el inventario"}
       className="max-w-2xl"
     >
@@ -538,17 +556,46 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                 <input {...register("proveedor")} className="input-dark" placeholder="Nombre" />
                 {err("proveedor")}
               </label>
-              <label className="block">
-                <span className="text-xs text-muted mb-1 block">Tipo de impresión</span>
-                <select {...register("tipoImpresion")} className="input-dark">
-                  <option value="">— Ninguno —</option>
-                  {TIPO_IMPRESION_OPCIONES.map((t) => (
-                    <option key={t} value={t}>
-                      {TIPO_IMPRESION_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {personalizacion.usarTipoImpresion && (
+                <label className="block">
+                  <span className="text-xs text-muted mb-1 block">Tipo de impresión</span>
+                  <select {...register("tipoImpresion")} className="input-dark">
+                    <option value="">— Ninguno —</option>
+                    {TIPO_IMPRESION_OPCIONES.map((t) => (
+                      <option key={t} value={t}>
+                        {TIPO_IMPRESION_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {/* Campos propios del giro (Configuración → Negocio). */}
+              {camposGiro.map((c) => (
+                <label key={c.clave} className="block">
+                  <span className="text-xs text-muted mb-1 block">{c.etiqueta}</span>
+                  {c.tipo === "lista" ? (
+                    <select
+                      value={atributos[c.clave] ?? ""}
+                      onChange={(e) => setAtributos((a) => ({ ...a, [c.clave]: e.target.value }))}
+                      className="input-dark"
+                    >
+                      <option value="">— Sin dato —</option>
+                      {(c.opciones ?? []).map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={c.tipo === "numero" ? "number" : "text"}
+                      value={atributos[c.clave] ?? ""}
+                      onChange={(e) => setAtributos((a) => ({ ...a, [c.clave]: e.target.value }))}
+                      className="input-dark"
+                    />
+                  )}
+                </label>
+              ))}
               {usarCaducidad && (
                 <label className="block">
                   <span className="text-xs text-muted mb-1 block">Fecha de caducidad</span>

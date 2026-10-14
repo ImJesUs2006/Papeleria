@@ -19,7 +19,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
-import { useConfigStore } from "@/store/config";
+import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { ShortcutsHelp } from "./shortcuts-help";
 import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
@@ -128,6 +128,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { nombre, rol, hasPermission, logout } = useAuthStore();
   const { trust, isFeatureEnabled, config } = useConfigStore();
+  const { vocabulario } = usePersonalizacion();
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!hasPermission(item.permission)) return false;
@@ -199,7 +200,7 @@ export function Sidebar() {
                 />
               )}
               <Icon className="h-5 w-5" />
-              <span>{item.label}</span>
+              <span>{item.href === "/clientes" ? vocabulario.clientes : item.label}</span>
             </Link>
           );
         })}

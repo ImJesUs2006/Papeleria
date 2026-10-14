@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tieneOtroAdminActivo } from "@/lib/usuarios";
+import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
@@ -74,6 +75,31 @@ export async function PATCH(
     }
   }
 
+  // Perfil: asignarlo copia rol y permisos; un ajuste manual de rol o
+  // permisos sin perfil desvincula al usuario de su perfil.
+  if (body.idPerfil !== undefined) {
+    if (body.idPerfil === null || body.idPerfil === "") {
+      data.idPerfil = null;
+    } else {
+      try {
+        Object.assign(data, await datosPorPerfil(prisma, String(body.idPerfil)));
+      } catch (e) {
+        if (e instanceof PerfilError) {
+          return NextResponse.json({ error: e.message }, { status: e.status });
+        }
+        throw e;
+      }
+      if (id === user.idPersona && data.rol !== "ADMINISTRADORA" && target.rol === "ADMINISTRADORA") {
+        return NextResponse.json({ error: "No puedes quitarte tu propio rol de administradora" }, { status: 409 });
+      }
+    }
+  } else if (
+    target.idPerfil &&
+    ["rol", "permisoCobrar", "permisoInventario", "permisoReportes"].some((k) => data[k] !== undefined)
+  ) {
+    data.idPerfil = null;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
   }
@@ -105,6 +131,8 @@ export async function PATCH(
           permisoCobrar: true,
           permisoInventario: true,
           permisoReportes: true,
+          idPerfil: true,
+          perfil: { select: { nombre: true } },
           ultimoLoginAt: true,
         },
       });

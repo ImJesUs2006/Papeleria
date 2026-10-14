@@ -1,3 +1,4 @@
+import { normalizarPersonalizacion, validarCamposProducto } from "@/lib/personalizacion";
 import { NextResponse } from "next/server";
 import { Prisma } from "@papeleria/database";
 import { getBusinessConfig } from "@/lib/feature-flags";
@@ -38,6 +39,21 @@ export async function PUT(request: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    // Personalización: los campos de producto se validan; lo demás se normaliza.
+    let personalizacionGuardar: any = undefined;
+    if (body?.personalizacion !== undefined) {
+      try {
+        if (Array.isArray(body.personalizacion?.camposProducto)) {
+          validarCamposProducto(body.personalizacion.camposProducto);
+        }
+        personalizacionGuardar = normalizarPersonalizacion(
+          body.personalizacion,
+          parsed.data.tipoNegocio
+        ) as any;
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+    }
 
     const previa = await prisma.configuracionNegocio.findUnique({ where: CONFIG_PROPIA });
     const proximaVersion = (previa?.configVersion ?? 0) + 1;
@@ -64,6 +80,7 @@ export async function PUT(request: Request) {
         ...(body?.descuentoMaxCajera !== undefined
           ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
           : {}),
+        ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
         featureFlags: flagsMerged,
         metodosPago: parsed.data.metodosPago,
         politicaStockOffline: parsed.data.politicaStockOffline,

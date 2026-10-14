@@ -22,6 +22,7 @@ import {
 import { buildSignedConfig } from "@/lib/config-signing";
 import { tenantDb } from "@/lib/tenant";
 import { CONFIG_PROPIA } from "@/lib/snapshots";
+import { normalizarPersonalizacion, presetPorGiro } from "@/lib/personalizacion";
 
 // ============================================================
 // Feature Flags con autoridad SERVIDOR.
@@ -146,6 +147,7 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
       ivaRate: 16,
       preciosIncluyenIva: false,
       descuentoMaxCajera: 10,
+      personalizacion: presetPorGiro("PAPELERIA_RETAIL"),
       featureFlags: DEFAULT_FEATURE_FLAGS,
       metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
       politicaStockOffline: "PERMITIR_NEGATIVO",
@@ -177,6 +179,7 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
     ivaRate: Number(row.ivaRate),
     preciosIncluyenIva: row.preciosIncluyenIva === true,
     descuentoMaxCajera: Number(row.descuentoMaxCajera ?? 10),
+    personalizacion: normalizarPersonalizacion(row.personalizacion, row.tipoNegocio),
     featureFlags: normalizeFlags(row.featureFlags),
     metodosPago: normalizeMetodosPago(row.metodosPago) as BusinessConfig["metodosPago"],
     politicaStockOffline: row.politicaStockOffline as BusinessConfig["politicaStockOffline"],

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseExcelBuffer } from "@/lib/excel";
 import { getSession } from "@/lib/auth";
+import { tienePermiso } from "@/lib/permisos";
 import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
 
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
     const prisma = tenantDb(session.idNegocio);
-    if (session.rol !== "ADMINISTRADORA") {
+    if (!tienePermiso(session, "inventario")) {
       return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
     }
 

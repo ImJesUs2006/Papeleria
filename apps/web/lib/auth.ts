@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { prisma } from "@papeleria/database";
 import { verifyToken, type AuthPayload } from "@/lib/jwt";
+import { tienePermiso, type PermisoModulo } from "@/lib/permisos";
 
 export type { AuthPayload } from "@/lib/jwt";
 export { signToken } from "@/lib/jwt";
@@ -44,7 +45,12 @@ export async function getSession(): Promise<AuthPayload | null> {
 }
 
 
-export function requireAuth(allowedRoles?: string[]) {
+/**
+ * Exige sesión y, opcionalmente, uno de `allowedRoles`. Con `opciones.permiso`
+ * también pasa quien tenga ese permiso de módulo (perfiles / permisos
+ * granulares): p. ej. un encargado de almacén con permiso de inventario.
+ */
+export function requireAuth(allowedRoles?: string[], opciones?: { permiso?: PermisoModulo }) {
   return async function middleware() {
     const session = await getSession();
 
@@ -52,7 +58,11 @@ export function requireAuth(allowedRoles?: string[]) {
       return { error: "No autenticado", status: 401 };
     }
 
-    if (allowedRoles && !allowedRoles.includes(session.rol)) {
+    if (
+      allowedRoles &&
+      !allowedRoles.includes(session.rol) &&
+      !(opciones?.permiso && tienePermiso(session, opciones.permiso))
+    ) {
       return { error: "Sin permisos", status: 403 };
     }
 

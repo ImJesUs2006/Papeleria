@@ -120,6 +120,7 @@ model Negocio {
   apartados        Apartado[]
   retirosEfectivo  RetiroEfectivo[]
   promociones      Promocion[]
+  perfiles         Perfil[]
 
   @@map("negocios")
 }
@@ -143,6 +144,10 @@ model Usuario {
   permisoCobrar      Boolean   @default(true)
   permisoInventario  Boolean   @default(true)
   permisoReportes    Boolean   @default(true)
+  // ---- Perfiles (Paso 4) ----
+  // Rol con nombre propio del negocio ("Encargado de almacén"). Al
+  // asignarlo, el usuario toma el rol base y los permisos del perfil.
+  idPerfil           String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   ultimoLoginAt      DateTime?
@@ -161,6 +166,7 @@ model Usuario {
   movimientosKardex  MovimientoKardex[]
   apartadosCreados   Apartado[]
   facturasEmitidas   Factura[]
+  perfil             Perfil?                @relation(fields: [idPerfil], references: [idPerfil])
 
   negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
 
@@ -187,6 +193,9 @@ model Producto {
   exentoIva          Boolean        @default(false)
   // IEPS en porcentaje (bebidas azucaradas, tabaco…). Null = no causa.
   tasaIeps           Decimal?       @db.Decimal(5, 2)
+  // ---- Campos personalizados del giro (Paso 4) ----
+  // Valores de los campos que define el negocio (sustancia activa, marca…).
+  atributos          Json?
   // ---- Fase 12 · Imágenes Cloudinary ----
   // URL pública de la imagen en Cloudinary (o data URI). Solo se usa cuando
   // el feature flag `imagenesCloudinary` está activo en Configuración.
@@ -456,6 +465,9 @@ model ConfiguracionNegocio {
   // % máximo de descuento manual que una CAJERA aplica sin autorización.
   // Arriba de él, una ADMINISTRADORA autoriza con su usuario y contraseña.
   descuentoMaxCajera   Decimal     @default(10) @db.Decimal(5, 2)
+  // ---- Personalización del giro (Paso 4) ----
+  // { vocabulario, etiquetasRol, camposProducto, usarTipoImpresion }
+  personalizacion      Json?
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
   featureFlags         Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
@@ -857,4 +869,27 @@ model PagoVenta {
   @@index([idNegocio])
   @@index([folioVenta])
   @@map("pagos_venta")
+}
+
+// ============================================================
+// PASO 4 — Perfiles (roles con nombre propio por negocio)
+// ============================================================
+
+model Perfil {
+  idPerfil          String   @id @default(uuid())
+  idNegocio         String   @default("default")
+  nombre            String
+  // Nivel base que aplica la autorización (ADMINISTRADORA = acceso total).
+  rolBase           Rol      @default(CAJERA)
+  permisoCobrar     Boolean  @default(true)
+  permisoInventario Boolean  @default(false)
+  permisoReportes   Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  negocio  Negocio   @relation(fields: [idNegocio], references: [idNegocio])
+  usuarios Usuario[]
+
+  @@unique([idNegocio, nombre])
+  @@index([idNegocio])
+  @@map("perfiles")
 }

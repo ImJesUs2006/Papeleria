@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
+import { tienePermiso } from "@/lib/permisos";
 import { tenantDb } from "@/lib/tenant";
 import { PromocionError, promocionesVigentes, validarPromocion } from "@/lib/promociones";
 
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   if (searchParams.get("vigentes") === "1") {
     return NextResponse.json({ promociones: await promocionesVigentes(prisma) });
   }
-  if (auth.user.rol !== "ADMINISTRADORA") {
+  if (!tienePermiso(auth.user, "inventario")) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

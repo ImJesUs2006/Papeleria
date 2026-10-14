@@ -59,6 +59,7 @@ const PERMISSIONS: Record<Rol, string[]> = {
 // incluso para ADMINISTRADORA. Por defecto true (tokens antiguos).
 const GRANULAR_PERMISOS: Record<string, "permisoCobrar" | "permisoInventario" | "permisoReportes"> = {
   "cobro.realizar": "permisoCobrar",
+  "dashboard.ver": "permisoReportes",
   "inventario.ver": "permisoInventario",
   "inventario.editar": "permisoInventario",
   "inventario.carga_masiva": "permisoInventario",
@@ -151,12 +152,14 @@ export const useAuthStore = create<AuthState>()(
         // rol; los flags granulares aplican SOLO a cajeras (por defecto tienen
         // todo activo si el negocio no los restringe).
         if (state.rol === "ADMINISTRADORA") return true;
-        const base = PERMISSIONS[state.rol]?.includes(permission) ?? false;
-        if (!base) return false;
-        // Fase 9 + Fase 10: el flag granular manda únicamente en cajeras.
+        // Permisos de módulo (perfiles): inventario y reportes se conceden
+        // explícitamente; el cobro está activo salvo que se retire.
+        // Bitácora y facturación siguen siendo de administración.
         const flag = GRANULAR_PERMISOS[permission];
-        if (!flag) return true;
-        return state[flag];
+        if (flag && permission !== "bitacora.ver" && permission !== "facturacion.ver") {
+          return flag === "permisoCobrar" ? state[flag] !== false : state[flag] === true;
+        }
+        return PERMISSIONS[state.rol]?.includes(permission) ?? false;
       },
     }),
     {

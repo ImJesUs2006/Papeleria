@@ -32,7 +32,9 @@ test.describe.serial("POS — flujo crítico", () => {
     await page.getByRole("button", { name: /Cobrar \$/ }).click();
 
     await expect(page.getByText("¡Venta registrada!")).toBeVisible();
-    await expect(page.getByText(/Folio: F-/)).toBeVisible();
+    // El folio aparece dos veces en el modal (encabezado y vista previa del
+    // ticket): basta con que el primero sea visible.
+    await expect(page.getByText(/Folio: F-/).first()).toBeVisible();
   });
 
   test("corte ciego cierra la caja sin filtrar esperados", async ({ page }) => {
@@ -75,7 +77,9 @@ test.describe.serial("POS — flujo crítico", () => {
     await context.setOffline(true);
     await page.getByRole("button", { name: /Cobrar \$/ }).click();
     await expect(page.getByText("¡Venta guardada offline!")).toBeVisible();
-    await expect(page.getByText(/Folio: OF-/)).toBeVisible();
+    // El folio aparece dos veces en el modal (encabezado y vista previa del
+    // ticket): basta con que el primero sea visible.
+    await expect(page.getByText(/Folio: OF-/).first()).toBeVisible();
     await context.setOffline(false);
   });
 });

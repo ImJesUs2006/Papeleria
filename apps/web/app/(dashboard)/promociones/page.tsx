@@ -166,7 +166,7 @@ export default function PromocionesPage() {
           ) : promos.length === 0 ? (
             <div className="rounded-xl border border-dashed border-surface-600 bg-surface-800 px-4 py-10 text-center text-sm text-muted">
               <Tag className="mx-auto mb-2 h-8 w-8 opacity-60" />
-              Aún no hay promociones. Crea un "3x2" o un porcentaje por producto o categoría.
+              Aún no hay promociones. Crea un &quot;3x2&quot; o un porcentaje por producto o categoría.
             </div>
           ) : (
             <div className="space-y-2">

@@ -82,6 +82,16 @@ const REPORT_TYPES: ReportDef[] = [
     textClass: "text-neon-pink",
     hoverBgClass: "hover:bg-neon-pink/20",
     needsDateRange: true,
+  },  {
+    id: "margen",
+    label: "Margen por Producto",
+    description: "Venta contra costo: cuánto deja cada producto",
+    icon: BarChart3,
+    colorClass: "border-neon-pink",
+    bgClass: "bg-neon-pink/10",
+    textClass: "text-neon-pink",
+    hoverBgClass: "hover:bg-neon-pink/20",
+    needsDateRange: true,
   },
   {
     id: "top-mas-vendidos",

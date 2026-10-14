@@ -21,6 +21,8 @@ import { ejecutarTraspaso } from "@/lib/traspasos";
 import { lotesPorCaducar, registrarEntradaLote } from "@/lib/lotes";
 import { registrarSeries } from "@/lib/series";
 import { generarVariantes } from "@/lib/variantes";
+import { recibirPedido } from "@/lib/compras";
+import { getReporteData } from "@/lib/reports";
 
 let fallos = 0;
 function comprobar(nombre: string, ok: boolean, detalle?: unknown) {
@@ -47,6 +49,9 @@ async function limpiar(ids: string[]) {
   await prisma.devolucion.deleteMany(w);
   await prisma.lineaDetalleVenta.deleteMany(w);
   await prisma.movimientoKardex.deleteMany(w);
+  await prisma.itemPedidoProveedor.deleteMany({ where: { pedido: { idNegocio: { in: ids } } } });
+  await prisma.pedidoProveedor.deleteMany(w);
+  await prisma.proveedor.deleteMany(w);
   await prisma.lote.deleteMany(w);
   await prisma.numeroSerie.deleteMany(w);
   await prisma.existencia.deleteMany(w);
@@ -347,6 +352,84 @@ async function main() {
     const variante = await dbA.producto.findUnique({ where: claveProducto("PLAY-M-ROJO") });
     comprobar("la variante hereda precio y pertenece al grupo del modelo",
       Number(variante?.precioUnitario) === 199 && variante?.grupoVariante === "PLAY");
+
+    console.log("Compras y costos (Paso 7)");
+    const proveedor = await dbA.proveedor.create({ data: { nombre: "Distribuidora" } });
+    await dbA.producto.create({ data: { codigoItem: "COMP", descripcion: "Resma", precioUnitario: 20, precioCompra: 5 } });
+    await dbA.$transaction((tx) => moverStock(tx, { codigoItem: "COMP", delta: 10, idSucursal: matriz }));
+    await dbA.producto.update({ where: claveProducto("COMP"), data: { costoPromedio: 5 } });
+    const pedido = await dbA.pedidoProveedor.create({
+      data: {
+        idProveedor: proveedor.idProveedor,
+        totalEstimado: 80,
+        createdBy: adminA!.idPersona,
+        items: { create: [{ codigoItem: "COMP", cantidad: 10, precioCotizado: 8 }] },
+      },
+      include: { items: true },
+    });
+    const parcial = await dbA.$transaction((tx) =>
+      recibirPedido(tx, {
+        idPedido: pedido.idPedido,
+        renglones: [{ idItemPedido: pedido.items[0].idItemPedido, cantidad: 10, costoUnitario: 8 }],
+        idUsuario: adminA!.idPersona,
+        idSucursal: matriz,
+      })
+    ).catch((e) => e);
+    comprobar("no se recibe más de lo pedido… (10 de 10 sí)", parcial.estado === "ENTREGADO", parcial);
+    const comp = await dbA.producto.findUnique({ where: claveProducto("COMP") });
+    comprobar("costo promedio ponderado: 10 a $5 + 10 a $8 = $6.50",
+      Number(comp?.costoPromedio) === 6.5 && Number(comp?.precioCompra) === 8, comp?.costoPromedio);
+    comprobar("un pedido entregado ya no se recibe de nuevo", await rechaza(() =>
+      dbA.$transaction((tx) =>
+        recibirPedido(tx, { idPedido: pedido.idPedido, renglones: "TODO", idUsuario: adminA!.idPersona, idSucursal: matriz })
+      )
+    ));
+    const pedido2 = await dbA.pedidoProveedor.create({
+      data: {
+        idProveedor: proveedor.idProveedor,
+        totalEstimado: 50,
+        createdBy: adminA!.idPersona,
+        items: { create: [{ codigoItem: "COMP", cantidad: 5, precioCotizado: 10 }] },
+      },
+      include: { items: true },
+    });
+    const r1 = await dbA.$transaction((tx) =>
+      recibirPedido(tx, {
+        idPedido: pedido2.idPedido,
+        renglones: [{ idItemPedido: pedido2.items[0].idItemPedido, cantidad: 2 }],
+        idUsuario: adminA!.idPersona,
+        idSucursal: matriz,
+      })
+    );
+    comprobar("recepción parcial deja el pedido PARCIAL", r1.estado === "PARCIAL");
+    comprobar("no se reciben más de los pendientes", await rechaza(() =>
+      dbA.$transaction((tx) =>
+        recibirPedido(tx, {
+          idPedido: pedido2.idPedido,
+          renglones: [{ idItemPedido: pedido2.items[0].idItemPedido, cantidad: 4 }],
+          idUsuario: adminA!.idPersona,
+          idSucursal: matriz,
+        })
+      )
+    ));
+    const r2 = await dbA.$transaction((tx) =>
+      recibirPedido(tx, { idPedido: pedido2.idPedido, renglones: "TODO", idUsuario: adminA!.idPersona, idSucursal: matriz })
+    );
+    comprobar("recibir el resto lo marca ENTREGADO", r2.estado === "ENTREGADO" && r2.recibidos[0].cantidad === 3);
+    comprobar("la existencia refleja lo recibido (10 + 10 + 5)",
+      (await stockEnSucursal(dbA, matriz, ["COMP"])).get("COMP") === 25);
+
+    const ventaCosto = await dbA.$transaction((tx) =>
+      executeSale(tx, { items: [{ codigoItem: "COMP", cantidad: 2 }], metodoPago: "EFECTIVO" },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, idSucursal: matriz })
+    );
+    const lineaCosto = await dbA.lineaDetalleVenta.findFirst({ where: { folioVenta: ventaCosto.folioVenta } });
+    const costoEsperado = Number((await dbA.producto.findUnique({ where: claveProducto("COMP") }))?.costoPromedio);
+    comprobar("la venta congela el costo promedio vigente", Number(lineaCosto?.costoUnitario) === costoEsperado);
+    const margen = await getReporteData(dbA, "margen", {});
+    const filaComp = margen.rows.find((r) => r[0] === "COMP");
+    comprobar("el reporte de margen calcula venta − costo",
+      !!filaComp && Number(filaComp[3]) === 40 && Number(filaComp[5]) === Math.round((40 - 2 * costoEsperado) * 100) / 100, filaComp);
 
     console.log("Configuración");
     const cfgA = await getBusinessConfig(a.idNegocio);

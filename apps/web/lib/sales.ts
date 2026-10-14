@@ -279,6 +279,8 @@ export async function executeSale(
     usaLotes: boolean;
     series: string[];
     lotes: ConsumoLote[];
+    /** Costo unitario congelado (promedio; si no hay, el último costo). */
+    costoUnitario: number | null;
     tasaIva: number;
     tasaIeps: number;
     ivaLinea: number;
@@ -348,6 +350,12 @@ export async function executeSale(
       usaLotes: producto.usaLotes === true,
       series,
       lotes: [],
+      costoUnitario:
+        producto.costoPromedio != null
+          ? Number(producto.costoPromedio)
+          : producto.precioCompra != null
+            ? Number(producto.precioCompra)
+            : null,
       ...tasasProducto(producto, ivaNegocio),
       ivaLinea: 0,
       iepsLinea: 0,
@@ -520,6 +528,7 @@ export async function executeSale(
         codigoItem: l.codigoItem,
         cantidad: l.cantidad,
         precioMomento: l.precioUnitario,
+        ...(l.costoUnitario != null ? { costoUnitario: l.costoUnitario } : {}),
         descuentoLinea: l.descuentoLinea,
         promocion: l.promocion,
         ...(l.lotes.length ? { lotes: l.lotes as unknown as Prisma.InputJsonValue } : {}),

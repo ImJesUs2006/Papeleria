@@ -19,6 +19,8 @@ export interface ResultadoVentaPDF {
   nombreCliente: string | null;
   fechaHora: string;
   offline: boolean;
+  /** Mensaje del negocio al pie (Configuración → Punto de Venta). */
+  mensajeTicket?: string | null;
   items: Array<{
     descripcion: string;
     cantidad: number;
@@ -121,7 +123,7 @@ function construirStream(lineas: LineaPDF[]): { streams: string[]; paginas: numb
 /** Construye el documento PDF completo y devuelve sus bytes. */
 export function construirTicketPDF(resultado: ResultadoVentaPDF, negocio: string): Uint8Array {
   const lineas: LineaPDF[] = [];
-  lineas.push({ texto: negocio.toUpperCase() || "PAPELERÍA", negrita: true, tam: 14 });
+  lineas.push({ texto: negocio.toUpperCase() || "MI NEGOCIO", negrita: true, tam: 14 });
   lineas.push({ texto: "Comprobante de venta", tam: 9, der: new Date(resultado.fechaHora).toLocaleString("es-MX") });
   lineas.push({ texto: `Folio: ${resultado.folioVenta}`, tam: 9, der: resultado.offline ? "OFFLINE" : "EN LÍNEA" });
   if (resultado.nombreCliente) {
@@ -149,7 +151,25 @@ export function construirTicketPDF(resultado: ResultadoVentaPDF, negocio: string
   if (resultado.cambio != null && resultado.cambio > 0) {
     lineas.push({ texto: "CAMBIO A ENTREGAR", negrita: true, tam: 9, der: pdfMoneda(resultado.cambio) });
   }
-  lineas.push({ texto: "¡Gracias por su compra!", tam: 9 });
+  const mensaje = resultado.mensajeTicket?.trim();
+  if (mensaje) {
+    lineas.push({ doble: true });
+    // Ajuste de línea simple: el PDF no parte el texto por sí solo.
+    for (const parrafo of mensaje.split("\n")) {
+      let actual = "";
+      for (const palabra of parrafo.split(/\s+/)) {
+        if ((actual + " " + palabra).trim().length > 70) {
+          lineas.push({ texto: actual, tam: 9 });
+          actual = palabra;
+        } else {
+          actual = (actual + " " + palabra).trim();
+        }
+      }
+      if (actual) lineas.push({ texto: actual, tam: 9 });
+    }
+  } else {
+    lineas.push({ texto: "¡Gracias por su compra!", tam: 9 });
+  }
 
   return construirPDF(lineas, "A4");
 }

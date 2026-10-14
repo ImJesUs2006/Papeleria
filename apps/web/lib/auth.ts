@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { prisma } from "@papeleria/database";
 import { verifyToken, type AuthPayload } from "@/lib/jwt";
 import { tienePermiso, type PermisoModulo } from "@/lib/permisos";
+import type { FeatureFlags } from "@/lib/business-types";
 
 export type { AuthPayload } from "@/lib/jwt";
 export { signToken } from "@/lib/jwt";
@@ -22,7 +23,14 @@ export async function getSession(): Promise<AuthPayload | null> {
       activa: true,
       idNegocio: true,
       idSucursal: true,
-      negocio: { select: { activo: true } },
+      // La matriz viaja en la misma consulta: evita un segundo viaje a la BD
+      // en cada petición (la mayoría de los usuarios opera en la matriz).
+      negocio: {
+        select: {
+          activo: true,
+          sucursales: { where: { esMatriz: true }, select: { idSucursal: true }, take: 1 },
+        },
+      },
       nombre: true,
       rol: true,
       permisoCobrar: true,
@@ -37,7 +45,11 @@ export async function getSession(): Promise<AuthPayload | null> {
     ...payload,
     // El negocio SIEMPRE sale de la BD (nunca del token ni del cliente).
     idNegocio: user.idNegocio,
-    idSucursal: await resolverSucursal(user, cookieStore.get(COOKIE_SUCURSAL)?.value),
+    idSucursal: await resolverSucursal(
+      user,
+      cookieStore.get(COOKIE_SUCURSAL)?.value,
+      user.negocio.sucursales[0]?.idSucursal ?? null
+    ),
     nombre: user.nombre,
     rol: user.rol,
     permisoCobrar: user.permisoCobrar,
@@ -61,7 +73,8 @@ export const COOKIE_SUCURSAL = "papeleria_sucursal";
  */
 async function resolverSucursal(
   user: { idNegocio: string; idSucursal: string | null; rol: string },
-  elegida: string | undefined
+  elegida: string | undefined,
+  matriz: string | null
 ): Promise<string | null> {
   if (user.idSucursal && user.rol !== "ADMINISTRADORA") return user.idSucursal;
   if (elegida && user.rol === "ADMINISTRADORA") {
@@ -71,15 +84,17 @@ async function resolverSucursal(
     });
     if (valida) return valida.idSucursal;
   }
-  if (user.idSucursal) return user.idSucursal;
-  const matriz = await prisma.sucursal.findFirst({
-    where: { idNegocio: user.idNegocio, esMatriz: true },
-    select: { idSucursal: true },
-  });
-  return matriz?.idSucursal ?? null;
+  return user.idSucursal ?? matriz;
 }
 
-export function requireAuth(allowedRoles?: string[], opciones?: { permiso?: PermisoModulo }) {
+export function requireAuth(
+  allowedRoles?: string[],
+  opciones?: {
+    permiso?: PermisoModulo;
+    /** Módulo que el negocio puede apagar en Configuración: si está apagado, 403. */
+    modulo?: keyof FeatureFlags;
+  }
+) {
   return async function middleware() {
     const session = await getSession();
 
@@ -93,6 +108,14 @@ export function requireAuth(allowedRoles?: string[], opciones?: { permiso?: Perm
       !(opciones?.permiso && tienePermiso(session, opciones.permiso))
     ) {
       return { error: "Sin permisos", status: 403 };
+    }
+
+    // Los módulos apagados no solo se ocultan del menú: el servidor también
+    // los rechaza (alguien podría llamar la API directamente).
+    if (opciones?.modulo) {
+      const { requireFeature } = await import("@/lib/feature-flags");
+      const flag = await requireFeature(opciones.modulo, session.idNegocio);
+      if (!flag.allowed) return { error: flag.error, status: 403 };
     }
 
     return { user: session };

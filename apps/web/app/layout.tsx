@@ -5,7 +5,7 @@ import { RegistroServiceWorker } from "@/components/registro-sw";
 
 export const metadata: Metadata = {
   title: "Papeleria SaaS - Sistema de Gestión",
-  description: "Sistema de gestión integral para papelerías",
+  description: "Punto de venta e inventario para papelerías, abarrotes, farmacias, boutiques, ferreterías y servicios",
   manifest: "/manifest.webmanifest",
 };
 

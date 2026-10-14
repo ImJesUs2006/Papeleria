@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, Loader2, Plus, Trash2, Truck } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { notificar } from "@/store/notificaciones";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useAuthStore } from "@/store/auth";
 
@@ -34,7 +34,6 @@ export default function TraspasosPage() {
   const [traspasos, setTraspasos] = useState<Traspaso[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
 
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
@@ -68,7 +67,6 @@ export default function TraspasosPage() {
 
   const enviar = async () => {
     setEnviando(true);
-    setError(null);
     try {
       const res = await fetch("/api/traspasos", {
         method: "POST",
@@ -84,12 +82,12 @@ export default function TraspasosPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo registrar el traspaso");
-      setAviso(`Traspaso ${data.folio} registrado`);
+      notificar.exito(`Traspaso ${data.folio} registrado`);
       setLineas([{ codigoItem: "", cantidad: "1" }]);
       setNotas("");
       cargar();
     } catch (e: any) {
-      setError(e.message);
+      notificar.error("No se registró el traspaso", e.message);
     } finally {
       setEnviando(false);
     }
@@ -102,7 +100,7 @@ export default function TraspasosPage() {
     lineas.some((l) => l.codigoItem.trim() && Number(l.cantidad) > 0);
 
   return (
-    <DashboardLayout>
+    <>
       <ErrorBoundary>
         <div className="p-6 space-y-4">
           <div>
@@ -113,11 +111,6 @@ export default function TraspasosPage() {
             </p>
           </div>
 
-          {aviso && (
-            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-              {aviso}
-            </div>
-          )}
           {error && (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {error}
@@ -248,6 +241,6 @@ export default function TraspasosPage() {
           </div>
         </div>
       </ErrorBoundary>
-    </DashboardLayout>
+    </>
   );
 }

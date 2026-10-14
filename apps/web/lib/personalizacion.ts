@@ -68,7 +68,15 @@ export function presetPorGiro(tipo: TipoNegocio | string | null | undefined): Pe
   };
   switch (tipo) {
     case "PAPELERIA_RETAIL":
-      return { ...base, usarTipoImpresion: true, camposProducto: [campo("marca", "Marca")] };
+      return {
+        ...base,
+        usarTipoImpresion: true,
+        camposProducto: [
+          campo("marca", "Marca"),
+          campo("linea", "Línea", "lista", ["Escolar", "Oficina", "Arte y manualidades", "Regalos", "Cómputo"]),
+          campo("presentacion", "Presentación", "lista", ["Pieza", "Paquete", "Caja", "Resma"]),
+        ],
+      };
     case "FARMACIA":
       return {
         ...base,
@@ -106,15 +114,20 @@ export function presetPorGiro(tipo: TipoNegocio | string | null | undefined): Pe
     case "ABARROTES":
       return {
         ...base,
-        camposProducto: [campo("marca", "Marca"), campo("presentacion", "Presentación")],
+        camposProducto: [
+          campo("marca", "Marca"),
+          campo("contenido", "Contenido neto"),
+          campo("presentacion", "Presentación", "lista", ["Pieza", "Paquete", "Caja", "Granel"]),
+        ],
       };
     case "SERVICIOS":
       return {
         ...base,
         vocabulario: { ...base.vocabulario, producto: "Servicio", productos: "Servicios", recarga: "Servicio" },
+        camposProducto: [campo("duracion", "Duración (min)", "numero"), campo("responsable", "Responsable")],
       };
     case "MIXTO":
-      return { ...base, usarTipoImpresion: true };
+      return { ...base, usarTipoImpresion: true, camposProducto: [campo("marca", "Marca")] };
     default:
       return base;
   }

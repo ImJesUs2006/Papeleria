@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Pause, Play, Plus, Tag, Trash2 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Modal } from "@/components/ui/modal";
 import { promocionVigente } from "@/lib/descuentos";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 interface Promocion {
   idPromocion: string;
@@ -107,6 +107,7 @@ export default function PromocionesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo crear la promoción");
       setAbierto(false);
+      notificar.exito("Promoción creada", form.nombre);
       await cargar();
     } catch (e: any) {
       setErrorForm(e.message);
@@ -116,22 +117,26 @@ export default function PromocionesPage() {
   };
 
   const alternar = async (p: Promocion) => {
-    await fetch(`/api/promociones/${p.idPromocion}`, {
+    const res = await fetch(`/api/promociones/${p.idPromocion}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activa: !p.activa }),
-    });
+    }).catch(() => null);
+    if (res?.ok) notificar.exito(p.activa ? "Promoción pausada" : "Promoción activada", p.nombre);
+    else notificar.error("No se pudo cambiar la promoción", p.nombre);
     cargar();
   };
 
   const eliminar = async (p: Promocion) => {
     if (!window.confirm(`¿Eliminar la promoción "${p.nombre}"? Las ventas pasadas no cambian.`)) return;
-    await fetch(`/api/promociones/${p.idPromocion}`, { method: "DELETE" });
+    const res = await fetch(`/api/promociones/${p.idPromocion}`, { method: "DELETE" }).catch(() => null);
+    if (res?.ok) notificar.exito("Promoción eliminada", p.nombre);
+    else notificar.error("No se pudo eliminar la promoción", p.nombre);
     cargar();
   };
 
   return (
-    <DashboardLayout>
+    <>
       <ErrorBoundary>
         <div className="p-6 space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -344,6 +349,6 @@ export default function PromocionesPage() {
           </div>
         </Modal>
       </ErrorBoundary>
-    </DashboardLayout>
+    </>
   );
 }

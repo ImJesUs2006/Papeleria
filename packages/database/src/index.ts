@@ -6,4 +6,7 @@ export const prisma = globalForPrisma.prisma || new PrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-export * from "@prisma/client";
+// Valores explícitos (Turbopack no puede reexportar con `export *` un
+// módulo CommonJS sin avisos) y todos los tipos de modelos.
+export { Prisma, PrismaClient } from "@prisma/client";
+export type * from "@prisma/client";

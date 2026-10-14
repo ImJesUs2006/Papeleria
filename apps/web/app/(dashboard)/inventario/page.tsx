@@ -23,7 +23,6 @@ import {
   Plus,
   History,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { QuickEdit } from "@/components/inventario/quick-edit";
 import { KardexHistorial } from "@/components/inventario/kardex-historial";
 import {
@@ -335,7 +334,7 @@ export default function InventarioPage() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -997,6 +996,6 @@ export default function InventarioPage() {
           usarUbicaciones={usarUbicaciones}
         />
       </div>
-    </DashboardLayout>
+    </>
   );
 }

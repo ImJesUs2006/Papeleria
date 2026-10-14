@@ -9,20 +9,19 @@ import {
   Lock,
   AlertTriangle,
   Plus,
-  CheckCircle2,
   Loader2,
   History,
   ReceiptText,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { CorteCiego } from "@/components/caja/corte-ciego";
 import { HistorialCaja } from "@/components/caja/historial";
 import { TicketsSesion } from "@/components/caja/tickets-sesion";
 import { CajasAbiertas } from "@/components/caja/cajas-abiertas";
 import { AccionesSesion } from "@/components/caja/abono-retiro";
 import { useAuthStore } from "@/store/auth";
-import { useConfigStore } from "@/store/config";
+import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 interface SesionCaja {
   idCaja: string;
@@ -46,7 +45,6 @@ export default function CajaPage() {
   const [ingresoPapa, setIngresoPapa] = useState("");
   const [ingresoRecarga, setIngresoRecarga] = useState("");
   const [procesando, setProcesando] = useState<FlujoIngreso | null>(null);
-  const [notaOK, setNotaOK] = useState<string | null>(null);
   const [cargandoEstado, setCargandoEstado] = useState(true);
   const [tab, setTab] = useState<"sesion" | "tickets" | "historial">("sesion");
   const rol = useAuthStore((s) => s.rol);
@@ -58,6 +56,7 @@ export default function CajaPage() {
   );
   // Fase 12 · feature flag: el panel de Recargas telephone bosses solo se
   // muestra si el negocio lo activó en Configuración.
+  const { vocabulario } = usePersonalizacion();
   const recargasActivas = useConfigStore(
     (s) => s.config?.featureFlags?.recargas ?? false
   );
@@ -126,7 +125,6 @@ export default function CajaPage() {
     if (isNaN(monto) || monto <= 0) return;
 
     setProcesando(tipo);
-    setNotaOK(null);
     try {
       const res = await fetch("/api/caja/ingreso", {
         method: "POST",
@@ -139,19 +137,24 @@ export default function CajaPage() {
         setSesionActual((prev) => (prev ? { ...prev, ...zeroTotals(data) } : prev));
         if (tipo === "PAPELERIA") setIngresoPapa("");
         else setIngresoRecarga("");
-        setNotaOK(
+        notificar.exito(
           tipo === "PAPELERIA"
-            ? `Ingreso papelería por $${monto.toFixed(2)} registrado`
+            ? `Ingreso por $${monto.toFixed(2)} registrado`
             : `Recarga por $${monto.toFixed(2)} registrada`
         );
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notificar.error("No se registró el ingreso", data.error);
       }
+    } catch {
+      notificar.error("No se registró el ingreso", "Sin conexión con el servidor");
     } finally {
       setProcesando(null);
     }
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-4xl mx-auto">
         {esAdmin && (
           <div className="mb-6">
@@ -314,27 +317,6 @@ export default function CajaPage() {
               </button>
             </div>
 
-            {/* Confirmación inline de ingreso registrado */}
-            <AnimatePresence>
-              {notaOK && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-3 bg-acento/10 border border-acento/40 rounded-xl px-4 py-3"
-                >
-                  <CheckCircle2 className="h-5 w-5 text-acento shrink-0" />
-                  <p className="text-sm text-gray-100 flex-1">{notaOK}</p>
-                  <button
-                    onClick={() => setNotaOK(null)}
-                    className="text-xs text-muted hover:text-gray-100"
-                  >
-                    Cerrar
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* SEPARACIÓN DE FLUJOS - CRÍTICO */}
             {sesionActual.estado === "EN_CIERRE" ? (
               <div className="bg-surface-800 border-2 border-rose-500/40 rounded-2xl p-8 text-center">
@@ -367,8 +349,8 @@ export default function CajaPage() {
                     <TrendingUp className="h-5 w-5 text-acento" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-100">Papelería</h3>
-                    <p className="text-xs text-muted">Ventas de productos</p>
+                    <h3 className="font-bold text-gray-100">Ventas de mostrador</h3>
+                    <p className="text-xs text-muted">Ventas de {vocabulario.productos.toLowerCase()}</p>
                   </div>
                 </div>
 
@@ -395,7 +377,7 @@ export default function CajaPage() {
                 <div className="border-t border-acento/20 pt-4">
                   <label className="block mb-2">
                     <span className="text-xs font-bold text-acento uppercase tracking-wider">
-                      Registrar ingreso papelería
+                      Registrar ingreso manual
                     </span>
                     <div className="flex gap-2 mt-2">
                       <input
@@ -549,12 +531,11 @@ export default function CajaPage() {
               onCerrada={() => {
                 setSesionActual(null);
                 setShowCorteCiego(false);
-                setNotaOK(null);
               }}
             />
           )}
         </AnimatePresence>
       </div>
-    </DashboardLayout>
+    </>
   );
 }

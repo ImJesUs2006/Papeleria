@@ -17,7 +17,6 @@ import {
   XCircle,
   Navigation,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
 import { RecepcionModal } from "@/components/pedidos/recepcion-modal";
 
@@ -221,7 +220,7 @@ export default function PedidosPage() {
   const totalEstimado = items.reduce((a, i) => a + i.cantidad * i.precioCotizado, 0);
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -483,6 +482,6 @@ export default function PedidosPage() {
           cargar();
         }}
       />
-    </DashboardLayout>
+    </>
   );
 }

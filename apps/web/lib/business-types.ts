@@ -180,7 +180,31 @@ export const DEFAULT_USAR_CADUCIDAD = false;
 export const DEFAULT_USAR_UBICACIONES = true;
 export const DEFAULT_REQUERIR_FONDO_INICIAL = true;
 
-/** Pre-configuración por tipo de negocio (Marca Blanca). */
+/** Para qué sirve cada módulo (Configuración y asistente inicial). */
+export const MODULOS_INFO: Record<keyof FeatureFlags, { label: string; desc: string }> = {
+  inventario: {
+    label: "Inventario",
+    desc: "Catálogo, existencias, etiquetas y carga masiva. Apágalo solo si no vendes artículos físicos.",
+  },
+  facturacion: { label: "Facturación electrónica", desc: "Emisión de comprobantes a partir de las ventas." },
+  dashboard: { label: "Dashboard y reportes", desc: "Métricas del día, gráficas y reportes exportables." },
+  proveedores: {
+    label: "Proveedores y compras",
+    desc: "Pedidos a proveedores, recepción de mercancía, costos y cuentas por pagar.",
+  },
+  bitacora: { label: "Bitácora de auditoría", desc: "Quién hizo qué y cuándo (las acciones se registran siempre)." },
+  recargas: { label: "Recargas y servicios", desc: "Panel de recargas telefónicas / pago de servicios en Caja." },
+  imagenesCloudinary: {
+    label: "Imágenes en la nube",
+    desc: "Fotos de producto en Cloudinary (requiere credenciales del servidor).",
+  },
+};
+
+/**
+ * Plantilla por giro (Marca Blanca): módulos, pagos y preferencias con las
+ * que arranca cada tipo de negocio. Todo se puede ajustar después en
+ * Configuración; "Aplicar plantilla" vuelve a estos valores.
+ */
 export const PRESETS_POR_NEGOCIO: Record<
   TipoNegocio,
   Pick<
@@ -192,99 +216,61 @@ export const PRESETS_POR_NEGOCIO: Record<
     | "usarUbicaciones"
   >
 > = {
+  // Papelería: resurte con proveedores y es común que venda recargas.
   PAPELERIA_RETAIL: {
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, proveedores: true, recargas: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
     usarUbicaciones: true,
   },
+  // Abarrotes: la vigencia de comestibles es crítica; recargas muy comunes.
   ABARROTES: {
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true, recargas: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
-    // Abarrotes: la vigencia de comestibles es crítica.
     usarCaducidad: true,
     usarUbicaciones: true,
   },
+  // Servicios: el catálogo sigue disponible (los servicios no llevan
+  // existencias), sin proveedores ni ubicaciones.
   SERVICIOS: {
-    featureFlags: {
-      inventario: false,
-      facturacion: true,
-      dashboard: true,
-      proveedores: false,
-      bitacora: true,
-      recargas: false,
-      imagenesCloudinary: false,
-    },
-    metodosPago: ["TRANSFERENCIA", "TARJETA_TERMINAL"],
-    politicaStockOffline: "RECHAZAR",
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true },
+    metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
+    politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
     usarUbicaciones: false,
   },
   MIXTO: {
-    featureFlags: {
-      inventario: true,
-      facturacion: true,
-      dashboard: true,
-      proveedores: true,
-      bitacora: true,
-      recargas: true,
-      imagenesCloudinary: false,
-    },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true, recargas: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
     usarUbicaciones: true,
   },
   FERRETERIA: {
-    featureFlags: {
-      inventario: true,
-      facturacion: true,
-      dashboard: true,
-      proveedores: true,
-      bitacora: true,
-      recargas: true,
-      imagenesCloudinary: false,
-    },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
     usarUbicaciones: true,
   },
+  // Farmacia: lote/caducidad visibles y nunca vender sin existencia.
   FARMACIA: {
-    featureFlags: {
-      inventario: true,
-      facturacion: true,
-      dashboard: true,
-      proveedores: true,
-      bitacora: true,
-      recargas: true,
-      imagenesCloudinary: false,
-    },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
-    // La farmacia exige registros de lote/vigencia: no se permite vender
-    // con stock negativo y la caducidad se muestra por defecto.
     politicaStockOffline: "RECHAZAR",
     usarCaducidad: true,
     usarUbicaciones: true,
   },
+  // Boutique: variantes por talla/color; no bloquea una venta si la prenda
+  // aún no fue cargada al inventario.
   BOUTIQUE: {
-    featureFlags: {
-      inventario: true,
-      facturacion: true,
-      dashboard: true,
-      proveedores: true,
-      bitacora: true,
-      recargas: true,
-      imagenesCloudinary: false,
-    },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
-    // Moda/prendas: el inventario por talla/color es clave, pero la plantilla
-    // no bloquea una venta si el artículo aún no fue cargado.
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
-    usarUbicaciones: true,
+    usarUbicaciones: false,
   },
 };
 

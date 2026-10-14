@@ -19,8 +19,7 @@ import {
   FileText,
   Coins,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { normalizarPersonalizacion } from "@/lib/personalizacion";
+import { normalizarPersonalizacion, presetPorGiro } from "@/lib/personalizacion";
 import { UserManagement } from "@/components/configuracion/user-management";
 import { PersonalizacionGiroEditor } from "@/components/configuracion/personalizacion-giro";
 import { HardwarePanel } from "@/components/configuracion/hardware-panel";
@@ -36,6 +35,8 @@ import {
   TIPO_NEGOCIO,
   METODOS_PAGO_DISPONIBLES,
   VALID_FLAG_KEYS,
+  MODULOS_INFO,
+  PRESETS_POR_NEGOCIO,
   DEFAULT_FEATURE_FLAGS,
   TEMAS_BASE,
   DEFAULT_TEMA_BASE,
@@ -57,16 +58,8 @@ import {
   type TipoNegocio,
 } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
-const FLAG_LABELS: Record<keyof FeatureFlags, string> = {
-  inventario: "Inventario",
-  facturacion: "Facturación electrónica",
-  dashboard: "Dashboard de métricas",
-  proveedores: "Proveedores y pedidos",
-  bitacora: "Bitácora de auditoría",
-  recargas: "Recargas (Control de Caja)",
-  imagenesCloudinary: "Imágenes de producto (Cloudinary)",
-};
 
 /** Tamaño máximo del logo en bytes (base64 ≈ 1 MB). */
 const LOGO_MAX_BYTES = 1_000_000;
@@ -207,7 +200,7 @@ export default function ConfiguracionPage() {
   const [tab, setTab] = useState<"usuarios" | "negocio" | "equipo">("usuarios");
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-5xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -289,7 +282,7 @@ export default function ConfiguracionPage() {
           )}
         </AnimatePresence>
       </div>
-    </DashboardLayout>
+    </>
   );
 }
 
@@ -298,7 +291,6 @@ function NegocioConfigPanel() {
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
   const [marcaError, setMarcaError] = useState<string | null>(null);
   const [seccion, setSeccion] = useState<"identidad" | "pos" | "financiero" | "modulos">("identidad");
   const refreshConfig = useConfigStore((s) => s.refresh);
@@ -377,8 +369,6 @@ function NegocioConfigPanel() {
 const guardar = async () => {
     if (!config || guardando) return; // anti doble envío: el PUT se bloquea (isSubmitting)
     setGuardando(true);
-    setError(null);
-    setOk(false);
     try {
       const res = await fetch("/api/configuracion/negocio", {
         method: "PUT",
@@ -417,10 +407,12 @@ const guardar = async () => {
         const serverOk = refreshConfig(data.config, data.firma, data.sessionKey ?? "");
         if (serverOk) setConfig(normalizeConfig(data.config));
       }
-      setOk(true);
-      setTimeout(() => setOk(false), 2500);
+      notificar.exito(
+        "Configuración guardada",
+        data.config?.configVersion ? `Versión ${data.config.configVersion}` : undefined
+      );
     } catch (e: any) {
-      setError(e.message);
+      notificar.error("No se guardó la configuración", e.message);
     } finally {
       setGuardando(false);
     }
@@ -447,6 +439,27 @@ const guardar = async () => {
         : [...c.metodosPago, m];
       return { ...c, metodosPago: metodos };
     });
+  };
+
+  // Vuelve a la plantilla del giro: módulos, pagos, caducidad/ubicaciones y
+  // vocabulario. No guarda: la administradora revisa y pulsa Guardar.
+  const aplicarPlantilla = () => {
+    if (!config || guardando) return;
+    const p = PRESETS_POR_NEGOCIO[config.tipoNegocio];
+    if (!p) return;
+    setConfig({
+      ...config,
+      featureFlags: { ...p.featureFlags },
+      metodosPago: [...p.metodosPago],
+      politicaStockOffline: p.politicaStockOffline,
+      usarCaducidad: p.usarCaducidad,
+      usarUbicaciones: p.usarUbicaciones,
+      personalizacion: presetPorGiro(config.tipoNegocio),
+    });
+    notificar.info(
+      `Plantilla de ${TIPO_NEGOCIO[config.tipoNegocio]} aplicada`,
+      "Revisa los cambios y pulsa Guardar para conservarlos."
+    );
   };
 
   const togglePreferencia = (
@@ -482,17 +495,6 @@ const guardar = async () => {
   return (
     <fieldset disabled={guardando} className="contents">
       <div className="bg-surface-800 border border-surface-600 rounded-2xl p-6 space-y-5">
-      {error && (
-        <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-          <AlertTriangle className="h-4 w-4 text-neon-red" /> {error}
-        </div>
-      )}
-      {ok && (
-        <div className="flex items-center gap-2 bg-neon-green/10 border border-neon-green/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-          <Check className="h-4 w-4 text-neon-green" /> Configuración guardada (v{config.configVersion})
-        </div>
-      )}
-
       {/* Sub-pestañas de configuración */}
       <div className="flex flex-wrap gap-1 bg-surface-700 p-1 rounded-xl w-fit">
         {(
@@ -500,7 +502,7 @@ const guardar = async () => {
             { id: "identidad" as const, label: "Identidad y Tema", icon: Store },
             { id: "pos" as const, label: "Punto de Venta", icon: Printer },
             { id: "financiero" as const, label: "Financiero", icon: Landmark },
-            { id: "modulos" as const, label: "Módulos Avanzados", icon: Boxes },
+            { id: "modulos" as const, label: "Módulos", icon: Boxes },
           ]
         ).map(({ id, label, icon: Icon }) => (
           <button
@@ -551,6 +553,13 @@ const guardar = async () => {
               </option>
             ))}
           </select>
+          <span className="mt-1 block text-[11px] text-muted">
+            Al cambiar de giro, ve a{" "}
+            <button type="button" onClick={() => setSeccion("modulos")} className="font-semibold text-acento underline">
+              Módulos → Aplicar plantilla
+            </button>{" "}
+            para cargar sus módulos y vocabulario.
+          </span>
         </label>
         <label className="block">
           <span className="text-xs text-muted mb-1 block">Moneda</span>
@@ -824,19 +833,35 @@ const guardar = async () => {
           exit={{ opacity: 0, y: -8 }}
           className="space-y-5"
         >
-        <p className="text-[11px] text-muted">
-          Al guardar se aplica una combinación segura por módulo: los que no
-          edites conservan su estado actual (ninguno se apaga por sí solo).
-        </p>
+        <div className="flex flex-col gap-3 rounded-xl border border-surface-500 bg-surface-700 p-4 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-gray-100">
+              Plantilla de {TIPO_NEGOCIO[config.tipoNegocio]}
+            </p>
+            <p className="text-xs text-muted">
+              Restablece módulos, métodos de pago, caducidad/ubicaciones y vocabulario a lo
+              recomendado para el giro. Cambia el giro en &quot;Identidad y Tema&quot;.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={aplicarPlantilla}
+            className="shrink-0 rounded-xl border border-acento/50 px-4 py-2 text-sm font-bold text-acento hover:bg-acento/10"
+          >
+            Aplicar plantilla
+          </button>
+        </div>
       <div>
-        <span className="text-xs text-muted mb-2 block">Módulos activos (Feature Flags)</span>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <span className="text-xs text-muted mb-2 block">Módulos activos</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {VALID_FLAG_KEYS.map((flag) => (
             <button
               key={flag}
+              type="button"
               onClick={() => toggleFlag(flag)}
+              aria-pressed={config.featureFlags[flag]}
               className={cn(
-                "flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm text-left transition-all",
+                "flex items-start gap-2 px-3 py-2.5 rounded-xl border text-sm text-left transition-all",
                 config.featureFlags[flag]
                   ? "bg-neon-green/10 border-neon-green/40 text-gray-100"
                   : "bg-surface-700 border-surface-500 text-muted"
@@ -844,7 +869,7 @@ const guardar = async () => {
             >
               <span
                 className={cn(
-                  "h-4 w-4 rounded-md border flex items-center justify-center shrink-0",
+                  "mt-0.5 h-4 w-4 rounded-md border flex items-center justify-center shrink-0",
                   config.featureFlags[flag]
                     ? "bg-neon-green border-neon-green"
                     : "border-surface-400"
@@ -852,10 +877,17 @@ const guardar = async () => {
               >
                 {config.featureFlags[flag] && <Check className="h-3 w-3 text-btn-ink" />}
               </span>
-              {FLAG_LABELS[flag]}
+              <span className="min-w-0">
+                <span className="block font-semibold">{MODULOS_INFO[flag].label}</span>
+                <span className="block text-[11px] leading-snug text-muted">{MODULOS_INFO[flag].desc}</span>
+              </span>
             </button>
           ))}
         </div>
+        <p className="mt-2 text-[11px] text-muted">
+          Un módulo apagado desaparece del menú y su información queda resguardada; el servidor
+          también rechaza su uso hasta que lo vuelvas a activar.
+        </p>
       </div>
 
       </motion.div>

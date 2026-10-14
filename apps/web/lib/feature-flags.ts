@@ -221,12 +221,14 @@ export async function getSignedBusinessConfig(idNegocio: string) {
   return buildSignedConfig(config);
 }
 
-const FLAG_TO_MODULO: Record<string, string> = {
-  inventario: "INVENTARIO",
-  facturacion: "CAJA",
-  dashboard: "REPORTES",
-  proveedores: "INVENTARIO",
-  bitacora: "BITACORA",
+const FLAG_TO_MODULO: Record<keyof FeatureFlags, string> = {
+  inventario: "Inventario",
+  facturacion: "Facturación",
+  dashboard: "Dashboard",
+  proveedores: "Proveedores y compras",
+  bitacora: "Bitácora",
+  recargas: "Recargas",
+  imagenesCloudinary: "Imágenes en la nube",
 };
 
 /** Middleware de flag: deniega si el módulo no está habilitado en el negocio. */
@@ -235,7 +237,7 @@ export async function requireFeature(flag: keyof FeatureFlags, idNegocio: string
   if (!config.featureFlags[flag]) {
     return {
       allowed: false as const,
-      error: `El módulo ${FLAG_TO_MODULO[flag]} no está habilitado para este plan/negocio`,
+      error: `El módulo ${FLAG_TO_MODULO[flag]} está desactivado. Actívalo en Configuración → Módulos.`,
       modulo: FLAG_TO_MODULO[flag],
     };
   }

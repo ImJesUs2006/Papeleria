@@ -14,7 +14,6 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 import { Modal } from "@/components/ui/modal";
@@ -140,7 +139,7 @@ export default function BitacoraPage() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -410,7 +409,7 @@ export default function BitacoraPage() {
           }}
         />
       </div>
-    </DashboardLayout>
+    </>
   );
 }
 

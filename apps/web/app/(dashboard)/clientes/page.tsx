@@ -13,7 +13,6 @@ import {
   Phone,
   ShoppingBag,
 } from "lucide-react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { VirtualCard } from "@/components/pos/virtual-card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -212,7 +211,7 @@ export default function ClientesPage() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="p-6 space-y-4">
         <motion.div
           initial={{ y: -8, opacity: 0 }}
@@ -521,6 +520,6 @@ export default function ClientesPage() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </>
   );
 }

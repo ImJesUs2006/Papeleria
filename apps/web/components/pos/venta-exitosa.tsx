@@ -23,6 +23,8 @@ interface Props {
   result: ResultadoVenta;
   anchoTicket?: AnchoTicketImpresion;
   nombreNegocio: string;
+  /** Mensaje al pie del ticket (políticas, agradecimiento) de Configuración. */
+  mensajeTicket?: string | null;
   onClose: () => void;
 }
 
@@ -31,7 +33,7 @@ interface Props {
  * (Framer Motion), el cambio a entregar se muestra gigante, y la cajera
  * imprime en térmica (Fase 11) o descarga el PDF (lib/pdf.ts).
  */
-export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose }: Props) {
+export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, mensajeTicket, onClose }: Props) {
   const ticketRef = useRef<HTMLDivElement>(null);
   const ancho = anchoTicket ?? "80mm";
   const cambio = result.cambio != null && Number(result.cambio) > 0 ? Number(result.cambio) : null;
@@ -87,7 +89,7 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                 transition={{ type: "spring", stiffness: 90, damping: 16 }}
               >
                 <div className="bg-white text-black rounded px-2 py-2 text-[10px] leading-snug font-mono text-left">
-                  <p className="text-center font-black tracking-wide uppercase">{nombreNegocio || "Papelería"}</p>
+                  <p className="text-center font-black tracking-wide uppercase">{nombreNegocio || "Mi negocio"}</p>
                   <p className="text-center mb-1">Comprobante de venta</p>
                   <p className="border-b border-dashed border-gray-300 pb-1 mb-1">
                     Folio: {result.folioVenta}
@@ -122,7 +124,9 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                   </div>
                   <p className="mt-1">{ETIQUETA_PAGO[result.metodoPago] ?? result.metodoPago}</p>
                   {result.nombreCliente && <p>Cliente: {result.nombreCliente}</p>}
-                  <p className="text-center mt-1">¡Gracias por su compra!</p>
+                  <p className="text-center mt-1 whitespace-pre-line break-anywhere">
+                    {mensajeTicket?.trim() || "¡Gracias por su compra!"}
+                  </p>
                 </div>
               </motion.div>
             </div>
@@ -194,6 +198,7 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                           metodoPago: result.metodoPago,
                           cambio: result.cambio,
                           cliente: result.nombreCliente,
+                          mensaje: mensajeTicket?.trim() || "¡Gracias por su compra!",
                         },
                         ancho
                       )
@@ -224,6 +229,7 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                     nombreCliente: result.nombreCliente,
                     fechaHora: result.fechaHora,
                     offline: result.offline,
+                    mensajeTicket,
                     items: result.items,
                   },
                   nombreNegocio

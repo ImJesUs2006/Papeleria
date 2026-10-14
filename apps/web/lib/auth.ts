@@ -21,6 +21,7 @@ export async function getSession(): Promise<AuthPayload | null> {
     select: {
       activa: true,
       idNegocio: true,
+      idSucursal: true,
       negocio: { select: { activo: true } },
       nombre: true,
       rol: true,
@@ -36,6 +37,7 @@ export async function getSession(): Promise<AuthPayload | null> {
     ...payload,
     // El negocio SIEMPRE sale de la BD (nunca del token ni del cliente).
     idNegocio: user.idNegocio,
+    idSucursal: await resolverSucursal(user, cookieStore.get(COOKIE_SUCURSAL)?.value),
     nombre: user.nombre,
     rol: user.rol,
     permisoCobrar: user.permisoCobrar,
@@ -50,6 +52,33 @@ export async function getSession(): Promise<AuthPayload | null> {
  * también pasa quien tenga ese permiso de módulo (perfiles / permisos
  * granulares): p. ej. un encargado de almacén con permiso de inventario.
  */
+/** Cookie con la sucursal que eligió la administradora para operar. */
+export const COOKIE_SUCURSAL = "papeleria_sucursal";
+
+/**
+ * Sucursal de la sesión: la asignada al usuario; si no tiene, la que eligió
+ * una administradora (cookie, validada contra su negocio); si no, la matriz.
+ */
+async function resolverSucursal(
+  user: { idNegocio: string; idSucursal: string | null; rol: string },
+  elegida: string | undefined
+): Promise<string | null> {
+  if (user.idSucursal && user.rol !== "ADMINISTRADORA") return user.idSucursal;
+  if (elegida && user.rol === "ADMINISTRADORA") {
+    const valida = await prisma.sucursal.findFirst({
+      where: { idSucursal: elegida, idNegocio: user.idNegocio, activa: true },
+      select: { idSucursal: true },
+    });
+    if (valida) return valida.idSucursal;
+  }
+  if (user.idSucursal) return user.idSucursal;
+  const matriz = await prisma.sucursal.findFirst({
+    where: { idNegocio: user.idNegocio, esMatriz: true },
+    select: { idSucursal: true },
+  });
+  return matriz?.idSucursal ?? null;
+}
+
 export function requireAuth(allowedRoles?: string[], opciones?: { permiso?: PermisoModulo }) {
   return async function middleware() {
     const session = await getSession();

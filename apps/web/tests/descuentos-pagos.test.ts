@@ -97,6 +97,18 @@ describe("validarPromocion", () => {
     expect(validarPromocion({ nombre: "Buen fin", tipo: "PORCENTAJE", valor: 15 }).valor).toBe(15);
   });
 
+  it("un día suelto cuenta completo: inicio 00:00 y fin 23:59 locales", () => {
+    const p = validarPromocion({
+      nombre: "Fin de semana",
+      tipo: "PORCENTAJE",
+      valor: 10,
+      fechaInicio: "2026-10-17",
+      fechaFin: "2026-10-18",
+    });
+    expect([p.fechaInicio.getHours(), p.fechaInicio.getDate()]).toEqual([0, 17]);
+    expect([p.fechaFin!.getHours(), p.fechaFin!.getMinutes(), p.fechaFin!.getDate()]).toEqual([23, 59, 18]);
+  });
+
   it("rechaza capturas incoherentes", () => {
     expect(() => validarPromocion({ nombre: "x", tipo: "PORCENTAJE", valor: 10 })).toThrow(PromocionError);
     expect(() => validarPromocion({ nombre: "Mal", tipo: "NXM", llevaN: 2, pagaM: 2 })).toThrow(/N mayor que M/);

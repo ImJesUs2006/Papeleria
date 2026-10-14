@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     const sesionOpen = await prisma.sesionCaja.findFirst({
-      where: { estado: "ABIERTA" },
+      where: { estado: "ABIERTA", idUsuario: user.idPersona },
       orderBy: { horaApertura: "desc" },
     });
 

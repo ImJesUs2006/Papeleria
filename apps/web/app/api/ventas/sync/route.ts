@@ -5,6 +5,7 @@ import { puedeCobrar } from "@/lib/permisos";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { moverStock } from "@/lib/existencias";
 import { elegirPrecioUnitario, sufijoFolio, fechaFolio } from "@/lib/sales";
 import { calcularImpuestos, tasasProducto } from "@/lib/impuestos";
 import { aplicarDescuentos } from "@/lib/descuentos";
@@ -290,10 +291,11 @@ export async function POST(request: Request) {
 
           // 6. Caja: si existe una ABIERTA (de este u otro dispositivo),
           //    el ingreso se asigna para cuadrar el arqueo.
+          //    Multi-caja: va a la caja de quien sincroniza.
           const cajaAbierta = await tx.sesionCaja.findFirst({
-            where: { estado: "ABIERTA" },
+            where: { estado: "ABIERTA", idUsuario: user.idPersona },
             orderBy: { horaApertura: "desc" },
-            select: { idCaja: true },
+            select: { idCaja: true, idSucursal: true },
           });
           if (!cajaAbierta) {
             alertas.push("Sin caja abierta al sincronizar: el ingreso no quedó asignado a ningún arqueo");
@@ -311,6 +313,7 @@ export async function POST(request: Request) {
               totalNeto,
               idUsuario: cajero.idPersona,
               idCaja: cajaAbierta?.idCaja ?? null,
+              idSucursal: cajaAbierta?.idSucursal ?? user.idSucursal ?? null,
               estado: "COMPLETADA",
               metodoPago: v.metodoPago,
               referenciaTransferencia,
@@ -337,9 +340,12 @@ export async function POST(request: Request) {
               },
             });
             if (!l.esServicio) {
-              await tx.producto.update({
-                where: claveProducto(l.codigoItem),
-                data: { stockActual: { decrement: l.cantidad } },
+              // Política de stock offline: la venta YA ocurrió; se descuenta
+              // aunque quede en negativo (la alerta queda en bitácora).
+              await moverStock(tx, {
+                codigoItem: l.codigoItem,
+                delta: -l.cantidad,
+                idSucursal: cajaAbierta?.idSucursal ?? user.idSucursal,
               });
             }
           }

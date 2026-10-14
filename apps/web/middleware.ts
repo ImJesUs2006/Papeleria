@@ -47,7 +47,15 @@ export async function middleware(request: NextRequest) {
   const ZONAS: Array<{ prefijos: string[]; permiso?: "permisoInventario" | "permisoReportes" }> = [
     {
       permiso: "permisoInventario",
-      prefijos: ["/api/proveedores", "/api/pedidos", "/api/inventario", "/inventario", "/promociones"],
+      prefijos: [
+        "/api/proveedores",
+        "/api/pedidos",
+        "/api/inventario",
+        "/api/traspasos",
+        "/inventario",
+        "/promociones",
+        "/traspasos",
+      ],
     },
     { permiso: "permisoReportes", prefijos: ["/api/reportes", "/api/dashboard", "/reportes"] },
     {

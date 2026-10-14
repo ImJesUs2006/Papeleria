@@ -8,6 +8,7 @@ import {
   normalizarFechaCaducidad,
 } from "@/lib/validate-product";
 import { tenantDb } from "@/lib/tenant";
+import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existencias";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { validarAtributos } from "@/lib/personalizacion";
 import { claveCodigoBarras, claveProducto } from "@/lib/tenant-keys";
@@ -139,9 +140,14 @@ export async function GET(request: Request) {
       prisma.producto.count({ where }),
     ]);
 
+    // Multi-sucursal: el stock visible es el de la sucursal activa
+    // (`stockTotal` conserva el del negocio).
+    const conSucursal = await conStockDeSucursal(prisma, auth.user.idSucursal, productos);
+    productos = conSucursal as typeof productos;
+
     // Post-query filter: low stock (Prisma can't compare two columns in a single query)
     if (soloBajoStock) {
-      productos = productos.filter((p) => p.stockActual <= p.stockMinimo);
+      productos = productos.filter((p) => Number(p.stockActual) <= Number(p.stockMinimo));
     }
 
     return NextResponse.json({
@@ -150,6 +156,7 @@ export async function GET(request: Request) {
         descripcion: p.descripcion,
         precioUnitario: Number(p.precioUnitario),
         precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
+        stockTotal: (p as any).stockTotal ?? Number(p.stockActual),
 precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
         tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
         exentoIva: p.exentoIva === true,
@@ -278,6 +285,16 @@ precioCompra:
       });
 
       if (Number(producto.stockActual) > 0 && !producto.esServicio) {
+        // El total ya quedó en el alta; la existencia es de la sucursal activa.
+        if (user.idSucursal) {
+          await tx.existencia.create({
+            data: {
+              idSucursal: user.idSucursal,
+              codigoItem: producto.codigoItem,
+              stock: producto.stockActual,
+            },
+          });
+        }
         await registrarMovimientosKardex(tx, [
           {
             codigoItem: producto.codigoItem,
@@ -285,6 +302,7 @@ precioCompra:
             cantidad: Number(producto.stockActual),
             motivo: "Inventario inicial (alta de producto)",
             idUsuario: user.idPersona,
+            idSucursal: user.idSucursal,
           },
         ]);
       }

@@ -75,6 +75,18 @@ export async function PATCH(
     }
   }
 
+  if (body.idSucursal !== undefined) {
+    if (body.idSucursal === null || body.idSucursal === "") {
+      data.idSucursal = null;
+    } else {
+      const suc = await prisma.sucursal.findFirst({
+        where: { idSucursal: String(body.idSucursal), activa: true },
+      });
+      if (!suc) return NextResponse.json({ error: "Sucursal no encontrada" }, { status: 404 });
+      data.idSucursal = suc.idSucursal;
+    }
+  }
+
   // Perfil: asignarlo copia rol y permisos; un ajuste manual de rol o
   // permisos sin perfil desvincula al usuario de su perfil.
   if (body.idPerfil !== undefined) {
@@ -133,6 +145,7 @@ export async function PATCH(
           permisoReportes: true,
           idPerfil: true,
           perfil: { select: { nombre: true } },
+          idSucursal: true,
           ultimoLoginAt: true,
         },
       });

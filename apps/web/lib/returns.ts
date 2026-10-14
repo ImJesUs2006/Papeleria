@@ -1,6 +1,7 @@
 import type { Prisma } from "@papeleria/database";
 import { round2, ivaFraccion, sufijoFolio, fechaFolio } from "./sales";
 import { registrarMovimientosKardex } from "./kardex";
+import { moverStock } from "./existencias";
 import { puntosGanadosPorCompra, puntosRequeridos } from "./fidelidad";
 import { claveProducto } from "./tenant-keys";
 
@@ -51,6 +52,8 @@ export interface ReturnContext {
   puntos?: { valorPuntoPesos: number; pesosCompraPorPunto?: number };
   /** Tasa de IVA del negocio (porcentaje); solo rige si la venta no la trae. */
   ivaRate?: number;
+  /** Sucursal donde se recibe la mercancía devuelta. */
+  idSucursal?: string | null;
 }
 
 export interface ReturnResult {
@@ -284,10 +287,7 @@ export async function executeReturn(
     (c) => originales.get(c.codigoItem)?.esServicio !== true
   );
   for (const c of cantidadesReales) {
-    await tx.producto.update({
-      where: claveProducto(c.codigoItem),
-      data: { stockActual: { increment: c.cantidad } },
-    });
+    await moverStock(tx, { codigoItem: c.codigoItem, delta: c.cantidad, idSucursal: ctx.idSucursal });
   }
 
   // Kardex inmutable (ENTRADA por línea).
@@ -299,6 +299,7 @@ export async function executeReturn(
       cantidad: c.cantidad,
       motivo: `${tipo === "NOTA_CREDITO" ? "Nota de crédito" : "Devolución"} ${folioDevolucion}`,
       idUsuario: ctx.idUsuario,
+      idSucursal: ctx.idSucursal,
     }))
   );
 

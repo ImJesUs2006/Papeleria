@@ -17,6 +17,7 @@ import { Modal } from "@/components/ui/modal";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { PerfilesPanel, type Perfil } from "@/components/configuracion/perfiles-panel";
+import { SucursalesPanel, type Sucursal } from "@/components/configuracion/sucursales-panel";
 import { usePersonalizacion } from "@/store/config";
 
 interface Usuario {
@@ -30,6 +31,7 @@ interface Usuario {
   permisoReportes: boolean;
   idPerfil?: string | null;
   perfil?: { nombre: string } | null;
+  idSucursal?: string | null;
   ultimoLoginAt: string | null;
 }
 
@@ -79,6 +81,21 @@ export function UserManagement() {
   useEffect(() => {
     cargarPerfiles();
   }, [cargarPerfiles]);
+
+  // Sucursales (multi-sucursal): alta y asignación de cada usuario.
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
+  const cargarSucursales = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sucursales", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setSucursales(data.sucursales ?? []);
+    } catch {
+      /* sin sucursales: la gestión de usuarios sigue funcionando */
+    }
+  }, []);
+  useEffect(() => {
+    cargarSucursales();
+  }, [cargarSucursales]);
 
   const aviso = (msg: string) => {
     setNota(msg);
@@ -171,6 +188,15 @@ export function UserManagement() {
         </div>
       )}
 
+      <SucursalesPanel
+        sucursales={sucursales}
+        onError={setError}
+        onCambio={() => {
+          cargarSucursales();
+          cargar();
+        }}
+      />
+
       <PerfilesPanel
         perfiles={perfiles}
         onError={setError}
@@ -240,6 +266,28 @@ export function UserManagement() {
                             {pf.nombre}
                           </option>
                         ))}
+                      </select>
+                    )}
+                    {sucursales.filter((s) => s.activa).length > 1 && (
+                      <select
+                        value={u.idSucursal ?? ""}
+                        disabled={accionando === u.idPersona}
+                        onChange={(e) =>
+                          cambiar(u, { idSucursal: e.target.value || null } as Partial<Usuario>).then(
+                            cargarSucursales
+                          )
+                        }
+                        title="Sucursal"
+                        className="mt-1 block w-full rounded-lg border border-surface-500 bg-surface-700 px-2 py-1 text-[11px] text-slate-300 focus:outline-none"
+                      >
+                        <option value="">Matriz (por defecto)</option>
+                        {sucursales
+                          .filter((s) => s.activa && !s.esMatriz)
+                          .map((s) => (
+                            <option key={s.idSucursal} value={s.idSucursal}>
+                              {s.nombre}
+                            </option>
+                          ))}
                       </select>
                     )}
                   </td>

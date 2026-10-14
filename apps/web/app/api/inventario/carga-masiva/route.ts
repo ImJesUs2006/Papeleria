@@ -3,6 +3,8 @@ import { parseExcelBuffer } from "@/lib/excel";
 import { getSession } from "@/lib/auth";
 import { tienePermiso } from "@/lib/permisos";
 import { tenantDb } from "@/lib/tenant";
+import { moverStock, stockEnSucursal } from "@/lib/existencias";
+import { registrarMovimientosKardex } from "@/lib/kardex";
 import { claveProducto } from "@/lib/tenant-keys";
 
 interface ValidationError {
@@ -223,70 +225,62 @@ export async function POST(request: Request) {
       }
     });
 
-    // Batch upsert with transaction
+    // Alta/actualización en una transacción. El stock del archivo es el de
+    // la SUCURSAL ACTIVA: se ajusta su existencia con la diferencia y el
+    // total del negocio se mueve igual (moverStock). Kardex por cada cambio.
     if (allProducts.length > 0) {
-      // Kardex inmutable: se calcula el delta de existencia por producto
-      // (contra el stock previo) y se registra junto con el upsert.
-      const previos = await prisma.producto.findMany({
-        where: { codigoItem: { in: allProducts.map((p) => p.codigoItem) } },
-        select: { codigoItem: true, stockActual: true },
-      });
-      const stockPrevio = new Map(previos.map((p) => [p.codigoItem, Number(p.stockActual)]));
-      const movimientos: Array<{
-        codigoItem: string;
-        cantidadCambio: number;
-        tipo: "ENTRADA" | "AJUSTE";
-        motivo: string;
-        idUsuario: string;
-      }> = [];
-      for (const p of allProducts) {
-        const existia = stockPrevio.has(p.codigoItem);
-        const anterior = stockPrevio.get(p.codigoItem) ?? 0;
-        const delta = Math.round((Number(p.stockActual) - anterior) * 1000) / 1000;
-        stockPrevio.set(p.codigoItem, Number(p.stockActual));
-        if (delta === 0) continue;
-        movimientos.push({
-          codigoItem: p.codigoItem,
-          cantidadCambio: delta,
-          tipo: existia ? "AJUSTE" : "ENTRADA",
-          motivo: `Carga masiva Excel (${file.name})`.slice(0, 190),
-          idUsuario: session.idPersona,
-        });
-      }
+      const idSucursal = session.idSucursal ?? null;
+      const motivo = `Carga masiva Excel (${file.name})`.slice(0, 190);
+      await prisma.$transaction(
+        async (tx) => {
+          const vistos = new Map<string, number>();
+          for (const p of allProducts) {
+            const previo = await tx.producto.findUnique({
+              where: claveProducto(p.codigoItem),
+              select: { stockActual: true, esServicio: true },
+            });
+            const datos = {
+              descripcion: p.descripcion,
+              precioUnitario: p.precioUnitario,
+              stockMinimo: p.stockMinimo,
+              ubicacionEstante: p.ubicacionEstante,
+              proveedor: p.proveedor,
+              codigoBarras: p.codigoBarras,
+              tipoImpresion: p.tipoImpresion,
+              fechaCaducidad: p.fechaCaducidad,
+            };
+            if (!previo) {
+              await tx.producto.create({
+                data: { codigoItem: p.codigoItem, ...datos, stockActual: 0 },
+              });
+            } else {
+              await tx.producto.update({ where: claveProducto(p.codigoItem), data: datos });
+            }
+            if (previo?.esServicio) continue;
 
-      await prisma.$transaction([
-        ...allProducts.map((p) =>
-          prisma.producto.upsert({
-            where: claveProducto(p.codigoItem),
-            update: {
-              descripcion: p.descripcion,
-              precioUnitario: p.precioUnitario,
-              stockActual: p.stockActual,
-              stockMinimo: p.stockMinimo,
-              ubicacionEstante: p.ubicacionEstante,
-              proveedor: p.proveedor,
-              codigoBarras: p.codigoBarras,
-              tipoImpresion: p.tipoImpresion,
-              fechaCaducidad: p.fechaCaducidad,
-            },
-            create: {
-              codigoItem: p.codigoItem,
-              descripcion: p.descripcion,
-              precioUnitario: p.precioUnitario,
-              stockActual: p.stockActual,
-              stockMinimo: p.stockMinimo,
-              ubicacionEstante: p.ubicacionEstante,
-              proveedor: p.proveedor,
-              codigoBarras: p.codigoBarras,
-              tipoImpresion: p.tipoImpresion,
-              fechaCaducidad: p.fechaCaducidad,
-            },
-          })
-        ),
-        ...(movimientos.length > 0
-          ? [prisma.movimientoKardex.createMany({ data: movimientos })]
-          : []),
-      ]);
+            const anterior =
+              vistos.get(p.codigoItem) ??
+              (idSucursal
+                ? (await stockEnSucursal(tx, idSucursal, [p.codigoItem])).get(p.codigoItem) ?? 0
+                : Number(previo?.stockActual ?? 0));
+            const delta = Math.round((Number(p.stockActual) - anterior) * 1000) / 1000;
+            vistos.set(p.codigoItem, Number(p.stockActual));
+            if (delta === 0) continue;
+            await moverStock(tx, { codigoItem: p.codigoItem, delta, idSucursal });
+            await registrarMovimientosKardex(tx, [
+              {
+                codigoItem: p.codigoItem,
+                tipo: previo ? "AJUSTE" : "ENTRADA",
+                cantidad: delta,
+                motivo,
+                idUsuario: session.idPersona,
+                idSucursal,
+              },
+            ]);
+          }
+        },
+        { timeout: 120_000, maxWait: 10_000 }
+      );
     }
 
     await prisma.bitacoraLog.create({

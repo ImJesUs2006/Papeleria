@@ -23,6 +23,8 @@ export interface MovimientoKardexEntrada {
   /** Se pueden pedir la razón legible, p.ej. `Venta F-20260924-ABCD` o `Recuento físico`. */
   motivo: string;
   idUsuario: string;
+  /** Sucursal del movimiento (multi-sucursal). */
+  idSucursal?: string | null;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function registrarMovimientosKardex(
       tipo: m.tipo,
       motivo: m.motivo,
       idUsuario: m.idUsuario,
+      ...(m.idSucursal ? { idSucursal: m.idSucursal } : {}),
       fecha: new Date(),
     };
   });

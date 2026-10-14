@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   try {
     const sesion = await prisma.sesionCaja.findFirst({
-      where: { estado: "ABIERTA" },
+      where: { estado: "ABIERTA", idUsuario: user.idPersona },
       orderBy: { horaApertura: "desc" },
     });
 
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
       crearApartado(tx, body, {
         idUsuario: user.idPersona,
         idCaja: sesion?.idCaja ?? null,
+        idSucursal: sesion?.idSucursal ?? user.idSucursal ?? null,
         ivaRate: config.ivaRate,
         preciosIncluyenIva: config.preciosIncluyenIva,
       })

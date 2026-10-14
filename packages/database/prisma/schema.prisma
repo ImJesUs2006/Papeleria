@@ -121,6 +121,8 @@ model Negocio {
   retirosEfectivo  RetiroEfectivo[]
   promociones      Promocion[]
   perfiles         Perfil[]
+  sucursales       Sucursal[]
+  traspasos        Traspaso[]
 
   @@map("negocios")
 }
@@ -148,6 +150,8 @@ model Usuario {
   // Rol con nombre propio del negocio ("Encargado de almacén"). Al
   // asignarlo, el usuario toma el rol base y los permisos del perfil.
   idPerfil           String?
+  // Sucursal donde opera (null = la matriz del negocio).
+  idSucursal         String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   ultimoLoginAt      DateTime?
@@ -167,6 +171,7 @@ model Usuario {
   apartadosCreados   Apartado[]
   facturasEmitidas   Factura[]
   perfil             Perfil?                @relation(fields: [idPerfil], references: [idPerfil])
+  sucursal           Sucursal?              @relation(fields: [idSucursal], references: [idSucursal])
 
   negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
 
@@ -234,6 +239,7 @@ model Producto {
   devolucionLineas  DevolucionLinea[]
   kardexMovimientos MovimientoKardex[]
   apartadoLineas    ApartadoLinea[]
+  existencias       Existencia[]
   negocio           Negocio               @relation(fields: [idNegocio], references: [idNegocio])
 
   @@id([idNegocio, codigoItem])
@@ -336,6 +342,7 @@ model Venta {
   totalNeto               Decimal     @db.Decimal(10, 2)
   idUsuario               String
   idCaja                  String?
+  idSucursal              String?
   // ---- CRM y fidelización ----
   // Cliente asociado al ticket. Con PUNTOS_MONEDERO es obligatorio (dueño
   // del monedero); en los demás métodos es opcional y solo acumula puntos.
@@ -413,6 +420,8 @@ model SesionCaja {
   // ---- Multi-Caja (Fase 3) ----
   // Identificador humano del terminal físico (ej. "Caja 1", "Terminal 2").
   nombreCaja          String?
+  // Sucursal donde se abrió la caja (multi-sucursal, Paso 5).
+  idSucursal          String?
   idUsuario           String
   fondoInicial        Decimal          @db.Decimal(10, 2)
   totalVentasEfectivo Decimal          @default(0) @db.Decimal(10, 2)
@@ -438,6 +447,7 @@ model SesionCaja {
   descuadre           Boolean          @default(false)
 
   usuario        Usuario          @relation(fields: [idUsuario], references: [idPersona])
+  sucursal       Sucursal?        @relation(fields: [idSucursal], references: [idSucursal])
   cierreIniciado Usuario?         @relation("CierreIniciadoPor", fields: [cierreIniciadoPor], references: [idPersona])
   ventas         Venta[]
   devoluciones   Devolucion[]
@@ -790,6 +800,8 @@ model MovimientoKardex {
   // inventarios (recuento físico) con signo según la diferencia real.
   tipo           TipoMovimientoKardex
   motivo         String
+  // Sucursal donde ocurrió el movimiento (null = registros anteriores).
+  idSucursal     String?
   idUsuario      String
 
   producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
@@ -892,4 +904,64 @@ model Perfil {
   @@unique([idNegocio, nombre])
   @@index([idNegocio])
   @@map("perfiles")
+}
+
+// ============================================================
+// PASO 5 — Sucursales, existencias por sucursal y traspasos
+// ============================================================
+
+model Sucursal {
+  idSucursal String   @id @default(uuid())
+  idNegocio  String   @default("default")
+  nombre     String
+  direccion  String?
+  // La matriz recibe a los usuarios sin sucursal asignada.
+  esMatriz   Boolean  @default(false)
+  activa     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  negocio     Negocio      @relation(fields: [idNegocio], references: [idNegocio])
+  usuarios    Usuario[]
+  cajas       SesionCaja[]
+  existencias Existencia[]
+
+  @@unique([idNegocio, nombre])
+  @@index([idNegocio])
+  @@map("sucursales")
+}
+
+// Existencia de un producto en una sucursal. `Producto.stockActual` es la
+// SUMA de las existencias del negocio (se mantienen juntas en cada movimiento).
+model Existencia {
+  idExistencia String  @id @default(uuid())
+  idNegocio    String  @default("default")
+  idSucursal   String
+  codigoItem   String
+  stock        Decimal @default(0) @db.Decimal(10, 3)
+
+  sucursal Sucursal @relation(fields: [idSucursal], references: [idSucursal])
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
+
+  @@unique([idSucursal, codigoItem])
+  @@index([idNegocio])
+  @@map("existencias")
+}
+
+// Traspaso de mercancía entre sucursales (inmediato; el total no cambia).
+model Traspaso {
+  idTraspaso String   @id @default(uuid())
+  idNegocio  String   @default("default")
+  folio      String   @unique
+  idOrigen   String
+  idDestino  String
+  notas      String?
+  idUsuario  String
+  fecha      DateTime @default(now())
+  // [{ codigoItem, descripcion, cantidad }]
+  lineas     Json
+
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio, fecha])
+  @@map("traspasos")
 }

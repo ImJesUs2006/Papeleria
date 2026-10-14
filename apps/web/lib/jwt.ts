@@ -4,6 +4,8 @@ export interface AuthPayload extends JWTPayload {
   idPersona: string;
   /** Negocio (arrendatario) al que pertenece la sesión. */
   idNegocio: string;
+  /** Sucursal donde opera la sesión (la resuelve getSession; no viaja en el token). */
+  idSucursal?: string | null;
   nombre: string;
   rol: "ADMINISTRADORA" | "CAJERA";
   // Permisos granulares (Fase 9). Ausentes en tokens antiguos ⇒ true.

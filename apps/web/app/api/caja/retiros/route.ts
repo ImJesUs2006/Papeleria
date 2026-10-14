@@ -69,17 +69,24 @@ export async function POST(request: Request) {
               estado: true,
             },
           })
-        : await tx.sesionCaja.findFirst({
-            where: { estado: "ABIERTA" },
-            orderBy: { horaApertura: "desc" },
-            select: {
-              idCaja: true,
-              fondoInicial: true,
-              totalVentasEfectivo: true,
-              totalEgresos: true,
-              estado: true,
-            },
-          });
+        : await tx.sesionCaja
+            .findMany({
+              where: { estado: "ABIERTA" },
+              orderBy: { horaApertura: "desc" },
+              take: 2,
+              select: {
+                idCaja: true,
+                fondoInicial: true,
+                totalVentasEfectivo: true,
+                totalEgresos: true,
+                estado: true,
+              },
+            })
+            .then((abiertas) => {
+              // Multi-caja: con más de una abierta, la administradora elige.
+              if (abiertas.length > 1) throw new Error("_VARIAS_CAJAS");
+              return abiertas[0] ?? null;
+            });
 
       if (!caja) {
         throw new Error("_NO_CAJA");
@@ -132,6 +139,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ retiro: resultado });
   } catch (error: any) {
+    if (error?.message === "_VARIAS_CAJAS") {
+      return NextResponse.json(
+        { error: "Hay varias cajas abiertas: indica de cuál retirar (idCaja)" },
+        { status: 409 }
+      );
+    }
     if (error?.message === "_NO_CAJA") {
       return NextResponse.json(
         { error: "No hay una caja abierta para retirar" },

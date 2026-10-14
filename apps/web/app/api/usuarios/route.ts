@@ -33,6 +33,7 @@ export async function GET() {
       permisoReportes: true,
       idPerfil: true,
       perfil: { select: { nombre: true } },
+      idSucursal: true,
       ultimoLoginAt: true,
       passwordCambiadaEn: true,
       createdAt: true,
@@ -103,6 +104,14 @@ export async function POST(request: Request) {
   const permisoInventario = permisos("permisoInventario");
   const permisoReportes = permisos("permisoReportes");
 
+  // Sucursal donde opera (null = la matriz).
+  let idSucursal: string | null = null;
+  if (typeof body.idSucursal === "string" && body.idSucursal) {
+    const suc = await prisma.sucursal.findFirst({ where: { idSucursal: body.idSucursal, activa: true } });
+    if (!suc) return NextResponse.json({ error: "Sucursal no encontrada" }, { status: 404 });
+    idSucursal = suc.idSucursal;
+  }
+
   try {
     const existe = await prisma.usuario.findUnique({ where: claveUsuario(username) });
     if (existe) {
@@ -121,6 +130,7 @@ export async function POST(request: Request) {
           permisoInventario,
           permisoReportes,
           idPerfil: desdePerfil?.idPerfil ?? null,
+          idSucursal: idSucursal ?? null,
           passwordCambiadaEn: new Date(),
         },
         select: {

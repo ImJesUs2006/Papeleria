@@ -27,9 +27,20 @@ export interface PromocionInput {
   activa: boolean;
 }
 
-function fecha(v: unknown, campo: string): Date | null {
+/**
+ * Fecha capturada. Un día suelto ("2026-10-20") cuenta COMPLETO en la hora
+ * local del servidor: el inicio desde las 00:00 y el fin hasta las 23:59:59.
+ * (Antes se leía como medianoche UTC y la promoción terminaba un día antes.)
+ */
+function fecha(v: unknown, campo: string, finDelDia = false): Date | null {
   if (v === null || v === undefined || v === "") return null;
-  const d = new Date(String(v));
+  const texto = String(v);
+  const soloDia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
+  const d = soloDia
+    ? finDelDia
+      ? new Date(Number(soloDia[1]), Number(soloDia[2]) - 1, Number(soloDia[3]), 23, 59, 59, 999)
+      : new Date(Number(soloDia[1]), Number(soloDia[2]) - 1, Number(soloDia[3]), 0, 0, 0, 0)
+    : new Date(texto);
   if (Number.isNaN(d.getTime())) throw new PromocionError(`${campo} inválida`);
   return d;
 }
@@ -66,8 +77,10 @@ export function validarPromocion(raw: any): PromocionInput {
     throw new PromocionError("Elige un producto O una categoría (o ninguno para todo el catálogo)");
   }
 
-  const fechaInicio = fecha(raw?.fechaInicio, "Fecha de inicio") ?? new Date();
-  const fechaFin = fecha(raw?.fechaFin, "Fecha de fin");
+  // La hora de inicio la pone la aplicación (no el reloj de la base), para
+  // que una promoción creada "ahora" aplique de inmediato.
+  const fechaInicio = fecha(raw?.fechaInicio, "Fecha de inicio") ?? new Date(Date.now() - 1000);
+  const fechaFin = fecha(raw?.fechaFin, "Fecha de fin", true);
   if (fechaFin && fechaFin.getTime() < fechaInicio.getTime()) {
     throw new PromocionError("La fecha de fin no puede ser anterior a la de inicio");
   }

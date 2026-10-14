@@ -1,5 +1,6 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
+import { moverStock } from "./existencias";
 import { ivaFraccion, round2, sufijoFolio, fechaFolio } from "./sales";
 import { calcularImpuestos, tasasProducto } from "./impuestos";
 import { claveProducto } from "./tenant-keys";
@@ -54,6 +55,8 @@ export interface ApartadoContext {
   ivaRate?: number;
   /** true = los precios de lista ya incluyen impuestos. */
   preciosIncluyenIva?: boolean;
+  /** Sucursal donde se reserva la mercancía. */
+  idSucursal?: string | null;
 }
 
 export interface ApartadoResult {
@@ -221,11 +224,13 @@ export async function crearApartado(
   for (const l of lineas) {
     if (l.esServicio) continue;
     // UPDATE condicionado: la reserva no puede sobregirar el stock.
-    const r = await tx.producto.updateMany({
-      where: { codigoItem: l.codigoItem, stockActual: { gte: l.cantidad } },
-      data: { stockActual: { decrement: l.cantidad } },
+    const ok = await moverStock(tx, {
+      codigoItem: l.codigoItem,
+      delta: -l.cantidad,
+      idSucursal: ctx.idSucursal,
+      exigirDisponible: true,
     });
-    if (r.count === 0) {
+    if (!ok) {
       throw new ApartadoError(
         `Stock insuficiente para "${l.descripcion}": otra operación tomó la existencia`,
         409

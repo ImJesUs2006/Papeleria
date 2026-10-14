@@ -21,6 +21,7 @@ import {
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { ShortcutsHelp } from "./shortcuts-help";
+import { SucursalSelector } from "./sucursal-selector";
 import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +83,12 @@ const NAV_ITEMS: Array<{
     icon: Truck,
     permission: "pedidos.ver",
     flag: "proveedores",
+  },
+  {
+    label: "Traspasos",
+    href: "/traspasos",
+    icon: Truck,
+    permission: "inventario.editar",
   },
   {
     label: "Promociones",
@@ -172,6 +179,7 @@ export function Sidebar() {
           {rol === "ADMINISTRADORA" ? "Panel Admin" : "Punto de Venta"} ·{" "}
           {config?.nombreNegocio ?? ""}
         </p>
+        <SucursalSelector esAdmin={rol === "ADMINISTRADORA"} />
       </div>
 
       {/* Navigation */}

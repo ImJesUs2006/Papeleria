@@ -57,9 +57,9 @@ export async function POST(request: Request) {
   const esMayoreo = body.esMayoreo === true;
 
   try {
-    // Caja abierta (si existe) para asignar el ingreso financiero.
+    // Multi-caja: el ingreso va a la caja abierta de QUIEN cobra.
     const sesion = await prisma.sesionCaja.findFirst({
-      where: { estado: "ABIERTA" },
+      where: { estado: "ABIERTA", idUsuario: user.idPersona },
       orderBy: { horaApertura: "desc" },
     });
 
@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       executeSale(tx, { ...body, esMayoreo }, {
         idUsuario: user.idPersona,
         idCaja: sesion?.idCaja ?? null,
+        idSucursal: sesion?.idSucursal ?? user.idSucursal ?? null,
         ivaRate: config.ivaRate,
         preciosIncluyenIva: config.preciosIncluyenIva,
         rol: user.rol,

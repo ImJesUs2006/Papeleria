@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { moverStock } from "@/lib/existencias";
 import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
 
@@ -87,10 +88,12 @@ export async function PATCH(
       // Recepción: la mercancía entra al inventario con su trazo en Kardex.
       if (recibe) {
         const fisicos = existente.items.filter((i) => !i.producto.esServicio && i.cantidad > 0);
+        // La mercancía entra a la sucursal de quien recibe.
         for (const item of fisicos) {
-          await tx.producto.update({
-            where: claveProducto(item.codigoItem),
-            data: { stockActual: { increment: item.cantidad } },
+          await moverStock(tx, {
+            codigoItem: item.codigoItem,
+            delta: item.cantidad,
+            idSucursal: user.idSucursal,
           });
         }
         await registrarMovimientosKardex(

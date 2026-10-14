@@ -18,6 +18,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { CorteCiego } from "@/components/caja/corte-ciego";
 import { HistorialCaja } from "@/components/caja/historial";
 import { TicketsSesion } from "@/components/caja/tickets-sesion";
+import { CajasAbiertas } from "@/components/caja/cajas-abiertas";
 import { AccionesSesion } from "@/components/caja/abono-retiro";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
@@ -152,6 +153,11 @@ export default function CajaPage() {
   return (
     <DashboardLayout>
       <div className="p-6 max-w-4xl mx-auto">
+        {esAdmin && (
+          <div className="mb-6">
+            <CajasAbiertas />
+          </div>
+        )}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}

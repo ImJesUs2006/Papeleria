@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { normalizarFechaCaducidad } from "@/lib/validate-product";
 import { registrarMovimientosKardex } from "@/lib/kardex";
 import { tenantDb } from "@/lib/tenant";
+import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existencias";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { validarAtributos } from "@/lib/personalizacion";
 import { claveProducto } from "@/lib/tenant-keys";
@@ -19,9 +20,12 @@ export async function GET(
   const prisma = tenantDb(auth.user.idNegocio);
   try {
     const { codigo } = await params;
-    const producto = await prisma.producto.findUnique({
+    const encontrado = await prisma.producto.findUnique({
       where: claveProducto(codigo),
     });
+    const producto = encontrado
+      ? (await conStockDeSucursal(prisma, auth.user.idSucursal, [encontrado]))[0]
+      : null;
 
     if (!producto) {
       return NextResponse.json(
@@ -41,6 +45,7 @@ export async function GET(
       tasaIeps: producto.tasaIeps != null ? Number(producto.tasaIeps) : null,
       imagenUrl: producto.imagenUrl ?? null,
       stockActual: producto.stockActual,
+      stockTotal: producto.stockTotal,
       stockMinimo: producto.stockMinimo,
       permiteDecimales: producto.permiteDecimales,
       esServicio: producto.esServicio,
@@ -342,7 +347,22 @@ export async function PATCH(
       data.favorito = body.favorito === true;
     }
 
+    // Multi-sucursal: el stock capturado es el de la sucursal activa; el
+    // total se ajusta con la diferencia (moverStock).
+    const stockNuevo: number | undefined = data.stockActual;
+    let stockAnterior = Number(existente.stockActual);
+    if (stockNuevo !== undefined && user.idSucursal) {
+      stockAnterior =
+        (await stockEnSucursal(prisma, user.idSucursal, [codigo])).get(codigo) ?? 0;
+      delete data.stockActual;
+    }
+
     const actualizado = await prisma.$transaction(async (tx) => {
+      const deltaStock =
+        stockNuevo !== undefined ? Math.round((stockNuevo - stockAnterior) * 1000) / 1000 : 0;
+      if (deltaStock !== 0 && user.idSucursal) {
+        await moverStock(tx, { codigoItem: codigo, delta: deltaStock, idSucursal: user.idSucursal });
+      }
       const producto = await tx.producto.update({
         where: claveProducto(codigo),
         data,
@@ -355,12 +375,8 @@ export async function PATCH(
           `Precio ${Number(existente.precioUnitario).toFixed(2)} → ${data.precioUnitario.toFixed(2)}`
         );
       }
-      const deltaStock =
-        data.stockActual !== undefined
-          ? Math.round((data.stockActual - Number(existente.stockActual)) * 1000) / 1000
-          : 0;
       if (deltaStock !== 0) {
-        cambios.push(`Stock ${existente.stockActual} → ${data.stockActual}`);
+        cambios.push(`Stock ${stockAnterior} → ${stockNuevo}`);
         // Kardex inmutable: todo cambio manual de existencia es un AJUSTE
         // con signo (recuento físico, merma, corrección).
         await registrarMovimientosKardex(tx, [
@@ -370,6 +386,7 @@ export async function PATCH(
             cantidad: deltaStock,
             motivo: "Ajuste manual de inventario",
             idUsuario: user.idPersona,
+            idSucursal: user.idSucursal,
           },
         ]);
       }

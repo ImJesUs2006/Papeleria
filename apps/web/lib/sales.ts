@@ -6,6 +6,7 @@ import {
   puntosRequeridos,
 } from "./fidelidad";
 import { claveProducto } from "./tenant-keys";
+import { moverStock, stockEnSucursal } from "./existencias";
 import {
   aplicarDescuentos,
   normalizarDescuento,
@@ -159,6 +160,8 @@ export interface SaleContext {
   autorizadoPor?: string | null;
   /** Promociones vigentes del negocio (se aplican solas). */
   promociones?: PromocionVigente[];
+  /** Sucursal donde se vende (su existencia es la que se descuenta). */
+  idSucursal?: string | null;
 }
 
 export interface SaleResult {
@@ -298,9 +301,12 @@ export async function executeSale(
         `La cantidad de "${producto.descripcion}" debe ser un número entero`
       );
     }
-    if (!esServicio && Number(producto.stockActual) < cantidad) {
+    const disponible = ctx.idSucursal
+      ? (await stockEnSucursal(tx, ctx.idSucursal, [item.codigoItem])).get(item.codigoItem) ?? 0
+      : Number(producto.stockActual);
+    if (!esServicio && disponible < cantidad) {
       throw new SaleError(
-        `Stock insuficiente para "${producto.descripcion}": disponible ${producto.stockActual}, solicitado ${cantidad}`
+        `Stock insuficiente para "${producto.descripcion}": disponible ${disponible}, solicitado ${cantidad}`
       );
     }
 
@@ -421,11 +427,13 @@ export async function executeSale(
   //    pueden pasar ambas (la segunda obtiene count = 0 y se revierte).
   for (const l of lineas) {
     if (l.esServicio) continue;
-    const r = await tx.producto.updateMany({
-      where: { codigoItem: l.codigoItem, stockActual: { gte: l.cantidad } },
-      data: { stockActual: { decrement: l.cantidad } },
+    const ok = await moverStock(tx, {
+      codigoItem: l.codigoItem,
+      delta: -l.cantidad,
+      idSucursal: ctx.idSucursal,
+      exigirDisponible: true,
     });
-    if (r.count === 0) {
+    if (!ok) {
       throw new SaleError(
         `Stock insuficiente para "${l.descripcion}": otra venta tomó la existencia`,
         409
@@ -447,6 +455,7 @@ export async function executeSale(
       totalNeto,
       idUsuario: ctx.idUsuario,
       idCaja: ctx.idCaja ?? undefined,
+      ...(ctx.idSucursal ? { idSucursal: ctx.idSucursal } : {}),
       idCliente: idCliente ?? undefined,
       estado: "COMPLETADA",
       metodoPago: pagosVenta.metodoVenta,
@@ -490,6 +499,7 @@ export async function executeSale(
         cantidad: l.cantidad,
         motivo: `Venta ${folioVenta}`,
         idUsuario: ctx.idUsuario,
+        idSucursal: ctx.idSucursal,
       }))
   );
 

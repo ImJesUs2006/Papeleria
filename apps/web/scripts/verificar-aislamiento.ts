@@ -14,7 +14,10 @@ import { crearNegocio } from "@/lib/negocios";
 import { executeSale } from "@/lib/sales";
 import { executeReturn } from "@/lib/returns";
 import { getBusinessConfig } from "@/lib/feature-flags";
-import { promocionesVigentes } from "@/lib/promociones";
+import { promocionesVigentes, validarPromocion } from "@/lib/promociones";
+import { moverStock, stockEnSucursal } from "@/lib/existencias";
+import { cajaDelUsuario } from "@/lib/cajas";
+import { ejecutarTraspaso } from "@/lib/traspasos";
 
 let fallos = 0;
 function comprobar(nombre: string, ok: boolean, detalle?: unknown) {
@@ -41,6 +44,8 @@ async function limpiar(ids: string[]) {
   await prisma.devolucion.deleteMany(w);
   await prisma.lineaDetalleVenta.deleteMany(w);
   await prisma.movimientoKardex.deleteMany(w);
+  await prisma.existencia.deleteMany(w);
+  await prisma.traspaso.deleteMany(w);
   await prisma.pagoVenta.deleteMany(w);
   await prisma.promocion.deleteMany(w);
   await prisma.venta.deleteMany(w);
@@ -50,6 +55,7 @@ async function limpiar(ids: string[]) {
   await prisma.bitacoraLog.deleteMany(w);
   await prisma.configuracionNegocio.deleteMany(w);
   await prisma.usuario.deleteMany(w);
+  await prisma.sucursal.deleteMany(w);
   await prisma.negocio.deleteMany(w);
 }
 
@@ -183,7 +189,7 @@ async function main() {
 
     console.log("Promociones y pago mixto (Paso 3)");
     await dbA.promocion.create({
-      data: { nombre: "3x2 lápices", tipo: "NXM", llevaN: 3, pagaM: 2, codigoItem: "X1" },
+      data: validarPromocion({ nombre: "3x2 lápices", tipo: "NXM", llevaN: 3, pagaM: 2, codigoItem: "X1" }),
     });
     comprobar("B no ve las promociones de A", (await promocionesVigentes(dbB)).length === 0);
     const promosA = await promocionesVigentes(dbA);
@@ -209,6 +215,63 @@ async function main() {
     comprobar("los pagos se guardan por separado y sellados con A",
       pagosGuardados.length === 2 && pagosGuardados.every((x) => x.idNegocio === a.idNegocio));
     comprobar("B no ve los pagos de A", (await dbB.pagoVenta.findMany()).length === 0);
+
+    console.log("Sucursales, existencias y multi-caja (Paso 5)");
+    const matrizA = await dbA.sucursal.findFirst({ where: { esMatriz: true } });
+    comprobar("el alta de negocio crea su matriz", !!matrizA);
+    comprobar("B no ve las sucursales de A", (await dbB.sucursal.findMany()).every((x) => x.idNegocio === b.idNegocio));
+    const centro = await dbA.sucursal.create({ data: { nombre: "Centro" } });
+    await dbA.producto.create({ data: { codigoItem: "SUC1", descripcion: "Mochila", precioUnitario: 100 } });
+    await dbA.$transaction((tx) => moverStock(tx, { codigoItem: "SUC1", delta: 5, idSucursal: matrizA!.idSucursal }));
+    await dbA.$transaction((tx) => moverStock(tx, { codigoItem: "SUC1", delta: 2, idSucursal: centro.idSucursal }));
+    const total = async () => Number((await dbA.producto.findUnique({ where: claveProducto("SUC1") }))!.stockActual);
+    const enSuc = async (id: string) => (await stockEnSucursal(dbA, id, ["SUC1"])).get("SUC1");
+    comprobar("el total es la suma de sucursales (5 + 2)", (await total()) === 7);
+
+    // Una cajera del Centro con su propia caja; la admin tiene otra caja abierta.
+    const cajeraCentro = await dbA.usuario.create({
+      data: { nombre: "Cajera Centro", username: "centro", passwordHash: "x", rol: "CAJERA", idSucursal: centro.idSucursal },
+    });
+    const cajaCentro = await dbA.sesionCaja.create({
+      data: { idUsuario: cajeraCentro.idPersona, fondoInicial: 0, estado: "ABIERTA", folioCaja: "CAJA-002", idSucursal: centro.idSucursal },
+    });
+    comprobar("dos cajas abiertas a la vez en el negocio",
+      (await dbA.sesionCaja.count({ where: { estado: "ABIERTA" } })) >= 2);
+    comprobar("cada usuario resuelve SU caja",
+      (await cajaDelUsuario(dbA, cajeraCentro.idPersona))?.idCaja === cajaCentro.idCaja &&
+      (await cajaDelUsuario(dbA, adminA!.idPersona))?.idCaja === caja.idCaja);
+
+    const ventaCentro = await dbA.$transaction((tx) =>
+      executeSale(
+        tx,
+        { items: [{ codigoItem: "SUC1", cantidad: 2 }], metodoPago: "EFECTIVO" },
+        { idUsuario: cajeraCentro.idPersona, idCaja: cajaCentro.idCaja, idSucursal: centro.idSucursal }
+      )
+    );
+    comprobar("la venta del Centro descuenta solo el Centro y el total",
+      (await enSuc(centro.idSucursal)) === 0 && (await enSuc(matrizA!.idSucursal)) === 5 && (await total()) === 5);
+    comprobar("la venta queda en la caja y sucursal del Centro",
+      (await dbA.venta.findUnique({ where: { folioVenta: ventaCentro.folioVenta } }))?.idSucursal === centro.idSucursal);
+    comprobar("el Centro ya no puede vender lo que no tiene", await rechaza(() =>
+      dbA.$transaction((tx) =>
+        executeSale(tx, { items: [{ codigoItem: "SUC1", cantidad: 1 }], metodoPago: "EFECTIVO" },
+          { idUsuario: cajeraCentro.idPersona, idCaja: cajaCentro.idCaja, idSucursal: centro.idSucursal })
+      )
+    ));
+
+    const t = await dbA.$transaction((tx) =>
+      ejecutarTraspaso(tx, { idOrigen: matrizA!.idSucursal, idDestino: centro.idSucursal, items: [{ codigoItem: "SUC1", cantidad: 3 }] }, adminA!.idPersona)
+    );
+    comprobar("el traspaso mueve entre sucursales sin cambiar el total",
+      (await enSuc(matrizA!.idSucursal)) === 2 && (await enSuc(centro.idSucursal)) === 3 && (await total()) === 5);
+    const kardexT = await prisma.movimientoKardex.findMany({ where: { motivo: { contains: t.folio } } });
+    comprobar("el traspaso deja kardex en ambas sucursales",
+      kardexT.length === 2 && new Set(kardexT.map((k) => k.idSucursal)).size === 2);
+    comprobar("no se traspasa más de lo que hay", await rechaza(() =>
+      dbA.$transaction((tx) =>
+        ejecutarTraspaso(tx, { idOrigen: matrizA!.idSucursal, idDestino: centro.idSucursal, items: [{ codigoItem: "SUC1", cantidad: 50 }] }, adminA!.idPersona)
+      )
+    ));
 
     console.log("Configuración");
     const cfgA = await getBusinessConfig(a.idNegocio);

@@ -6,7 +6,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -72,7 +72,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

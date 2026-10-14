@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, Save, Loader2, Check, AlertTriangle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { normalizarPersonalizacion } from "@/lib/personalizacion";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { FacturacionEmitir } from "@/components/facturacion/facturacion-emitir";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -226,6 +227,8 @@ function extractConfig(raw: any): BusinessConfig {
     moneda: raw?.moneda ?? "MXN",
     ivaRate: Number(raw?.ivaRate ?? 0),
     preciosIncluyenIva: raw?.preciosIncluyenIva === true,
+    descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
+    personalizacion: normalizarPersonalizacion(raw?.personalizacion, raw?.tipoNegocio),
     featureFlags: {
       inventario: flags.inventario === true,
       facturacion: flags.facturacion === true,

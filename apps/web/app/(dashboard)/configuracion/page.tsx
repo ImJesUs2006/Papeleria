@@ -20,7 +20,10 @@ import {
   Coins,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { normalizarPersonalizacion } from "@/lib/personalizacion";
 import { UserManagement } from "@/components/configuracion/user-management";
+import { PersonalizacionGiroEditor } from "@/components/configuracion/personalizacion-giro";
+import { HardwarePanel } from "@/components/configuracion/hardware-panel";
 import { MiCuentaPanel } from "@/components/configuracion/mi-cuenta";
 import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -113,6 +116,8 @@ function normalizeConfig(raw: any): BusinessConfig {
     moneda: typeof raw?.moneda === "string" ? raw.moneda : "MXN",
     ivaRate: Number.isFinite(iva) ? iva : 16,
     preciosIncluyenIva: raw?.preciosIncluyenIva === true,
+    descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
+    personalizacion: normalizarPersonalizacion(raw?.personalizacion, raw?.tipoNegocio),
     featureFlags,
     metodosPago,
     politicaStockOffline:
@@ -199,7 +204,7 @@ function normalizePuntosConfigLocal(raw: any): PuntosConfig {
 
 export default function ConfiguracionPage() {
   const { nombre, rol } = useAuthStore();
-  const [tab, setTab] = useState<"usuarios" | "negocio">("usuarios");
+  const [tab, setTab] = useState<"usuarios" | "negocio" | "equipo">("usuarios");
 
   return (
     <DashboardLayout>
@@ -223,6 +228,7 @@ export default function ConfiguracionPage() {
             [
               { id: "usuarios", label: "Usuarios", icon: Users },
               { id: "negocio", label: "Negocio", icon: Settings2 },
+              { id: "equipo", label: "Este equipo", icon: Printer },
             ] as const
           ).map(({ id, label, icon: Icon }) => (
             <button
@@ -256,6 +262,17 @@ export default function ConfiguracionPage() {
               <MiCuentaPanel />
               <ErrorBoundary label="la gestión de usuarios">
                 <UserManagement />
+              </ErrorBoundary>
+            </motion.div>
+          ) : tab === "equipo" ? (
+            <motion.div
+              key="equipo"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <ErrorBoundary label="el hardware del equipo">
+                <HardwarePanel />
               </ErrorBoundary>
             </motion.div>
           ) : (
@@ -372,6 +389,8 @@ const guardar = async () => {
           moneda: config.moneda,
           ivaRate: Number(config.ivaRate),
           preciosIncluyenIva: config.preciosIncluyenIva === true,
+          descuentoMaxCajera: Number(config.descuentoMaxCajera ?? 10),
+          personalizacion: config.personalizacion,
           featureFlags: config.featureFlags,
           metodosPago: config.metodosPago,
           politicaStockOffline: config.politicaStockOffline,
@@ -570,6 +589,27 @@ const guardar = async () => {
           </span>
         </span>
       </label>
+
+      <label className="block max-w-xs">
+        <span className="text-xs text-muted mb-1 block">
+          Descuento máximo de la cajera sin autorización (%)
+        </span>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step="0.5"
+          value={config.descuentoMaxCajera ?? 10}
+          onChange={(e) => setConfig({ ...config, descuentoMaxCajera: Number(e.target.value) })}
+          className="input-dark"
+        />
+      </label>
+
+      <PersonalizacionGiroEditor
+        valor={config.personalizacion}
+        tipoNegocio={config.tipoNegocio}
+        onChange={(personalizacion) => setConfig({ ...config, personalizacion })}
+      />
 
       <div className="border-t border-surface-600 pt-4">
         <div className="flex items-center gap-2 mb-3">

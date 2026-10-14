@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existencias";
 
 export async function GET(request: Request) {
   const auth = await requireAuth()();
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
       return NextResponse.json([]);
     }
 
-    const productos = await prisma.producto.findMany({
+    const encontrados = await prisma.producto.findMany({
       where: {
         activo: true,
         OR: [
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
       take: 10,
       orderBy: { descripcion: "asc" },
     });
+    const productos = await conStockDeSucursal(prisma, auth.user.idSucursal, encontrados);
 
     return NextResponse.json(
       productos.map((p) => ({
@@ -38,6 +40,8 @@ export async function GET(request: Request) {
         tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
         exentoIva: p.exentoIva === true,
         tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
+        idCategoria: p.idCategoria ?? null,
+        usaSeries: p.usaSeries === true,
         imagenUrl: p.imagenUrl ?? null,
         stockActual: p.stockActual,
         tipoImpresion: p.tipoImpresion,

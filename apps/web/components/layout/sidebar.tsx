@@ -16,10 +16,13 @@ import {
   RotateCcw,
   FileText,
   PackageOpen,
+  Tag,
+  Boxes,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
-import { useConfigStore } from "@/store/config";
+import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { ShortcutsHelp } from "./shortcuts-help";
+import { SucursalSelector } from "./sucursal-selector";
 import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +85,25 @@ const NAV_ITEMS: Array<{
     permission: "pedidos.ver",
     flag: "proveedores",
   },
-{
+  {
+    label: "Lotes y series",
+    href: "/lotes",
+    icon: Boxes,
+    permission: "inventario.editar",
+  },
+  {
+    label: "Traspasos",
+    href: "/traspasos",
+    icon: Truck,
+    permission: "inventario.editar",
+  },
+  {
+    label: "Promociones",
+    href: "/promociones",
+    icon: Tag,
+    permission: "inventario.editar",
+  },
+  {
     label: "Clientes",
     href: "/clientes",
     icon: Users,
@@ -121,6 +142,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { nombre, rol, hasPermission, logout } = useAuthStore();
   const { trust, isFeatureEnabled, config } = useConfigStore();
+  const { vocabulario } = usePersonalizacion();
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!hasPermission(item.permission)) return false;
@@ -164,6 +186,7 @@ export function Sidebar() {
           {rol === "ADMINISTRADORA" ? "Panel Admin" : "Punto de Venta"} ·{" "}
           {config?.nombreNegocio ?? ""}
         </p>
+        <SucursalSelector esAdmin={rol === "ADMINISTRADORA"} />
       </div>
 
       {/* Navigation */}
@@ -192,7 +215,7 @@ export function Sidebar() {
                 />
               )}
               <Icon className="h-5 w-5" />
-              <span>{item.label}</span>
+              <span>{item.href === "/clientes" ? vocabulario.clientes : item.label}</span>
             </Link>
           );
         })}

@@ -8,6 +8,9 @@ import {
   normalizarFechaCaducidad,
 } from "@/lib/validate-product";
 import { tenantDb } from "@/lib/tenant";
+import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existencias";
+import { getBusinessConfig } from "@/lib/feature-flags";
+import { validarAtributos } from "@/lib/personalizacion";
 import { claveCodigoBarras, claveProducto } from "@/lib/tenant-keys";
 
 const ALLOWED_SORT = [
@@ -137,9 +140,14 @@ export async function GET(request: Request) {
       prisma.producto.count({ where }),
     ]);
 
+    // Multi-sucursal: el stock visible es el de la sucursal activa
+    // (`stockTotal` conserva el del negocio).
+    const conSucursal = await conStockDeSucursal(prisma, auth.user.idSucursal, productos);
+    productos = conSucursal as typeof productos;
+
     // Post-query filter: low stock (Prisma can't compare two columns in a single query)
     if (soloBajoStock) {
-      productos = productos.filter((p) => p.stockActual <= p.stockMinimo);
+      productos = productos.filter((p) => Number(p.stockActual) <= Number(p.stockMinimo));
     }
 
     return NextResponse.json({
@@ -148,6 +156,7 @@ export async function GET(request: Request) {
         descripcion: p.descripcion,
         precioUnitario: Number(p.precioUnitario),
         precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
+        stockTotal: (p as any).stockTotal ?? Number(p.stockActual),
 precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
         tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
         exentoIva: p.exentoIva === true,
@@ -157,7 +166,11 @@ precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
         stockMinimo: p.stockMinimo,
         permiteDecimales: p.permiteDecimales,
         esServicio: p.esServicio,
+        usaLotes: p.usaLotes,
+        usaSeries: p.usaSeries,
+        grupoVariante: p.grupoVariante ?? null,
         idCategoria: p.idCategoria,
+        atributos: (p.atributos as Record<string, unknown> | null) ?? null,
         ubicacionEstante: p.ubicacionEstante,
         proveedor: p.proveedor,
         tipoImpresion: p.tipoImpresion,
@@ -183,7 +196,7 @@ precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
 
 // Alta manual de un producto (solo administradora).
 export async function POST(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -202,6 +215,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validacion.error }, { status: 400 });
   }
   const data = validacion.data;
+
+  // Campos personalizados del giro (sustancia activa, marca, medida…).
+  let atributos: Record<string, string | number> | null = null;
+  if (data.atributos) {
+    try {
+      const config = await getBusinessConfig(auth.user.idNegocio);
+      const limpios = validarAtributos(data.atributos, config.personalizacion.camposProducto);
+      atributos = Object.keys(limpios).length ? limpios : null;
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+  }
 
   try {
     const existente = await prisma.producto.findUnique({
@@ -243,10 +268,14 @@ precioCompra:
           tasaIva: data.exentoIva ? null : data.tasaIva ?? null,
           exentoIva: data.exentoIva === true,
           tasaIeps: data.tasaIeps != null && data.tasaIeps > 0 ? data.tasaIeps : null,
+          ...(atributos ? { atributos } : {}),
           stockActual: data.stockActual,
           stockMinimo: data.stockMinimo,
           permiteDecimales: data.permiteDecimales === true,
           esServicio: data.esServicio === true,
+          // Un servicio no tiene existencia: ni lotes ni series.
+          usaLotes: data.esServicio !== true && data.usaLotes === true,
+          usaSeries: data.esServicio !== true && data.usaSeries === true && data.permiteDecimales !== true,
           codigoBarras: data.codigoBarras || null,
           ubicacionEstante: data.ubicacionEstante || null,
           proveedor: data.proveedor || null,
@@ -262,6 +291,16 @@ precioCompra:
       });
 
       if (Number(producto.stockActual) > 0 && !producto.esServicio) {
+        // El total ya quedó en el alta; la existencia es de la sucursal activa.
+        if (user.idSucursal) {
+          await tx.existencia.create({
+            data: {
+              idSucursal: user.idSucursal,
+              codigoItem: producto.codigoItem,
+              stock: producto.stockActual,
+            },
+          });
+        }
         await registrarMovimientosKardex(tx, [
           {
             codigoItem: producto.codigoItem,
@@ -269,6 +308,7 @@ precioCompra:
             cantidad: Number(producto.stockActual),
             motivo: "Inventario inicial (alta de producto)",
             idUsuario: user.idPersona,
+            idSucursal: user.idSucursal,
           },
         ]);
       }
@@ -307,6 +347,7 @@ precioCompra:
           permiteDecimales: creado.permiteDecimales,
           esServicio: creado.esServicio,
           idCategoria: creado.idCategoria,
+          atributos: (creado.atributos as Record<string, unknown> | null) ?? null,
           ubicacionEstante: creado.ubicacionEstante,
           proveedor: creado.proveedor,
           tipoImpresion: creado.tipoImpresion,

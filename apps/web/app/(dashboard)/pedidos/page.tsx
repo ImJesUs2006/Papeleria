@@ -19,12 +19,16 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { cn } from "@/lib/utils";
+import { RecepcionModal } from "@/components/pedidos/recepcion-modal";
 
 interface PedidoItem {
   idItemPedido: string;
   codigoItem: string;
   descripcion: string;
   cantidad: number;
+  cantidadRecibida?: number;
+  usaLotes?: boolean;
+  usaSeries?: boolean;
   precioCotizado: number;
 }
 
@@ -34,7 +38,7 @@ interface Pedido {
   fechaPedido: string;
   fechaEntrega: string | null;
   totalEstimado: number;
-  estado: "PENDIENTE" | "ENTREGADO" | "CANCELADO" | "EN_RUTA";
+  estado: "PENDIENTE" | "ENTREGADO" | "CANCELADO" | "EN_RUTA" | "PARCIAL";
   notas: string | null;
   items: PedidoItem[];
   totalItems: number;
@@ -55,6 +59,7 @@ interface ItemParaAgregar {
 const ESTADO_STYLE: Record<string, string> = {
   PENDIENTE: "text-neon-green border-neon-green/40 bg-neon-green/10",
   EN_RUTA: "text-neon-cyan border-neon-cyan/40 bg-neon-cyan/10",
+  PARCIAL: "text-amber-300 border-amber-400/40 bg-amber-400/10",
   ENTREGADO: "text-gray-300 border-surface-500 bg-surface-600/40",
   CANCELADO: "text-neon-red border-neon-red/40 bg-neon-red/10",
 };
@@ -202,6 +207,8 @@ export default function PedidosPage() {
     }
   };
 
+  const [recibiendo, setRecibiendo] = useState<Pedido | null>(null);
+
   const cambiarEstado = async (id: string, estado: string) => {
     const res = await fetch(`/api/pedidos/${id}`, {
       method: "PATCH",
@@ -348,8 +355,11 @@ export default function PedidosPage() {
                               <Navigation className="h-3 w-3" /> En ruta
                             </button>
                           )}
-                          {(p.estado === "PENDIENTE" || p.estado === "EN_RUTA") && (
+                          {(p.estado === "PENDIENTE" || p.estado === "EN_RUTA" || p.estado === "PARCIAL") && (
                             <>
+                              <button onClick={() => setRecibiendo(p)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-bold hover:bg-amber-400/20">
+                                <PackagePlus className="h-3 w-3" /> Recibir parcial
+                              </button>
                               <button onClick={() => cambiarEstado(p.idPedido, "ENTREGADO")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-neon-green/10 border border-neon-green/30 text-neon-green text-xs font-bold hover:bg-neon-green/20">
                                 <CheckCircle2 className="h-3 w-3" /> Recibido
                               </button>
@@ -465,6 +475,14 @@ export default function PedidosPage() {
           )}
         </AnimatePresence>
       </div>
+      <RecepcionModal
+        pedido={recibiendo}
+        onClose={() => setRecibiendo(null)}
+        onRecibido={() => {
+          setRecibiendo(null);
+          cargar();
+        }}
+      />
     </DashboardLayout>
   );
 }

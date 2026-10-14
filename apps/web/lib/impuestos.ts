@@ -69,7 +69,7 @@ export function tasasProducto(
 }
 
 /** Reparte `total` (centavos) proporcional a `pesos`, cuadrando al centavo. */
-function repartir(total: number, pesos: number[]): number[] {
+export function repartir(total: number, pesos: number[]): number[] {
   const suma = pesos.reduce((a, b) => a + b, 0);
   if (suma <= 0) return pesos.map(() => 0);
   const exactos = pesos.map((p) => (total * p) / suma);

@@ -1,0 +1,14 @@
+# Nunca entran a la imagen: dependencias locales, compilados, secretos y respaldos.
+**/node_modules
+**/.next
+**/.turbo
+**/.env
+**/.env.*
+!**/.env.example
+backups
+**/*.log
+**/*.err
+src-tauri/target
+apps/web/test-results
+apps/web/playwright-report
+.git

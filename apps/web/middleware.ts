@@ -2,7 +2,20 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/jwt";
 
-const PUBLIC_PATHS = ["/api/auth/login", "/api/negocios", "/(auth)/login", "/login", "/_next", "/favicon.ico"];
+const PUBLIC_PATHS = [
+  "/api/auth/login",
+  "/api/negocios",
+  // Alta de negocios: se autoriza con el token de plataforma, no con sesión.
+  "/plataforma/",
+  // Service worker, manifiesto e íconos de la app instalable (Paso 8).
+  "/sw.js",
+  "/manifest.webmanifest",
+  "/icons/",
+  "/(auth)/login",
+  "/login",
+  "/_next",
+  "/favicon.ico",
+];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
@@ -39,29 +52,47 @@ export async function middleware(request: NextRequest) {
   // puede hidratar los flags (las CAJERA no degradan a NO_VERIFICADA). Los
   // escritores de configuración SÍ siguen siendo exclusivos de ADMINISTRADORA.
   const esCacheConfigLectura = pathname === "/api/configuracion/negocio/cache";
-  // APIs administrativas: se bloquean también aquí (defensa en profundidad)
-  // para que una ruta nueva bajo estos prefijos nazca protegida.
-  const ADMIN_API_PREFIXES = [
-    "/api/configuracion",
-    "/api/reportes",
-    "/api/bitacora",
-    "/api/seguridad",
-    "/api/dashboard",
-    "/api/proveedores",
-    "/api/pedidos",
-    "/api/facturas",
+  // Zonas protegidas (defensa en profundidad: una ruta nueva bajo estos
+  // prefijos nace protegida). Inventario y reportes también las abre el
+  // permiso de módulo del usuario (perfiles); el resto es de administración.
+  // El token lleva los permisos del login; cada API los revalida en la BD.
+  const bajo = (p: string) => pathname === p || pathname.startsWith(`${p}/`);
+  const ZONAS: Array<{ prefijos: string[]; permiso?: "permisoInventario" | "permisoReportes" }> = [
+    {
+      permiso: "permisoInventario",
+      prefijos: [
+        "/api/proveedores",
+        "/api/pedidos",
+        "/api/inventario",
+        "/api/traspasos",
+        "/api/lotes",
+        "/inventario",
+        "/lotes",
+        "/promociones",
+        "/traspasos",
+      ],
+    },
+    { permiso: "permisoReportes", prefijos: ["/api/reportes", "/api/dashboard", "/reportes"] },
+    {
+      prefijos: [
+        "/api/configuracion",
+        "/api/bitacora",
+        "/api/seguridad",
+        "/api/facturas",
+        "/setup",
+        "/configuracion",
+        "/bitacora",
+        "/facturacion",
+      ],
+    },
   ];
-  const isAdminRoute =
-    !esCacheConfigLectura &&
-    (ADMIN_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
-      pathname.startsWith("/setup") ||
-      pathname.startsWith("/configuracion") ||
-      pathname.startsWith("/reportes") ||
-      pathname.startsWith("/bitacora") ||
-      pathname.startsWith("/facturacion") ||
-      pathname.includes("/inventario"));
+  const zona = esCacheConfigLectura ? undefined : ZONAS.find((z) => z.prefijos.some(bajo));
+  const permitido =
+    !zona ||
+    payload.rol === "ADMINISTRADORA" ||
+    (zona.permiso !== undefined && payload[zona.permiso] === true);
 
-  if (isAdminRoute && payload.rol !== "ADMINISTRADORA") {
+  if (!permitido) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
     }

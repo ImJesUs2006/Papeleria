@@ -43,11 +43,15 @@ export async function PATCH(
 
   try {
     const sesion = await prisma.sesionCaja.findFirst({
-      where: { estado: "ABIERTA" },
+      where: { estado: "ABIERTA", idUsuario: user.idPersona },
       orderBy: { horaApertura: "desc" },
-      select: { idCaja: true },
+      select: { idCaja: true, idSucursal: true },
     });
-    const ctx = { idUsuario: user.idPersona, idCaja: sesion?.idCaja ?? null };
+    const ctx = {
+      idUsuario: user.idPersona,
+      idCaja: sesion?.idCaja ?? null,
+      idSucursal: sesion?.idSucursal ?? user.idSucursal ?? null,
+    };
 
     if (body?.accion === "liquidar") {
       if (!puedeCobrar(user)) {

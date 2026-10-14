@@ -13,5 +13,8 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     clearMocks: true,
+    // Los tests de rutas reimportan el grafo completo de módulos (resetModules):
+    // la primera importación en frío puede pasar de 5 s en equipos cargados.
+    testTimeout: 30_000,
   },
 });

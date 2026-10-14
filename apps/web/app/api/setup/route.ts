@@ -3,6 +3,7 @@ import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { getBusinessConfig, CONFIG_PROPIA } from "@/lib/feature-flags";
 import { validateConfigInput } from "@/lib/validate-config";
+import { normalizarPersonalizacion, validarCamposProducto } from "@/lib/personalizacion";
 import { buildSignedConfig } from "@/lib/config-signing";
 import { tenantDb } from "@/lib/tenant";
 
@@ -48,6 +49,21 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  // Personalización: los campos de producto se validan; lo demás se normaliza.
+  let personalizacionGuardar: any = undefined;
+  if (body?.personalizacion !== undefined) {
+    try {
+      if (Array.isArray(body.personalizacion?.camposProducto)) {
+        validarCamposProducto(body.personalizacion.camposProducto);
+      }
+      personalizacionGuardar = normalizarPersonalizacion(
+        body.personalizacion,
+        parsed.data.tipoNegocio
+      ) as any;
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+  }
 
   try {
     const previa = await prisma.configuracionNegocio.findUnique({ where: CONFIG_PROPIA });
@@ -71,6 +87,10 @@ export async function POST(request: Request) {
         ...(body?.preciosIncluyenIva !== undefined
           ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
           : {}),
+        ...(body?.descuentoMaxCajera !== undefined
+          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
+          : {}),
+        ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
@@ -95,6 +115,10 @@ export async function POST(request: Request) {
         ...(body?.preciosIncluyenIva !== undefined
           ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
           : {}),
+        ...(body?.descuentoMaxCajera !== undefined
+          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
+          : {}),
+        ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,

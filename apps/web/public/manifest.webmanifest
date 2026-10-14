@@ -1,0 +1,16 @@
+{
+  "name": "Punto de venta",
+  "short_name": "POS",
+  "description": "Punto de venta e inventario para tu negocio",
+  "start_url": "/cobro",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0f14",
+  "theme_color": "#10b981",
+  "lang": "es",
+  "icons": [
+    { "src": "/icons/icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/icons/icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

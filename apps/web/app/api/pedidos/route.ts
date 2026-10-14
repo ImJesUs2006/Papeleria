@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 
-const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA"];
+const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA", "PARCIAL"];
 
 export async function GET(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -20,14 +20,14 @@ export async function GET(request: Request) {
       where: {
         ...(estado && ESTADOS_VALIDOS.includes(estado) ? { estado } : {}),
         ...(soloPendientes
-          ? { estado: { in: ["PENDIENTE", "EN_RUTA"] } }
+          ? { estado: { in: ["PENDIENTE", "EN_RUTA", "PARCIAL"] } }
           : {}),
       },
       orderBy: { fechaEntrega: "asc" },
       include: {
         proveedor: { select: { nombre: true } },
         items: {
-          include: { producto: { select: { descripcion: true } } },
+          include: { producto: { select: { descripcion: true, usaLotes: true, usaSeries: true } } },
         },
       },
     });
@@ -46,6 +46,9 @@ export async function GET(request: Request) {
           codigoItem: i.codigoItem,
           descripcion: i.producto.descripcion,
           cantidad: i.cantidad,
+          cantidadRecibida: i.cantidadRecibida,
+          usaLotes: i.producto.usaLotes,
+          usaSeries: i.producto.usaSeries,
           precioCotizado: Number(i.precioCotizado),
         })),
         totalItems: p.items.length,
@@ -57,7 +60,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

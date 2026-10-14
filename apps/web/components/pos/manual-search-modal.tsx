@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, X, PackagePlus, Loader2, Barcode } from "lucide-react";
+import { buscarEnCatalogo } from "@/lib/offline/catalogo";
+import { catalogoLocal } from "@/lib/offline/catalogo-cliente";
 import { useCartStore } from "@/store/cart";
 
 interface ProductoTactil {
@@ -40,7 +42,8 @@ export function ManualSearchModal({ open, onClose }: Props) {
       const data = await res.json();
       setProductos(data.data ?? []);
     } catch {
-      setProductos([]);
+      // Sin red: búsqueda en la copia local del catálogo.
+      setProductos(buscarEnCatalogo(await catalogoLocal(), texto) as unknown as ProductoTactil[]);
     } finally {
       setLoading(false);
     }
@@ -62,6 +65,8 @@ export function ManualSearchModal({ open, onClose }: Props) {
       tasaIva: (p as any).tasaIva ?? null,
       exentoIva: (p as any).exentoIva === true,
       tasaIeps: (p as any).tasaIeps ?? null,
+      idCategoria: (p as any).idCategoria ?? null,
+      usaSeries: (p as any).usaSeries === true,
     });
   };
 

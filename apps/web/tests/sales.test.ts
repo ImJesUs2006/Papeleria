@@ -50,6 +50,8 @@ describe("POST /api/ventas", () => {
   it("devuelve 400 si se intenta vender más stock del disponible", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 1 }));
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => null) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
@@ -79,6 +81,8 @@ describe("POST /api/ventas", () => {
   it("registra la venta, descuenta stock y asigna ingreso a la caja", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 5 }));
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
@@ -135,6 +139,8 @@ describe("POST /api/ventas", () => {
   it("asigna la venta de recarga al flujo de recargas", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 5 }));
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
@@ -163,6 +169,8 @@ describe("POST /api/ventas", () => {
   it("exige la referencia (últimos 4 dígitos) en pagos por transferencia", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 5 }));
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
@@ -192,6 +200,8 @@ describe("POST /api/ventas", () => {
   it("registra la transferencia con su referencia y la asigna al flujo digital", async () => {
     const tx = crearTxMock(crearProducto({ stockActual: 5 }));
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => null) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),
@@ -273,6 +283,8 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
 
   async function postVenta(tx: any, prismaConfig: any, body: any) {
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => prismaConfig) },
       sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },
       $transaction: vi.fn(async (cb: any) => cb(tx as any)),

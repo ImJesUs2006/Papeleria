@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { registrarMovimientosKardex } from "@/lib/kardex";
 import { tenantDb } from "@/lib/tenant";
-import { claveProducto } from "@/lib/tenant-keys";
+import { CompraError, recibirPedido } from "@/lib/compras";
 
 const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA"];
 
@@ -10,7 +9,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -72,38 +71,30 @@ export async function PATCH(
     }
 
     const actualizado = await prisma.$transaction(async (tx) => {
-      // Transición condicionada: dos recepciones simultáneas no duplican stock.
-      const transicion = await tx.pedidoProveedor.updateMany({
-        where: recibe
-          ? { idPedido: id, estado: { notIn: ["ENTREGADO", "CANCELADO"] } }
-          : { idPedido: id },
-        data,
-      });
-      if (transicion.count === 0) {
-        throw Object.assign(new Error("El pedido ya fue recibido o cancelado"), { status: 409 });
+      // "ENTREGADO" = recibir TODO lo pendiente (total o lo que faltaba de
+      // una recepción parcial) con su kardex y costo promedio.
+      if (recibe) {
+        await recibirPedido(tx, {
+          idPedido: id,
+          renglones: "TODO",
+          idUsuario: user.idPersona,
+          idSucursal: user.idSucursal ?? null,
+        });
+      }
+      const { estado: _estado, ...resto } = data;
+      if (!recibe && data.estado !== undefined) {
+        const transicion = await tx.pedidoProveedor.updateMany({
+          where: { idPedido: id, estado: { notIn: ["ENTREGADO", "CANCELADO"] } },
+          data,
+        });
+        if (transicion.count === 0) {
+          throw Object.assign(new Error("El pedido ya fue recibido o cancelado"), { status: 409 });
+        }
+      } else if (Object.keys(resto).length > 0) {
+        await tx.pedidoProveedor.update({ where: { idPedido: id }, data: resto });
       }
       const pedido = await tx.pedidoProveedor.findUniqueOrThrow({ where: { idPedido: id } });
 
-      // Recepción: la mercancía entra al inventario con su trazo en Kardex.
-      if (recibe) {
-        const fisicos = existente.items.filter((i) => !i.producto.esServicio && i.cantidad > 0);
-        for (const item of fisicos) {
-          await tx.producto.update({
-            where: claveProducto(item.codigoItem),
-            data: { stockActual: { increment: item.cantidad } },
-          });
-        }
-        await registrarMovimientosKardex(
-          tx,
-          fisicos.map((item) => ({
-            codigoItem: item.codigoItem,
-            tipo: "ENTRADA" as const,
-            cantidad: item.cantidad,
-            motivo: `Recepción de pedido a ${existente.proveedor.nombre}`.slice(0, 190),
-            idUsuario: user.idPersona,
-          }))
-        );
-      }
       await tx.bitacoraLog.create({
         data: {
           idUsuario: user.idPersona,
@@ -120,6 +111,9 @@ export async function PATCH(
       estado: actualizado.estado,
     });
   } catch (error: any) {
+    if (error instanceof CompraError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     if (error?.status === 409) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }

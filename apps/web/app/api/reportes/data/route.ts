@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { tienePermiso } from "@/lib/permisos";
 import { getReporteData, ReporteError } from "@/lib/reports";
 import { tenantDb } from "@/lib/tenant";
 
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
-  if (session.rol !== "ADMINISTRADORA") {
+  if (!tienePermiso(session, "reportes")) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
   const prisma = tenantDb(session.idNegocio);

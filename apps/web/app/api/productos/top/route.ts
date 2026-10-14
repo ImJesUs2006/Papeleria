@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existencias";
 
 // ============================================================
 // GET /api/productos/top — Catálogo visual del POS (UX Fase 1).
@@ -90,7 +91,12 @@ export async function GET(request: Request) {
       }
     }
 
-    const data = [...resultado.values()].slice(0, limit).map((p) => ({
+    const conSucursal = await conStockDeSucursal(
+      prisma,
+      auth.user.idSucursal,
+      [...resultado.values()].slice(0, limit)
+    );
+    const data = conSucursal.map((p) => ({
       codigoItem: p.codigoItem,
       descripcion: p.descripcion,
       precioUnitario: Number(p.precioUnitario),
@@ -98,6 +104,8 @@ export async function GET(request: Request) {
       tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
       exentoIva: p.exentoIva === true,
       tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
+      idCategoria: p.idCategoria ?? null,
+      usaSeries: p.usaSeries === true,
       imagenUrl: p.imagenUrl ?? null,
       stockActual: p.stockActual,
       tipoImpresion: p.tipoImpresion ?? null,

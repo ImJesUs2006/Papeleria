@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { claveUsuario } from "@/lib/tenant-keys";
+import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 
 // ============================================================
 // /api/usuarios  (solo ADMINISTRADORA)
@@ -30,6 +31,9 @@ export async function GET() {
       permisoCobrar: true,
       permisoInventario: true,
       permisoReportes: true,
+      idPerfil: true,
+      perfil: { select: { nombre: true } },
+      idSucursal: true,
       ultimoLoginAt: true,
       passwordCambiadaEn: true,
       createdAt: true,
@@ -57,7 +61,20 @@ export async function POST(request: Request) {
   const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
   const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
-  const rol = typeof body.rol === "string" ? body.rol : "";
+  let rol = typeof body.rol === "string" ? body.rol : "";
+  // Con perfil, el rol base y los permisos salen del perfil.
+  let desdePerfil: Awaited<ReturnType<typeof datosPorPerfil>> | null = null;
+  if (typeof body.idPerfil === "string" && body.idPerfil) {
+    try {
+      desdePerfil = await datosPorPerfil(prisma, body.idPerfil);
+      rol = desdePerfil.rol;
+    } catch (e) {
+      if (e instanceof PerfilError) {
+        return NextResponse.json({ error: e.message }, { status: e.status });
+      }
+      throw e;
+    }
+  }
 
   if (!nombre || !username || !password) {
     return NextResponse.json({ error: "Nombre, usuario y contraseña son obligatorios" }, { status: 400 });
@@ -75,12 +92,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
   }
 
-  // Permisos granulares (Fase 9): booleanos, opcionales ⇒ true.
-  const permisos = (k: string) =>
-    typeof body[k] === "boolean" ? body[k] : true;
+  // Permisos de módulo: el perfil manda; si no hay perfil, los enviados.
+  // Por defecto una cajera cobra pero NO entra a inventario ni reportes.
+  const permisos = (k: "permisoCobrar" | "permisoInventario" | "permisoReportes") =>
+    desdePerfil
+      ? desdePerfil[k]
+      : typeof body[k] === "boolean"
+        ? body[k]
+        : rol === "ADMINISTRADORA" || k === "permisoCobrar";
   const permisoCobrar = permisos("permisoCobrar");
   const permisoInventario = permisos("permisoInventario");
   const permisoReportes = permisos("permisoReportes");
+
+  // Sucursal donde opera (null = la matriz).
+  let idSucursal: string | null = null;
+  if (typeof body.idSucursal === "string" && body.idSucursal) {
+    const suc = await prisma.sucursal.findFirst({ where: { idSucursal: body.idSucursal, activa: true } });
+    if (!suc) return NextResponse.json({ error: "Sucursal no encontrada" }, { status: 404 });
+    idSucursal = suc.idSucursal;
+  }
 
   try {
     const existe = await prisma.usuario.findUnique({ where: claveUsuario(username) });
@@ -99,6 +129,8 @@ export async function POST(request: Request) {
           permisoCobrar,
           permisoInventario,
           permisoReportes,
+          idPerfil: desdePerfil?.idPerfil ?? null,
+          idSucursal: idSucursal ?? null,
           passwordCambiadaEn: new Date(),
         },
         select: {

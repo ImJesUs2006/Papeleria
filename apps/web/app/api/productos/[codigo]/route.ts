@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { normalizarFechaCaducidad } from "@/lib/validate-product";
 import { registrarMovimientosKardex } from "@/lib/kardex";
 import { tenantDb } from "@/lib/tenant";
+import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existencias";
+import { getBusinessConfig } from "@/lib/feature-flags";
+import { validarAtributos } from "@/lib/personalizacion";
 import { claveProducto } from "@/lib/tenant-keys";
 
 export async function GET(
@@ -16,9 +20,12 @@ export async function GET(
   const prisma = tenantDb(auth.user.idNegocio);
   try {
     const { codigo } = await params;
-    const producto = await prisma.producto.findUnique({
+    const encontrado = await prisma.producto.findUnique({
       where: claveProducto(codigo),
     });
+    const producto = encontrado
+      ? (await conStockDeSucursal(prisma, auth.user.idSucursal, [encontrado]))[0]
+      : null;
 
     if (!producto) {
       return NextResponse.json(
@@ -38,10 +45,16 @@ export async function GET(
       tasaIeps: producto.tasaIeps != null ? Number(producto.tasaIeps) : null,
       imagenUrl: producto.imagenUrl ?? null,
       stockActual: producto.stockActual,
+      stockTotal: producto.stockTotal,
       stockMinimo: producto.stockMinimo,
       permiteDecimales: producto.permiteDecimales,
       esServicio: producto.esServicio,
+      usaLotes: producto.usaLotes,
+      usaSeries: producto.usaSeries,
+      grupoVariante: producto.grupoVariante ?? null,
+      atributosVariante: producto.atributosVariante ?? null,
       idCategoria: producto.idCategoria,
+      atributos: (producto.atributos as Record<string, unknown> | null) ?? null,
       ubicacionEstante: producto.ubicacionEstante,
       proveedor: producto.proveedor,
       tipoImpresion: producto.tipoImpresion,
@@ -61,7 +74,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ codigo: string }> }
 ) {
-  const auth = await requireAuth(["ADMINISTRADORA"])();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -228,6 +241,20 @@ export async function PATCH(
       }
     }
 
+    if (body.atributos !== undefined) {
+      if (body.atributos === null) {
+        data.atributos = Prisma.DbNull;
+      } else {
+        try {
+          const config = await getBusinessConfig(auth.user.idNegocio);
+          const limpios = validarAtributos(body.atributos, config.personalizacion.camposProducto);
+          data.atributos = Object.keys(limpios).length ? limpios : Prisma.DbNull;
+        } catch (e: any) {
+          return NextResponse.json({ error: e.message }, { status: 400 });
+        }
+      }
+    }
+
     if (body.tipoImpresion !== undefined) {
       const TIPOS = ["BLANCO_NEGRO", "COLOR", "PLOTTER"];
       if (body.tipoImpresion === null || body.tipoImpresion === "") {
@@ -279,6 +306,14 @@ export async function PATCH(
     if (body.esServicio !== undefined) {
       data.esServicio = body.esServicio === true;
     }
+    if (body.usaLotes !== undefined) data.usaLotes = body.usaLotes === true;
+    if (body.usaSeries !== undefined) data.usaSeries = body.usaSeries === true;
+    // Un servicio no tiene existencia; las series son por unidad (sin granel).
+    if (data.esServicio === true || (data.esServicio === undefined && existente.esServicio)) {
+      data.usaLotes = false;
+      data.usaSeries = false;
+    }
+    if (data.permiteDecimales === true) data.usaSeries = false;
     if (body.idCategoria !== undefined) {
       if (body.idCategoria === null || body.idCategoria === "") {
         data.idCategoria = null;
@@ -324,7 +359,22 @@ export async function PATCH(
       data.favorito = body.favorito === true;
     }
 
+    // Multi-sucursal: el stock capturado es el de la sucursal activa; el
+    // total se ajusta con la diferencia (moverStock).
+    const stockNuevo: number | undefined = data.stockActual;
+    let stockAnterior = Number(existente.stockActual);
+    if (stockNuevo !== undefined && user.idSucursal) {
+      stockAnterior =
+        (await stockEnSucursal(prisma, user.idSucursal, [codigo])).get(codigo) ?? 0;
+      delete data.stockActual;
+    }
+
     const actualizado = await prisma.$transaction(async (tx) => {
+      const deltaStock =
+        stockNuevo !== undefined ? Math.round((stockNuevo - stockAnterior) * 1000) / 1000 : 0;
+      if (deltaStock !== 0 && user.idSucursal) {
+        await moverStock(tx, { codigoItem: codigo, delta: deltaStock, idSucursal: user.idSucursal });
+      }
       const producto = await tx.producto.update({
         where: claveProducto(codigo),
         data,
@@ -337,12 +387,8 @@ export async function PATCH(
           `Precio ${Number(existente.precioUnitario).toFixed(2)} → ${data.precioUnitario.toFixed(2)}`
         );
       }
-      const deltaStock =
-        data.stockActual !== undefined
-          ? Math.round((data.stockActual - Number(existente.stockActual)) * 1000) / 1000
-          : 0;
       if (deltaStock !== 0) {
-        cambios.push(`Stock ${existente.stockActual} → ${data.stockActual}`);
+        cambios.push(`Stock ${stockAnterior} → ${stockNuevo}`);
         // Kardex inmutable: todo cambio manual de existencia es un AJUSTE
         // con signo (recuento físico, merma, corrección).
         await registrarMovimientosKardex(tx, [
@@ -352,6 +398,7 @@ export async function PATCH(
             cantidad: deltaStock,
             motivo: "Ajuste manual de inventario",
             idUsuario: user.idPersona,
+            idSucursal: user.idSucursal,
           },
         ]);
       }

@@ -18,7 +18,7 @@ export async function GET() {
   const prisma = tenantDb(auth.user.idNegocio);
 
   const sesion = await prisma.sesionCaja.findFirst({
-    where: { estado: "EN_CIERRE" },
+    where: { estado: "EN_CIERRE", idUsuario: auth.user.idPersona },
     orderBy: { cierreInicioEn: "desc" },
     select: { idCaja: true, cierreToken: true, cierreInicioEn: true },
   });
@@ -45,7 +45,7 @@ export async function POST() {
 
   try {
     const sesion = await prisma.sesionCaja.findFirst({
-      where: { estado: "ABIERTA" },
+      where: { estado: "ABIERTA", idUsuario: user.idPersona },
       orderBy: { horaApertura: "desc" },
     });
 

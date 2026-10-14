@@ -18,20 +18,45 @@ import {
   PackagePlus,
   Coins,
   BadgePercent,
+  Percent,
+  Split,
+  Tag,
+  Scale,
 } from "lucide-react";
 import { useCartStore, CartItem, type MetodoPagoPOS } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
-import { useConfigStore } from "@/store/config";
+import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { registrarVentaClient, type ResultadoVenta } from "@/lib/sales-client";
 import { puntosRequeridos } from "@/lib/fidelidad";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { ClientSelectModal } from "@/components/pos/client-select";
 import { VentaExitosaModal } from "@/components/pos/venta-exitosa";
+import {
+  AutorizacionModal,
+  DescuentoEditor,
+  PagoDivididoModal,
+} from "@/components/pos/descuentos-pago";
+import type { LineaPrecio } from "@/lib/descuentos";
+import { SerieModal } from "@/components/pos/serie-modal";
+import { actualizarCatalogo } from "@/lib/offline/catalogo-cliente";
+import { abrirCajon, leerBascula, leerHardware } from "@/lib/hardware/serial";
 import { cn } from "@/lib/utils";
 
-function CartItemRow({ item, index }: { item: CartItem; index: number }) {
-  const { removeItem, updateQuantity } = useCartStore();
+function CartItemRow({
+  item,
+  index,
+  precio,
+}: {
+  item: CartItem;
+  index: number;
+  precio?: LineaPrecio;
+}) {
+  const { removeItem, updateQuantity, setDescuentoLinea, quitarSerie } = useCartStore();
+  const [editando, setEditando] = useState(false);
+  const [basculaActiva, setBasculaActiva] = useState(false);
+  useEffect(() => setBasculaActiva(leerHardware().usarBascula), []);
   const decimales = item.permiteDecimales === true || item.esServicio === true;
+  const descontado = precio && precio.descuentoTotal - precio.descuentoTicket > 0;
 
   return (
     <motion.div
@@ -40,8 +65,9 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: -50, opacity: 0 }}
       transition={{ delay: index * 0.05, type: "spring", damping: 25 }}
-      className="flex items-center gap-3 bg-surface-700 rounded-lg p-3 group"
+      className="bg-surface-700 rounded-lg p-3 group"
     >
+     <div className="flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-100 truncate">
           {item.descripcion}
@@ -52,9 +78,42 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
             <span className="text-neon-purple font-bold"> &middot; Servicio</span>
           )}
         </p>
+        {precio?.promocion && (
+          <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-amber-300">
+            <Tag className="h-3 w-3" /> {precio.promocion} (−${precio.descuentoPromo.toFixed(2)})
+          </p>
+        )}
+        {item.descuento && (
+          <p className="mt-0.5 text-[11px] font-bold text-teal-300">
+            Descuento {item.descuento.tipo === "PORCENTAJE" ? `${item.descuento.valor}%` : `$${item.descuento.valor.toFixed(2)}`}
+            {" "}(−${(precio?.descuentoManual ?? 0).toFixed(2)})
+          </p>
+        )}
       </div>
 
-      {decimales ? (
+      {item.usaSeries ? (
+        <span className="w-16 text-center text-sm font-bold" title="Una pieza por serie">
+          {item.cantidad}
+        </span>
+      ) : decimales ? (
+        <span className="flex items-center gap-1">
+        {!item.esServicio && basculaActiva && (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                updateQuantity(item.codigoItem, await leerBascula());
+              } catch (e: any) {
+                window.alert(e?.message || "No se pudo leer la báscula");
+              }
+            }}
+            title="Leer báscula"
+            aria-label="Leer báscula"
+            className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center"
+          >
+            <Scale className="h-3 w-3 text-amber-300" />
+          </button>
+        )}
         <input
           type="number"
           value={item.cantidad}
@@ -68,6 +127,7 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
           }}
           className="w-20 text-center text-sm font-bold bg-surface-600 border border-surface-500 rounded-lg px-2 py-1.5 text-gray-100 focus:border-neon-cyan focus:outline-none transition-all"
         />
+        </span>
       ) : (
         <div className="flex items-center gap-1">
           <button
@@ -89,8 +149,27 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
       )}
 
       <span className="text-sm font-bold text-neon-green w-20 text-right">
-        ${item.subtotalLinea.toFixed(2)}
+        {descontado ? (
+          <>
+            <span className="block text-[11px] font-normal text-muted line-through">
+              ${item.subtotalLinea.toFixed(2)}
+            </span>
+            ${(precio!.importeNeto + precio!.descuentoTicket).toFixed(2)}
+          </>
+        ) : (
+          <>${item.subtotalLinea.toFixed(2)}</>
+        )}
       </span>
+
+      <button
+        type="button"
+        onClick={() => setEditando((v) => !v)}
+        title="Descuento a esta línea"
+        aria-label="Descuento a esta línea"
+        className="h-7 w-7 rounded-md bg-surface-600 hover:bg-surface-500 flex items-center justify-center transition-colors"
+      >
+        <Percent className="h-3 w-3 text-teal-300" />
+      </button>
 
       <button
         type="button"
@@ -99,8 +178,45 @@ function CartItemRow({ item, index }: { item: CartItem; index: number }) {
       >
         <Trash2 className="h-3 w-3 text-neon-red" />
       </button>
+     </div>
+      {item.usaSeries && (item.series ?? []).length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {(item.series ?? []).map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 rounded-md bg-surface-600 px-2 py-0.5 text-[11px] font-mono text-slate-200"
+            >
+              {s}
+              <button
+                type="button"
+                onClick={() => quitarSerie(item.codigoItem, s)}
+                aria-label={`Quitar serie ${s}`}
+                className="text-rose-300 hover:text-rose-200"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {editando && (
+        <DescuentoEditor
+          actual={item.descuento}
+          onAplicar={(d) => {
+            setDescuentoLinea(item.codigoItem, d);
+            setEditando(false);
+          }}
+          onCerrar={() => setEditando(false)}
+        />
+      )}
     </motion.div>
   );
+}
+
+interface OpcionesCobro {
+  pagos?: Array<{ metodo: string; monto: number; referencia: string | null }>;
+  montoRecibido?: number | null;
+  autorizacion?: { username: string; password: string };
 }
 
 interface BtnMetodo {
@@ -386,9 +502,16 @@ export function CartPanel() {
     esMayoreo,
     setEsMayoreo,
     getTieneMayoreo,
+    descuentoTicket,
+    setDescuentoTicket,
+    setPromociones,
+    pendienteSerie,
+    cancelarSerie,
+    addItem,
   } = useCartStore();
   const { idPersona, nombre } = useAuthStore();
   const config = useConfigStore((s) => s.config);
+  const { vocabulario } = usePersonalizacion();
 
   const [estado, setEstado] = useState<"idle" | "cobrando" | "error">("idle");
   const [mensajeError, setMensajeError] = useState("");
@@ -399,13 +522,55 @@ export function CartPanel() {
   const [clienteModalOpen, setClienteModalOpen] = useState(false);
   const [modoApartado, setModoApartado] = useState(false);
   const [apartadoModalOpen, setApartadoModalOpen] = useState(false);
+  const [editandoTicket, setEditandoTicket] = useState(false);
+  const [pagoDivididoOpen, setPagoDivididoOpen] = useState(false);
+  // Cobro pendiente de autorización (descuento sobre el tope de la cajera).
+  const [autorizacion, setAutorizacion] = useState<{
+    mensaje: string;
+    error: string | null;
+    opciones: OpcionesCobro;
+  } | null>(null);
+
+  // Copia local del catálogo para vender sin red (Paso 8).
+  useEffect(() => {
+    actualizarCatalogo().catch(() => {});
+  }, []);
+
+  // Promociones vigentes: se aplican solas en el carrito. Se guardan en este
+  // dispositivo para seguir aplicándolas sin conexión.
+  useEffect(() => {
+    const CLAVE = "papeleria-promociones";
+    try {
+      const guardadas = localStorage.getItem(CLAVE);
+      if (guardadas) setPromociones(JSON.parse(guardadas));
+    } catch {
+      /* almacenamiento no disponible */
+    }
+    fetch("/api/promociones?vigentes=1", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d || !Array.isArray(d.promociones)) return;
+        setPromociones(d.promociones);
+        try {
+          localStorage.setItem(CLAVE, JSON.stringify(d.promociones));
+        } catch {
+          /* almacenamiento no disponible */
+        }
+      })
+      .catch(() => {});
+  }, [setPromociones]);
 
   const datosBancarios = config?.datosBancarios;
 
-  const { subtotal, iva, ieps, total } = getTotales();
+  const { subtotal, iva, ieps, total, precios, descuentoTotal } = getTotales();
+  const precioPorCodigo = new Map(precios.lineas.map((l) => [l.codigoItem, l]));
   const preciosIncluyenIva = useConfigStore((s) => s.config?.preciosIncluyenIva === true);
   const itemCount = getItemCount();
   const tieneMayoreo = getTieneMayoreo();
+
+  const metodosDividir = METODOS_POS.filter(
+    (m) => !config?.metodosPago || (config.metodosPago as string[]).includes(m.configKey)
+  ).map((m) => ({ metodo: m.uiKey, label: m.label }));
 
   const esEfectivo = metodoPago === "EFECTIVO";
   const esTransferencia = metodoPago === "DIGITAL";
@@ -421,22 +586,23 @@ export function CartPanel() {
       ? Math.round((recibido - total) * 100) / 100
       : null;
 
-  const cobrar = async () => {
+  const cobrar = async (opciones: OpcionesCobro = {}) => {
     if (!items.length || estado === "cobrando") return;
+    const dividido = Array.isArray(opciones.pagos) && opciones.pagos.length > 0;
     // Blindaje Financiero: sin referencia capturada el pago no procede.
-    if (esTransferencia && !referenciaTransferencia) {
+    if (!dividido && esTransferencia && !referenciaTransferencia) {
       setReferenciaInput("");
       setShowTransferencia(true);
       return;
     }
     // CRM/Monedero: la venta exige un cliente asignado.
-    if (necesitaCliente && !idCliente) {
+    if (!dividido && necesitaCliente && !idCliente) {
       setClienteModalOpen(true);
       return;
     }
     // Monedero: bloquea el pago si los puntos no cubren el total (el servidor
     // también lo valida; esto evita el viaje redondo con error).
-    if (esMonedero && !monederoAlcanza) {
+    if (!dividido && esMonedero && !monederoAlcanza) {
       setMensajeError(
         "El saldo de puntos no alcanza a cubrir el total de la venta"
       );
@@ -448,7 +614,11 @@ export function CartPanel() {
       const data = await registrarVentaClient(items, {
         metodoPago,
         tipoVenta: tipoVenta === "RECARGA" ? "RECARGA" : "PAPELERIA",
-        montoRecibido: esEfectivo && montoRecibido ? Number(montoRecibido) : null,
+        montoRecibido: dividido
+          ? opciones.montoRecibido ?? null
+          : esEfectivo && montoRecibido
+            ? Number(montoRecibido)
+            : null,
         referenciaTransferencia: esTransferencia ? referenciaTransferencia : null,
         // El cliente es obligatorio para canjar puntos y opcional en el resto
         // de los métodos (donde solo acumula fidelidad).
@@ -457,12 +627,35 @@ export function CartPanel() {
         nombreUsuario: nombre ?? "",
         // Fase 12: el servidor reaplica el precio de mayoreo vigente.
         esMayoreo,
+        descuentoTicket,
+        pagos: dividido ? opciones.pagos : null,
+        autorizacion: opciones.autorizacion ?? null,
       });
       setResultado(data);
+      // Hardware del equipo: abre el cajón si entró efectivo.
+      const cobroEfectivo = dividido
+        ? (opciones.pagos ?? []).some((x) => x.metodo === "EFECTIVO")
+        : esEfectivo;
+      if (cobroEfectivo && leerHardware().abrirCajon) {
+        abrirCajon().catch(() => {});
+      }
+      setPagoDivididoOpen(false);
+      setAutorizacion(null);
       clearCart();
       setMontoRecibido("");
       setEstado("idle");
     } catch (e: any) {
+      // Descuento sobre el tope: se pide la autorización de la administradora
+      // y se reintenta el MISMO cobro.
+      if (e?.codigo === "REQUIERE_AUTORIZACION" || e?.codigo === "AUTORIZACION_INVALIDA") {
+        setEstado("idle");
+        setAutorizacion({
+          mensaje: e.codigo === "REQUIERE_AUTORIZACION" ? e.message : "Vuelve a intentarlo",
+          error: e.codigo === "AUTORIZACION_INVALIDA" ? e.message : null,
+          opciones,
+        });
+        return;
+      }
       setEstado("error");
       setMensajeError(e?.message || "No se pudo conectar con el servidor");
     }
@@ -529,7 +722,7 @@ export function CartPanel() {
           animate={{ scale: 1 }}
           className="bg-neon-blue/20 text-neon-blue text-xs font-bold px-2 py-1 rounded-full"
         >
-          {itemCount} {itemCount === 1 ? "artículo" : "artículos"}
+          {itemCount} {(itemCount === 1 ? vocabulario.producto : vocabulario.productos).toLowerCase()}
         </motion.span>
       </div>
 
@@ -547,7 +740,12 @@ export function CartPanel() {
             </motion.div>
           ) : (
             items.map((item, i) => (
-              <CartItemRow key={item.codigoItem} item={item} index={i} />
+              <CartItemRow
+                key={item.codigoItem}
+                item={item}
+                index={i}
+                precio={precioPorCodigo.get(item.codigoItem)}
+              />
             ))
           )}
         </AnimatePresence>
@@ -720,6 +918,35 @@ export function CartPanel() {
 
       {/* Totals */}
       <div className="px-4 py-3 border-t border-surface-600 space-y-1">
+        {descuentoTotal > 0 && (
+          <div className="flex justify-between text-sm text-teal-300">
+            <span>Descuentos</span>
+            <span>−${descuentoTotal.toFixed(2)}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-sm text-muted">
+          <button
+            type="button"
+            onClick={() => setEditandoTicket((v) => !v)}
+            disabled={items.length === 0}
+            className="inline-flex items-center gap-1 text-xs text-teal-300 hover:underline disabled:opacity-40"
+          >
+            <Percent className="h-3 w-3" />
+            {descuentoTicket
+              ? `Descuento al ticket: ${descuentoTicket.tipo === "PORCENTAJE" ? `${descuentoTicket.valor}%` : `$${descuentoTicket.valor.toFixed(2)}`}`
+              : "Descuento al ticket"}
+          </button>
+        </div>
+        {editandoTicket && (
+          <DescuentoEditor
+            actual={descuentoTicket}
+            onAplicar={(d) => {
+              setDescuentoTicket(d);
+              setEditandoTicket(false);
+            }}
+            onCerrar={() => setEditandoTicket(false)}
+          />
+        )}
         <div className="flex justify-between text-sm text-muted">
           <span>Subtotal</span>
           <span>${subtotal.toFixed(2)}</span>
@@ -763,7 +990,7 @@ export function CartPanel() {
         <motion.button
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.97 }}
-          onClick={cobrar}
+          onClick={() => cobrar()}
           disabled={items.length === 0 || estado === "cobrando"}
           className={cn(
             "w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2",
@@ -781,6 +1008,15 @@ export function CartPanel() {
             <>Cobrar ${total.toFixed(2)}</>
           )}
         </motion.button>
+
+        <button
+          onClick={() => setPagoDivididoOpen(true)}
+          disabled={items.length === 0 || estado === "cobrando" || metodosDividir.length < 2}
+          className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border border-teal-400/40 text-teal-300 hover:bg-teal-400/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Split className="h-4 w-4" />
+          Dividir pago
+        </button>
 
         <button
           onClick={abrirApartado}
@@ -811,6 +1047,40 @@ export function CartPanel() {
           />
         )}
       </AnimatePresence>
+      <SerieModal
+        producto={pendienteSerie}
+        yaEnCarrito={items.find((i) => i.codigoItem === pendienteSerie?.codigoItem)?.series ?? []}
+        onClose={cancelarSerie}
+        onAgregar={(serie) => pendienteSerie && addItem({ ...pendienteSerie, series: [serie] })}
+      />
+
+      <PagoDivididoModal
+        open={pagoDivididoOpen}
+        total={total}
+        metodos={metodosDividir}
+        cobrando={estado === "cobrando"}
+        onClose={() => setPagoDivididoOpen(false)}
+        onConfirmar={(pagos, recibidoDividido) => {
+          if (pagos.some((x) => x.metodo === "PUNTOS_MONEDERO") && !idCliente) {
+            setPagoDivididoOpen(false);
+            setClienteModalOpen(true);
+            return;
+          }
+          cobrar({ pagos, montoRecibido: recibidoDividido });
+        }}
+      />
+
+      <AutorizacionModal
+        open={autorizacion !== null}
+        mensaje={autorizacion?.mensaje ?? ""}
+        error={autorizacion?.error ?? null}
+        enviando={estado === "cobrando"}
+        onClose={() => setAutorizacion(null)}
+        onAutorizar={(cred) =>
+          autorizacion && cobrar({ ...autorizacion.opciones, autorizacion: cred })
+        }
+      />
+
     {/* Modal de transferencia (Blindaje Financiero) */}
       <AnimatePresence>
         {showTransferencia && (

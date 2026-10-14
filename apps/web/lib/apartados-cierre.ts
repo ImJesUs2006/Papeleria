@@ -1,5 +1,6 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
+import { moverStock } from "./existencias";
 import { round2, sufijoFolio, fechaFolio } from "./sales";
 import { puntosGanadosPorCompra } from "./fidelidad";
 import { ApartadoError, type ApartadoContext } from "./apartados";
@@ -197,9 +198,10 @@ export async function cancelarApartado(
   const fisicas = apartado.lineas.filter((l) => !l.producto.esServicio);
 
   for (const l of fisicas) {
-    await tx.producto.update({
-      where: claveProducto(l.codigoItem),
-      data: { stockActual: { increment: l.cantidad } },
+    await moverStock(tx, {
+      codigoItem: l.codigoItem,
+      delta: Number(l.cantidad),
+      idSucursal: ctx.idSucursal,
     });
   }
   await registrarMovimientosKardex(

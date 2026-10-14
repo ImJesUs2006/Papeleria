@@ -15,3 +15,17 @@ export interface SesionPermisos {
 export function puedeCobrar(user: SesionPermisos): boolean {
   return user.rol === "ADMINISTRADORA" || user.permisoCobrar !== false;
 }
+
+export type PermisoModulo = "cobrar" | "inventario" | "reportes";
+
+/**
+ * Permiso de módulo efectivo. La ADMINISTRADORA tiene acceso total; para
+ * el resto, inventario y reportes deben estar concedidos explícitamente
+ * (por su perfil o desde Configuración → Usuarios).
+ */
+export function tienePermiso(user: SesionPermisos, permiso: PermisoModulo): boolean {
+  if (user.rol === "ADMINISTRADORA") return true;
+  if (permiso === "cobrar") return user.permisoCobrar !== false;
+  if (permiso === "inventario") return user.permisoInventario === true;
+  return user.permisoReportes === true;
+}

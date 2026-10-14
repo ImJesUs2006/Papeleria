@@ -5,8 +5,12 @@ import { puedeCobrar } from "@/lib/permisos";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { moverStock } from "@/lib/existencias";
+import { consumirLotesFEFO } from "@/lib/lotes";
 import { elegirPrecioUnitario, sufijoFolio, fechaFolio } from "@/lib/sales";
 import { calcularImpuestos, tasasProducto } from "@/lib/impuestos";
+import { aplicarDescuentos } from "@/lib/descuentos";
+import { promocionesVigentes } from "@/lib/promociones";
 import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
 
@@ -75,6 +79,7 @@ export async function POST(request: Request) {
   try {
     const config = await getBusinessConfig(user.idNegocio);
     const politicaStockOffline = config.politicaStockOffline;
+    const promociones = await promocionesVigentes(prisma);
 
     const resultados = await prisma.$transaction(
       async (tx) => {
@@ -179,6 +184,10 @@ export async function POST(request: Request) {
               break;
             }
             const esServicio = producto.esServicio;
+            if (producto.usaSeries) {
+              rechazo = `"${producto.descripcion}" lleva número de serie: se vende solo con conexión`;
+              break;
+            }
             if (!esServicio && !producto.permiteDecimales && !Number.isInteger(cantidad)) {
               rechazo = `Cantidad entera requerida para ${codigo}`;
               break;
@@ -256,8 +265,22 @@ export async function POST(request: Request) {
           // 5. Liquidación: IVA y totales SIEMPRE recalculados en servidor.
           //    Mismo motor fiscal que la venta en línea (IVA por producto, IEPS,
           //    precios con impuestos incluidos).
+          //    Las promociones vigentes también aplican a lo vendido sin red.
+          const precios = aplicarDescuentos(
+            lineas.map((l) => ({
+              codigoItem: l.codigoItem,
+              idCategoria: mapaProductos.get(l.codigoItem)?.idCategoria ?? null,
+              cantidad: l.cantidad,
+              precio: l.precioMomento,
+            })),
+            promociones
+          );
           const fiscal = calcularImpuestos(
-            lineas.map((l) => ({ importe: l.subtotalLinea, tasaIva: l.tasaIva, tasaIeps: l.tasaIeps })),
+            precios.lineas.map((pl, i) => ({
+              importe: pl.importeNeto,
+              tasaIva: lineas[i].tasaIva,
+              tasaIeps: lineas[i].tasaIeps,
+            })),
             { preciosIncluyenIva: config.preciosIncluyenIva }
           );
           fiscal.lineas.forEach((f, i) => {
@@ -273,10 +296,11 @@ export async function POST(request: Request) {
 
           // 6. Caja: si existe una ABIERTA (de este u otro dispositivo),
           //    el ingreso se asigna para cuadrar el arqueo.
+          //    Multi-caja: va a la caja de quien sincroniza.
           const cajaAbierta = await tx.sesionCaja.findFirst({
-            where: { estado: "ABIERTA" },
+            where: { estado: "ABIERTA", idUsuario: user.idPersona },
             orderBy: { horaApertura: "desc" },
-            select: { idCaja: true },
+            select: { idCaja: true, idSucursal: true },
           });
           if (!cajaAbierta) {
             alertas.push("Sin caja abierta al sincronizar: el ingreso no quedó asignado a ningún arqueo");
@@ -290,9 +314,11 @@ export async function POST(request: Request) {
               subtotal: Math.round(subtotal * 100) / 100,
               iva,
               ieps,
+              descuentoTotal: precios.totalPromociones,
               totalNeto,
               idUsuario: cajero.idPersona,
               idCaja: cajaAbierta?.idCaja ?? null,
+              idSucursal: cajaAbierta?.idSucursal ?? user.idSucursal ?? null,
               estado: "COMPLETADA",
               metodoPago: v.metodoPago,
               referenciaTransferencia,
@@ -310,7 +336,8 @@ export async function POST(request: Request) {
                 codigoItem: l.codigoItem,
                 cantidad: l.cantidad,
                 precioMomento: l.precioMomento,
-                descuentoLinea: 0,
+                descuentoLinea: precios.lineas[lineas.indexOf(l)].descuentoTotal,
+                promocion: precios.lineas[lineas.indexOf(l)].promocion,
                 subtotalLinea: l.subtotalLinea,
                 tasaIva: l.tasaIva,
                 ivaLinea: l.ivaLinea,
@@ -318,10 +345,21 @@ export async function POST(request: Request) {
               },
             });
             if (!l.esServicio) {
-              await tx.producto.update({
-                where: claveProducto(l.codigoItem),
-                data: { stockActual: { decrement: l.cantidad } },
+              // Política de stock offline: la venta YA ocurrió; se descuenta
+              // aunque quede en negativo (la alerta queda en bitácora).
+              const idSucursalVenta = cajaAbierta?.idSucursal ?? user.idSucursal;
+              await moverStock(tx, {
+                codigoItem: l.codigoItem,
+                delta: -l.cantidad,
+                idSucursal: idSucursalVenta,
               });
+              if (mapaProductos.get(l.codigoItem)?.usaLotes && idSucursalVenta) {
+                await consumirLotesFEFO(tx, {
+                  codigoItem: l.codigoItem,
+                  idSucursal: idSucursalVenta,
+                  cantidad: l.cantidad,
+                });
+              }
             }
           }
 

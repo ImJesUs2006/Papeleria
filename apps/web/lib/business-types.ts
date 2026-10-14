@@ -132,6 +132,10 @@ export interface BusinessConfig {
   ivaRate: number;
   /** true = los precios de lista ya incluyen impuestos (se desglosan en el ticket). */
   preciosIncluyenIva: boolean;
+  /** % máximo de descuento manual que una CAJERA aplica sin autorización. */
+  descuentoMaxCajera: number;
+  /** Vocabulario, nombres de rol y campos de producto del giro. */
+  personalizacion: import("./personalizacion").Personalizacion;
   featureFlags: FeatureFlags;
   metodosPago: MetodoPagoConfig[];
   politicaStockOffline: "PERMITIR_NEGATIVO" | "RECHAZAR";

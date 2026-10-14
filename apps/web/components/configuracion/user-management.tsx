@@ -16,6 +16,9 @@ import {
 import { Modal } from "@/components/ui/modal";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { PerfilesPanel, type Perfil } from "@/components/configuracion/perfiles-panel";
+import { SucursalesPanel, type Sucursal } from "@/components/configuracion/sucursales-panel";
+import { usePersonalizacion } from "@/store/config";
 
 interface Usuario {
   idPersona: string;
@@ -26,6 +29,9 @@ interface Usuario {
   permisoCobrar: boolean;
   permisoInventario: boolean;
   permisoReportes: boolean;
+  idPerfil?: string | null;
+  perfil?: { nombre: string } | null;
+  idSucursal?: string | null;
   ultimoLoginAt: string | null;
 }
 
@@ -59,6 +65,37 @@ export function UserManagement() {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // Perfiles del negocio (roles con nombre propio).
+  const { etiquetasRol } = usePersonalizacion();
+  const [perfiles, setPerfiles] = useState<Perfil[]>([]);
+  const cargarPerfiles = useCallback(async () => {
+    try {
+      const res = await fetch("/api/perfiles", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setPerfiles(data.perfiles ?? []);
+    } catch {
+      /* sin perfiles: la gestión de usuarios sigue funcionando */
+    }
+  }, []);
+  useEffect(() => {
+    cargarPerfiles();
+  }, [cargarPerfiles]);
+
+  // Sucursales (multi-sucursal): alta y asignación de cada usuario.
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
+  const cargarSucursales = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sucursales", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setSucursales(data.sucursales ?? []);
+    } catch {
+      /* sin sucursales: la gestión de usuarios sigue funcionando */
+    }
+  }, []);
+  useEffect(() => {
+    cargarSucursales();
+  }, [cargarSucursales]);
 
   const aviso = (msg: string) => {
     setNota(msg);
@@ -151,6 +188,24 @@ export function UserManagement() {
         </div>
       )}
 
+      <SucursalesPanel
+        sucursales={sucursales}
+        onError={setError}
+        onCambio={() => {
+          cargarSucursales();
+          cargar();
+        }}
+      />
+
+      <PerfilesPanel
+        perfiles={perfiles}
+        onError={setError}
+        onCambio={() => {
+          cargarPerfiles();
+          cargar();
+        }}
+      />
+
       <div className="bg-surface-800 border border-surface-600 rounded-2xl overflow-hidden">
         {loading ? (
           <SkeletonTable rows={4} cols={6} />
@@ -190,9 +245,51 @@ export function UserManagement() {
                           : "border-neon-cyan/40 text-neon-cyan"
                       )}
                     >
-                      <option value="ADMINISTRADORA">ADMINISTRADORA</option>
-                      <option value="CAJERA">CAJERA</option>
+                      <option value="ADMINISTRADORA">{etiquetasRol.ADMINISTRADORA}</option>
+                      <option value="CAJERA">{etiquetasRol.CAJERA}</option>
                     </select>
+                    {perfiles.length > 0 && (
+                      <select
+                        value={u.idPerfil ?? ""}
+                        disabled={accionando === u.idPersona}
+                        onChange={(e) =>
+                          cambiar(u, { idPerfil: e.target.value || null } as Partial<Usuario>).then(
+                            cargarPerfiles
+                          )
+                        }
+                        title="Perfil"
+                        className="mt-1 block w-full rounded-lg border border-surface-500 bg-surface-700 px-2 py-1 text-[11px] text-slate-300 focus:outline-none"
+                      >
+                        <option value="">— Sin perfil —</option>
+                        {perfiles.map((pf) => (
+                          <option key={pf.idPerfil} value={pf.idPerfil}>
+                            {pf.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {sucursales.filter((s) => s.activa).length > 1 && (
+                      <select
+                        value={u.idSucursal ?? ""}
+                        disabled={accionando === u.idPersona}
+                        onChange={(e) =>
+                          cambiar(u, { idSucursal: e.target.value || null } as Partial<Usuario>).then(
+                            cargarSucursales
+                          )
+                        }
+                        title="Sucursal"
+                        className="mt-1 block w-full rounded-lg border border-surface-500 bg-surface-700 px-2 py-1 text-[11px] text-slate-300 focus:outline-none"
+                      >
+                        <option value="">Matriz (por defecto)</option>
+                        {sucursales
+                          .filter((s) => s.activa && !s.esMatriz)
+                          .map((s) => (
+                            <option key={s.idSucursal} value={s.idSucursal}>
+                              {s.nombre}
+                            </option>
+                          ))}
+                      </select>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <button
@@ -272,6 +369,7 @@ export function UserManagement() {
       </div>
 
       <NuevoUsuarioModal
+        perfiles={perfiles}
         open={modalNuevo}
         onClose={() => setModalNuevo(false)}
         onCreado={() => {
@@ -329,11 +427,13 @@ export function UserManagement() {
 }
 
 function NuevoUsuarioModal({
+  perfiles,
   open,
   onClose,
   onCreado,
   onError,
 }: {
+  perfiles: Perfil[];
   open: boolean;
   onClose: () => void;
   onCreado: () => void;
@@ -344,9 +444,12 @@ function NuevoUsuarioModal({
   const [password, setPassword] = useState("");
   const [rol, setRol] = useState<"ADMINISTRADORA" | "CAJERA">("CAJERA");
   const [permisoCobrar, setPermisoCobrar] = useState(true);
-  const [permisoInventario, setPermisoInventario] = useState(true);
-  const [permisoReportes, setPermisoReportes] = useState(true);
+  // Una cajera nueva cobra, pero no entra a inventario ni reportes.
+  const [permisoInventario, setPermisoInventario] = useState(false);
+  const [permisoReportes, setPermisoReportes] = useState(false);
+  const [idPerfil, setIdPerfil] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const { etiquetasRol } = usePersonalizacion();
 
   useEffect(() => {
     if (open) {
@@ -355,8 +458,9 @@ function NuevoUsuarioModal({
       setPassword("");
       setRol("CAJERA");
       setPermisoCobrar(true);
-      setPermisoInventario(true);
-      setPermisoReportes(true);
+      setPermisoInventario(false);
+      setPermisoReportes(false);
+      setIdPerfil("");
     }
   }, [open]);
 
@@ -374,6 +478,7 @@ function NuevoUsuarioModal({
           permisoCobrar,
           permisoInventario,
           permisoReportes,
+          idPerfil: idPerfil || null,
         }),
       });
       const data = await res.json();
@@ -411,6 +516,20 @@ function NuevoUsuarioModal({
             autoComplete="new-password"
           />
         </Campo>
+        {perfiles.length > 0 && (
+          <Campo label="Perfil (opcional)">
+            <select value={idPerfil} onChange={(e) => setIdPerfil(e.target.value)} className="input-dark">
+              <option value="">— Sin perfil: elegir rol y permisos —</option>
+              {perfiles.map((pf) => (
+                <option key={pf.idPerfil} value={pf.idPerfil}>
+                  {pf.nombre}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        )}
+        {!idPerfil && (
+        <>
         <Campo label="Rol">
           <select
             value={rol}
@@ -426,8 +545,8 @@ function NuevoUsuarioModal({
             }}
             className="input-dark"
           >
-            <option value="CAJERA">CAJERA</option>
-            <option value="ADMINISTRADORA">ADMINISTRADORA</option>
+            <option value="CAJERA">{etiquetasRol.CAJERA}</option>
+            <option value="ADMINISTRADORA">{etiquetasRol.ADMINISTRADORA}</option>
           </select>
         </Campo>
         <div>
@@ -467,6 +586,8 @@ function NuevoUsuarioModal({
             ))}
           </div>
         </div>
+        </>
+        )}
         <button
           onClick={crear}
           disabled={guardando || !nombre || !username || password.length < 8}

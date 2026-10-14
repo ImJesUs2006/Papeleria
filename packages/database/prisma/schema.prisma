@@ -119,6 +119,10 @@ model Negocio {
   facturas         Factura[]
   apartados        Apartado[]
   retirosEfectivo  RetiroEfectivo[]
+  promociones      Promocion[]
+  perfiles         Perfil[]
+  sucursales       Sucursal[]
+  traspasos        Traspaso[]
 
   @@map("negocios")
 }
@@ -142,6 +146,12 @@ model Usuario {
   permisoCobrar      Boolean   @default(true)
   permisoInventario  Boolean   @default(true)
   permisoReportes    Boolean   @default(true)
+  // ---- Perfiles (Paso 4) ----
+  // Rol con nombre propio del negocio ("Encargado de almacén"). Al
+  // asignarlo, el usuario toma el rol base y los permisos del perfil.
+  idPerfil           String?
+  // Sucursal donde opera (null = la matriz del negocio).
+  idSucursal         String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   ultimoLoginAt      DateTime?
@@ -160,6 +170,8 @@ model Usuario {
   movimientosKardex  MovimientoKardex[]
   apartadosCreados   Apartado[]
   facturasEmitidas   Factura[]
+  perfil             Perfil?                @relation(fields: [idPerfil], references: [idPerfil])
+  sucursal           Sucursal?              @relation(fields: [idSucursal], references: [idSucursal])
 
   negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
 
@@ -175,6 +187,10 @@ model Producto {
   descripcion        String
   precioUnitario     Decimal        @db.Decimal(10, 2)
   precioCompra       Decimal?       @db.Decimal(10, 2)
+  // ---- Costos (Paso 7) ----
+  // Costo promedio ponderado: se recalcula en cada recepción de compra.
+  // `precioCompra` queda como el ÚLTIMO costo pagado.
+  costoPromedio      Decimal?       @db.Decimal(12, 4)
   // ---- Fase 12 · Venta a Mayoreo ----
   // Precio de mayoreo (opcional). Si es null o 0, el producto NO tiene
   // precio de mayoreo y el interruptor del POS lo omite (usa menudeo).
@@ -186,6 +202,19 @@ model Producto {
   exentoIva          Boolean        @default(false)
   // IEPS en porcentaje (bebidas azucaradas, tabaco…). Null = no causa.
   tasaIeps           Decimal?       @db.Decimal(5, 2)
+  // ---- Campos personalizados del giro (Paso 4) ----
+  // Valores de los campos que define el negocio (sustancia activa, marca…).
+  atributos          Json?
+  // ---- Lotes, series y variantes (Paso 6) ----
+  // Lotes con caducidad (farmacia, abarrotes): la venta consume primero
+  // los lotes que caducan antes.
+  usaLotes           Boolean        @default(false)
+  // Número de serie por unidad (electrónica, herramienta): venderla exige
+  // indicar la serie.
+  usaSeries          Boolean        @default(false)
+  // Variantes: productos del mismo modelo (talla, color) comparten el grupo.
+  grupoVariante      String?
+  atributosVariante  Json?
   // ---- Fase 12 · Imágenes Cloudinary ----
   // URL pública de la imagen en Cloudinary (o data URI). Solo se usa cuando
   // el feature flag `imagenesCloudinary` está activo en Configuración.
@@ -224,6 +253,9 @@ model Producto {
   devolucionLineas  DevolucionLinea[]
   kardexMovimientos MovimientoKardex[]
   apartadoLineas    ApartadoLinea[]
+  existencias       Existencia[]
+  lotes             Lote[]
+  numerosSerie      NumeroSerie[]
   negocio           Negocio               @relation(fields: [idNegocio], references: [idNegocio])
 
   @@id([idNegocio, codigoItem])
@@ -296,12 +328,14 @@ model PedidoProveedor {
 }
 
 model ItemPedidoProveedor {
-  idNegocio      String  @default("default")
-  idItemPedido   String  @id @default(uuid())
-  idPedido       String
-  codigoItem     String
-  cantidad       Int
-  precioCotizado Decimal @db.Decimal(10, 2)
+  idNegocio        String  @default("default")
+  idItemPedido     String  @id @default(uuid())
+  idPedido         String
+  codigoItem       String
+  cantidad         Int
+  precioCotizado   Decimal @db.Decimal(10, 2)
+  // Recepción parcial (Paso 7): unidades ya recibidas de este renglón.
+  cantidadRecibida Int     @default(0)
 
   pedido   PedidoProveedor @relation(fields: [idPedido], references: [idPedido])
   producto Producto        @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
@@ -319,9 +353,14 @@ model Venta {
   subtotal                Decimal     @db.Decimal(10, 2)
   iva                     Decimal     @db.Decimal(10, 2)
   ieps                    Decimal     @default(0) @db.Decimal(10, 2)
+  // Descuentos aplicados (promociones + manuales) y quién autorizó los
+  // manuales que excedían el tope de la cajera.
+  descuentoTotal          Decimal     @default(0) @db.Decimal(10, 2)
+  idAutorizoDescuento     String?
   totalNeto               Decimal     @db.Decimal(10, 2)
   idUsuario               String
   idCaja                  String?
+  idSucursal              String?
   // ---- CRM y fidelización ----
   // Cliente asociado al ticket. Con PUNTOS_MONEDERO es obligatorio (dueño
   // del monedero); en los demás métodos es opcional y solo acumula puntos.
@@ -345,6 +384,7 @@ model Venta {
   cliente       Cliente?            @relation(fields: [idCliente], references: [idCliente])
   lineasDetalle LineaDetalleVenta[]
   devoluciones  Devolucion[]
+  pagos         PagoVenta[]
   // Fase 12: un ticket genera como máximo una factura.
   factura       Factura?
   negocio       Negocio             @relation(fields: [idNegocio], references: [idNegocio])
@@ -367,7 +407,14 @@ model LineaDetalleVenta {
   // se siguen escribiendo como 1, 2, 3...
   cantidad       Decimal  @db.Decimal(10, 3)
   precioMomento  Decimal  @db.Decimal(10, 2)
+  // Costo unitario congelado al vender (margen exacto aunque cambie el costo).
+  costoUnitario  Decimal? @db.Decimal(12, 4)
   descuentoLinea Decimal  @default(0) @db.Decimal(10, 2)
+  // Promoción aplicada a la línea (nombre congelado al vender).
+  promocion      String?
+  // Trazabilidad (Paso 6): lotes consumidos y series vendidas en la línea.
+  lotes          Json?
+  series         Json?
   subtotalLinea  Decimal  @db.Decimal(10, 2)
   // ---- Impuestos por línea (los exigirá el CFDI) ----
   // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
@@ -396,6 +443,8 @@ model SesionCaja {
   // ---- Multi-Caja (Fase 3) ----
   // Identificador humano del terminal físico (ej. "Caja 1", "Terminal 2").
   nombreCaja          String?
+  // Sucursal donde se abrió la caja (multi-sucursal, Paso 5).
+  idSucursal          String?
   idUsuario           String
   fondoInicial        Decimal          @db.Decimal(10, 2)
   totalVentasEfectivo Decimal          @default(0) @db.Decimal(10, 2)
@@ -421,6 +470,7 @@ model SesionCaja {
   descuadre           Boolean          @default(false)
 
   usuario        Usuario          @relation(fields: [idUsuario], references: [idPersona])
+  sucursal       Sucursal?        @relation(fields: [idSucursal], references: [idSucursal])
   cierreIniciado Usuario?         @relation("CierreIniciadoPor", fields: [cierreIniciadoPor], references: [idPersona])
   ventas         Venta[]
   devoluciones   Devolucion[]
@@ -444,6 +494,13 @@ model ConfiguracionNegocio {
   // true = los precios de lista YA incluyen impuestos (lo usual en mostrador):
   // el ticket los desglosa hacia atrás. false = se suman al cobrar.
   preciosIncluyenIva   Boolean     @default(false)
+  // ---- Descuentos (Paso 3) ----
+  // % máximo de descuento manual que una CAJERA aplica sin autorización.
+  // Arriba de él, una ADMINISTRADORA autoriza con su usuario y contraseña.
+  descuentoMaxCajera   Decimal     @default(10) @db.Decimal(5, 2)
+  // ---- Personalización del giro (Paso 4) ----
+  // { vocabulario, etiquetasRol, camposProducto, usarTipoImpresion }
+  personalizacion      Json?
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
   featureFlags         Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
@@ -766,6 +823,8 @@ model MovimientoKardex {
   // inventarios (recuento físico) con signo según la diferencia real.
   tipo           TipoMovimientoKardex
   motivo         String
+  // Sucursal donde ocurrió el movimiento (null = registros anteriores).
+  idSucursal     String?
   idUsuario      String
 
   producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
@@ -799,4 +858,174 @@ model RetiroEfectivo {
   @@index([fechaHora])
   @@index([idNegocio])
   @@map("retiros_efectivo")
+}
+
+// ============================================================
+// PASO 3 — Promociones y pagos mixtos
+// ============================================================
+
+// Promoción automática: el POS y el servidor la aplican sin intervención.
+model Promocion {
+  idPromocion String    @id @default(uuid())
+  idNegocio   String    @default("default")
+  nombre      String
+  // "PORCENTAJE" (% de descuento) | "NXM" (lleva N paga M).
+  tipo        String
+  valor       Decimal?  @db.Decimal(5, 2)
+  llevaN      Int?
+  pagaM       Int?
+  // Alcance: un producto, una categoría o (ambos nulos) todo el catálogo.
+  codigoItem  String?
+  idCategoria String?
+  fechaInicio DateTime  @default(now())
+  fechaFin    DateTime?
+  activa      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio, activa])
+  @@map("promociones")
+}
+
+// Cada parte de un pago (una venta MIXTA tiene varias).
+model PagoVenta {
+  idPago     String  @id @default(uuid())
+  idNegocio  String  @default("default")
+  folioVenta String
+  metodo     String
+  monto      Decimal @db.Decimal(10, 2)
+  referencia String?
+  // Puntos canjeados cuando el método es PUNTOS_MONEDERO.
+  puntos     Int?
+
+  venta Venta @relation(fields: [folioVenta], references: [folioVenta])
+
+  @@index([idNegocio])
+  @@index([folioVenta])
+  @@map("pagos_venta")
+}
+
+// ============================================================
+// PASO 4 — Perfiles (roles con nombre propio por negocio)
+// ============================================================
+
+model Perfil {
+  idPerfil          String   @id @default(uuid())
+  idNegocio         String   @default("default")
+  nombre            String
+  // Nivel base que aplica la autorización (ADMINISTRADORA = acceso total).
+  rolBase           Rol      @default(CAJERA)
+  permisoCobrar     Boolean  @default(true)
+  permisoInventario Boolean  @default(false)
+  permisoReportes   Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  negocio  Negocio   @relation(fields: [idNegocio], references: [idNegocio])
+  usuarios Usuario[]
+
+  @@unique([idNegocio, nombre])
+  @@index([idNegocio])
+  @@map("perfiles")
+}
+
+// ============================================================
+// PASO 5 — Sucursales, existencias por sucursal y traspasos
+// ============================================================
+
+model Sucursal {
+  idSucursal String   @id @default(uuid())
+  idNegocio  String   @default("default")
+  nombre     String
+  direccion  String?
+  // La matriz recibe a los usuarios sin sucursal asignada.
+  esMatriz   Boolean  @default(false)
+  activa     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  negocio     Negocio      @relation(fields: [idNegocio], references: [idNegocio])
+  usuarios    Usuario[]
+  cajas       SesionCaja[]
+  existencias Existencia[]
+
+  @@unique([idNegocio, nombre])
+  @@index([idNegocio])
+  @@map("sucursales")
+}
+
+// Existencia de un producto en una sucursal. `Producto.stockActual` es la
+// SUMA de las existencias del negocio (se mantienen juntas en cada movimiento).
+model Existencia {
+  idExistencia String  @id @default(uuid())
+  idNegocio    String  @default("default")
+  idSucursal   String
+  codigoItem   String
+  stock        Decimal @default(0) @db.Decimal(10, 3)
+
+  sucursal Sucursal @relation(fields: [idSucursal], references: [idSucursal])
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
+
+  @@unique([idSucursal, codigoItem])
+  @@index([idNegocio])
+  @@map("existencias")
+}
+
+// Traspaso de mercancía entre sucursales (inmediato; el total no cambia).
+model Traspaso {
+  idTraspaso String   @id @default(uuid())
+  idNegocio  String   @default("default")
+  folio      String   @unique
+  idOrigen   String
+  idDestino  String
+  notas      String?
+  idUsuario  String
+  fecha      DateTime @default(now())
+  // [{ codigoItem, descripcion, cantidad }]
+  lineas     Json
+
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio, fecha])
+  @@map("traspasos")
+}
+
+// ============================================================
+// PASO 6 — Lotes con caducidad y números de serie
+// ============================================================
+
+model Lote {
+  idLote     String    @id @default(uuid())
+  idNegocio  String    @default("default")
+  idSucursal String
+  codigoItem String
+  numeroLote String
+  caducidad  DateTime?
+  // Unidades del lote que siguen en existencia.
+  cantidad   Decimal   @db.Decimal(10, 3)
+  createdAt  DateTime  @default(now())
+
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
+
+  @@unique([idSucursal, codigoItem, numeroLote])
+  @@index([idNegocio, caducidad])
+  @@map("lotes")
+}
+
+model NumeroSerie {
+  idSerie    String   @id @default(uuid())
+  idNegocio  String   @default("default")
+  idSucursal String
+  codigoItem String
+  serie      String
+  // DISPONIBLE | VENDIDO
+  estado     String   @default("DISPONIBLE")
+  folioVenta String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
+
+  @@unique([idNegocio, codigoItem, serie])
+  @@index([idNegocio, estado])
+  @@map("numeros_serie")
 }

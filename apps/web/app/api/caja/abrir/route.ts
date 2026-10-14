@@ -45,7 +45,8 @@ export async function POST(request: Request) {
     const resultado = await prisma.$transaction(
       async (tx) => {
         const existingOpen = await tx.sesionCaja.findFirst({
-          where: { estado: { in: ["ABIERTA", "EN_CIERRE"] } },
+          // Multi-caja: cada usuario tiene a lo más UNA caja abierta.
+          where: { estado: { in: ["ABIERTA", "EN_CIERRE"] }, idUsuario: user.idPersona },
           select: { idCaja: true },
         });
         if (existingOpen) return null;
@@ -66,6 +67,11 @@ export async function POST(request: Request) {
             fondoInicial: Math.round(fondoInicial * 100) / 100,
             estado: "ABIERTA",
             folioCaja: `CAJA-${String(siguiente).padStart(3, "0")}`,
+            idSucursal: user.idSucursal ?? null,
+            nombreCaja:
+              typeof body?.nombreCaja === "string" && body.nombreCaja.trim()
+                ? body.nombreCaja.trim().slice(0, 40)
+                : null,
           },
         });
       },
@@ -74,7 +80,7 @@ export async function POST(request: Request) {
 
     if (!resultado) {
       return NextResponse.json(
-        { error: "Ya existe una sesión de caja abierta o en cierre" },
+        { error: "Ya tienes una caja abierta o en cierre" },
         { status: 409 }
       );
     }

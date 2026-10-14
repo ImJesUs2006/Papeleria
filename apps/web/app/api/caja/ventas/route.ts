@@ -15,7 +15,7 @@ export async function GET() {
   const prisma = tenantDb(auth.user.idNegocio);
 
   const sesion = await prisma.sesionCaja.findFirst({
-    where: { estado: { in: ["ABIERTA", "EN_CIERRE"] } },
+    where: { estado: { in: ["ABIERTA", "EN_CIERRE"] }, idUsuario: auth.user.idPersona },
     orderBy: { horaApertura: "desc" },
     select: {
       idCaja: true,

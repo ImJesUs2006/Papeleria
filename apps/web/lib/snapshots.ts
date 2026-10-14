@@ -43,6 +43,10 @@ export interface SnapshotJson {
     tipoNegocio: string;
     moneda: string;
     ivaRate: number;
+    /** Opcionales: los snapshots anteriores no los traen. */
+    preciosIncluyenIva?: boolean;
+    descuentoMaxCajera?: number;
+    personalizacion?: JsonValue | null;
     featureFlags: JsonValue;
     metodosPago: JsonValue;
     politicaStockOffline: string;
@@ -92,6 +96,9 @@ export function buildResetJson(
       tipoNegocio: configRow?.tipoNegocio ?? "PAPELERIA_RETAIL",
       moneda: configRow?.moneda ?? "MXN",
       ivaRate: toNumber(configRow?.ivaRate, 16),
+      preciosIncluyenIva: Boolean(configRow?.preciosIncluyenIva ?? false),
+      descuentoMaxCajera: toNumber(configRow?.descuentoMaxCajera, 10),
+      personalizacion: configRow?.personalizacion ?? null,
       featureFlags: configRow?.featureFlags ?? {},
       metodosPago: configRow?.metodosPago ?? [],
       politicaStockOffline: configRow?.politicaStockOffline ?? "PERMITIR_NEGATIVO",
@@ -267,6 +274,16 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
       tipoNegocio: cfg.tipoNegocio as any,
       moneda: String(cfg.moneda ?? "MXN"),
       ivaRate: cfg.ivaRate,
+      // Un snapshot anterior a estos ajustes no los pisa.
+      ...(typeof cfg.preciosIncluyenIva === "boolean"
+        ? { preciosIncluyenIva: cfg.preciosIncluyenIva }
+        : {}),
+      ...(Number.isFinite(Number(cfg.descuentoMaxCajera))
+        ? { descuentoMaxCajera: Number(cfg.descuentoMaxCajera) }
+        : {}),
+      ...(cfg.personalizacion && typeof cfg.personalizacion === "object"
+        ? { personalizacion: cfg.personalizacion as any }
+        : {}),
       featureFlags: cfg.featureFlags as any,
       metodosPago: cfg.metodosPago as any,
       politicaStockOffline: (cfg.politicaStockOffline as any) ?? "PERMITIR_NEGATIVO",

@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { fiscalCliente } from "@/store/config";
 import { calcularImpuestos, tasasProducto, type ResumenFiscal } from "@/lib/impuestos";
+import {
+  aplicarDescuentos,
+  type DescuentoManual,
+  type PromocionVigente,
+  type ResumenPrecios,
+} from "@/lib/descuentos";
 
 export interface CartItem {
   codigoItem: string;
@@ -25,23 +31,61 @@ export interface CartItem {
   tasaIva?: number | null;
   exentoIva?: boolean;
   tasaIeps?: number | null;
+  /** Categoría (para promociones por categoría). */
+  idCategoria?: string | null;
+  /** Descuento manual de la línea (porcentaje o monto). */
+  descuento?: DescuentoManual | null;
+  /** Producto con número de serie: la cantidad es el número de series. */
+  usaSeries?: boolean;
+  series?: string[];
+}
+
+export interface TotalesCarrito extends ResumenFiscal {
+  /** Promociones y descuentos aplicados, por línea y en total. */
+  precios: ResumenPrecios;
+  descuentoTotal: number;
 }
 
 /**
- * Totales fiscales de un carrito con el MISMO motor que usa el servidor
- * (IVA por producto, IEPS y precios con impuestos incluidos).
+ * Totales de un carrito con los MISMOS motores que usa el servidor:
+ * promociones y descuentos primero; después impuestos sobre lo descontado
+ * (IVA por producto, IEPS, precios con impuestos incluidos).
  */
 export function totalesCarrito(
-  items: Pick<CartItem, "subtotalLinea" | "tasaIva" | "exentoIva" | "tasaIeps">[]
-): ResumenFiscal {
+  items: Array<
+    Pick<CartItem, "codigoItem" | "cantidad" | "subtotalLinea" | "tasaIva" | "exentoIva" | "tasaIeps"> &
+      Partial<Pick<CartItem, "idCategoria" | "descuento">>
+  >,
+  opciones: { promociones?: PromocionVigente[]; descuentoTicket?: DescuentoManual | null } = {}
+): TotalesCarrito {
   const { ivaNegocio, preciosIncluyenIva } = fiscalCliente();
-  return calcularImpuestos(
-    items.map((i) => ({
-      importe: Math.round(Number(i.subtotalLinea) * 100) / 100,
-      ...tasasProducto(i, ivaNegocio),
+  const precios = aplicarDescuentos(
+    items.map((i) => {
+      const cantidad = Number(i.cantidad) || 0;
+      return {
+        codigoItem: i.codigoItem,
+        idCategoria: i.idCategoria ?? null,
+        cantidad,
+        // Precio efectivo de la línea (respeta el modo mayoreo).
+        precio: cantidad > 0 ? Number(i.subtotalLinea) / cantidad : 0,
+        descuento: i.descuento ?? null,
+      };
+    }),
+    opciones.promociones ?? [],
+    opciones.descuentoTicket ?? null
+  );
+  const fiscal = calcularImpuestos(
+    precios.lineas.map((pl, k) => ({
+      importe: pl.importeNeto,
+      ...tasasProducto(items[k], ivaNegocio),
     })),
     { preciosIncluyenIva }
   );
+  return {
+    ...fiscal,
+    precios,
+    descuentoTotal: Math.round((precios.totalPromociones + precios.totalManual) * 100) / 100,
+  };
 }
 
 export type MetodoPagoPOS = "EFECTIVO" | "TARJETA" | "DIGITAL" | "PUNTOS_MONEDERO";
@@ -79,11 +123,22 @@ interface CartState {
    * `precioMayoreo` de cada producto (los que no tienen, quedan igual).
    */
   esMayoreo: boolean;
+  /** Descuento manual al ticket completo. */
+  descuentoTicket: DescuentoManual | null;
+  /** Promociones vigentes del negocio (se cargan al abrir el POS). */
+  promociones: PromocionVigente[];
+  /** Producto con serie esperando que se escanee su número. */
+  pendienteSerie: Omit<CartItem, "subtotalLinea"> | null;
+  cancelarSerie: () => void;
+  quitarSerie: (codigoItem: string, serie: string) => void;
 
   addItem: (item: Omit<CartItem, "subtotalLinea">) => void;
   removeItem: (codigoItem: string) => void;
   updateQuantity: (codigoItem: string, cantidad: number) => void;
   clearCart: () => void;
+  setDescuentoLinea: (codigoItem: string, descuento: DescuentoManual | null) => void;
+  setDescuentoTicket: (descuento: DescuentoManual | null) => void;
+  setPromociones: (promociones: PromocionVigente[]) => void;
   setMetodoPago: (metodoPago: MetodoPagoPOS) => void;
   setTipoVenta: (tipo: "PAPELERIA" | "RECARGA") => void;
   setReferenciaTransferencia: (referencia: string | null) => void;
@@ -99,8 +154,8 @@ interface CartState {
   /** ¿Al menos una línea del carrito tiene precio de mayoreo? */
   getTieneMayoreo: () => boolean;
 
-  /** Desglose fiscal completo (base, IEPS, IVA y total a pagar). */
-  getTotales: () => ResumenFiscal;
+  /** Desglose completo: descuentos, base, IEPS, IVA y total a pagar. */
+  getTotales: () => TotalesCarrito;
   getSubtotal: () => number;
   getIVA: () => number;
   getTotal: () => number;
@@ -118,15 +173,45 @@ export const useCartStore = create<CartState>((set, get) => ({
   nivelCliente: "MENUDEO",
   montoHistoricoCliente: 0,
   esMayoreo: false,
+  descuentoTicket: null,
+  promociones: [],
+  pendienteSerie: null,
+  cancelarSerie: () => set({ pendienteSerie: null }),
+  quitarSerie: (codigoItem, serie) =>
+    set((state) => ({
+      items: state.items
+        .map((i) => {
+          if (i.codigoItem !== codigoItem) return i;
+          const series = (i.series ?? []).filter((s) => s !== serie);
+          const precio = precioUnitarioEfectivo(i, state.esMayoreo);
+          return { ...i, series, cantidad: series.length, subtotalLinea: series.length * precio };
+        })
+        .filter((i) => !i.usaSeries || i.cantidad > 0),
+    })),
 
   addItem: (item) =>
     set((state) => {
+      // Producto con número de serie: primero se escanea la serie.
+      if (item.usaSeries && !(item.series && item.series.length)) {
+        return { pendienteSerie: item };
+      }
       const existing = state.items.find(
         (i) => i.codigoItem === item.codigoItem
       );
       // Si el carrito está en mayoreo, la línea nueva entra a ese precio.
       const precioUnitario = precioUnitarioEfectivo(item, state.esMayoreo);
 
+      if (existing && item.usaSeries) {
+        const series = [...new Set([...(existing.series ?? []), ...(item.series ?? [])])];
+        return {
+          pendienteSerie: null,
+          items: state.items.map((i) =>
+            i.codigoItem === item.codigoItem
+              ? { ...i, series, cantidad: series.length, subtotalLinea: series.length * i.precioUnitario }
+              : i
+          ),
+        };
+      }
       if (existing) {
         return {
           items: state.items.map((i) =>
@@ -142,13 +227,16 @@ export const useCartStore = create<CartState>((set, get) => ({
         };
       }
 
+      const cantidad = item.usaSeries ? (item.series ?? []).length : item.cantidad;
       return {
+        pendienteSerie: null,
         items: [
           ...state.items,
           {
             ...item,
+            cantidad,
             precioUnitario,
-            subtotalLinea: item.cantidad * precioUnitario,
+            subtotalLinea: cantidad * precioUnitario,
           },
         ],
       };
@@ -184,7 +272,15 @@ export const useCartStore = create<CartState>((set, get) => ({
       idCliente: null,
       nombreCliente: null,
       esMayoreo: false,
+      descuentoTicket: null,
     }),
+
+  setDescuentoLinea: (codigoItem, descuento) =>
+    set((state) => ({
+      items: state.items.map((i) => (i.codigoItem === codigoItem ? { ...i, descuento } : i)),
+    })),
+  setDescuentoTicket: (descuentoTicket) => set({ descuentoTicket }),
+  setPromociones: (promociones) => set({ promociones }),
 
   setMetodoPago: (metodoPago) => set({ metodoPago }),
   setTipoVenta: (tipoVenta) => set({ tipoVenta }),
@@ -217,7 +313,11 @@ export const useCartStore = create<CartState>((set, get) => ({
       return Number.isFinite(m) && m > 0;
     }),
 
-  getTotales: () => totalesCarrito(get().items),
+  getTotales: () =>
+    totalesCarrito(get().items, {
+      promociones: get().promociones,
+      descuentoTicket: get().descuentoTicket,
+    }),
 
   // Base sin impuestos (con precios que ya incluyen IVA es menor al importe).
   getSubtotal: () => get().getTotales().subtotal,

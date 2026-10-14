@@ -71,7 +71,7 @@ export async function POST(
         }
       } else {
         caja = await tx.sesionCaja.findFirst({
-          where: { estado: "ABIERTA" },
+          where: { estado: "ABIERTA", idUsuario: auth.user.idPersona },
           orderBy: { horaApertura: "desc" },
           select: { idCaja: true, estado: true },
         });

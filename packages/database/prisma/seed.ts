@@ -237,6 +237,35 @@ async function main() {
     });
   }
 
+  // Multi-sucursal (Paso 5): la Matriz y la existencia de cada producto en
+  // ella. Sin esto el POS vería todo sin stock en una instalación nueva.
+  const matriz =
+    (await prisma.sucursal.findFirst({ where: { idNegocio: ID_NEGOCIO, esMatriz: true } })) ??
+    (await prisma.sucursal.create({
+      data: { idNegocio: ID_NEGOCIO, nombre: "Matriz", esMatriz: true },
+    }));
+  for (const product of sampleProducts) {
+    const existe = await prisma.existencia.findUnique({
+      where: { idSucursal_codigoItem: { idSucursal: matriz.idSucursal, codigoItem: product.codigoItem } },
+    });
+    if (!existe) {
+      const actual = await prisma.producto.findUnique({
+        where: { idNegocio_codigoItem: { idNegocio: ID_NEGOCIO, codigoItem: product.codigoItem } },
+        select: { stockActual: true, esServicio: true },
+      });
+      if (actual && !actual.esServicio) {
+        await prisma.existencia.create({
+          data: {
+            idNegocio: ID_NEGOCIO,
+            idSucursal: matriz.idSucursal,
+            codigoItem: product.codigoItem,
+            stock: actual.stockActual,
+          },
+        });
+      }
+    }
+  }
+
   console.log("✅ Seed completed!");
   console.log("   - Admin user: admin / admin123");
   console.log("   - Cajera user: cajera1 / cajera123");

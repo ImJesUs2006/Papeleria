@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tieneOtroAdminActivo } from "@/lib/usuarios";
+import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
@@ -74,6 +75,43 @@ export async function PATCH(
     }
   }
 
+  if (body.idSucursal !== undefined) {
+    if (body.idSucursal === null || body.idSucursal === "") {
+      data.idSucursal = null;
+    } else {
+      const suc = await prisma.sucursal.findFirst({
+        where: { idSucursal: String(body.idSucursal), activa: true },
+      });
+      if (!suc) return NextResponse.json({ error: "Sucursal no encontrada" }, { status: 404 });
+      data.idSucursal = suc.idSucursal;
+    }
+  }
+
+  // Perfil: asignarlo copia rol y permisos; un ajuste manual de rol o
+  // permisos sin perfil desvincula al usuario de su perfil.
+  if (body.idPerfil !== undefined) {
+    if (body.idPerfil === null || body.idPerfil === "") {
+      data.idPerfil = null;
+    } else {
+      try {
+        Object.assign(data, await datosPorPerfil(prisma, String(body.idPerfil)));
+      } catch (e) {
+        if (e instanceof PerfilError) {
+          return NextResponse.json({ error: e.message }, { status: e.status });
+        }
+        throw e;
+      }
+      if (id === user.idPersona && data.rol !== "ADMINISTRADORA" && target.rol === "ADMINISTRADORA") {
+        return NextResponse.json({ error: "No puedes quitarte tu propio rol de administradora" }, { status: 409 });
+      }
+    }
+  } else if (
+    target.idPerfil &&
+    ["rol", "permisoCobrar", "permisoInventario", "permisoReportes"].some((k) => data[k] !== undefined)
+  ) {
+    data.idPerfil = null;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
   }
@@ -105,6 +143,9 @@ export async function PATCH(
           permisoCobrar: true,
           permisoInventario: true,
           permisoReportes: true,
+          idPerfil: true,
+          perfil: { select: { nombre: true } },
+          idSucursal: true,
           ultimoLoginAt: true,
         },
       });

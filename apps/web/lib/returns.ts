@@ -1,6 +1,8 @@
 import type { Prisma } from "@papeleria/database";
 import { round2, ivaFraccion, sufijoFolio, fechaFolio } from "./sales";
 import { registrarMovimientosKardex } from "./kardex";
+import { moverStock } from "./existencias";
+import { devolverSeries, SerieError } from "./series";
 import { puntosGanadosPorCompra, puntosRequeridos } from "./fidelidad";
 import { claveProducto } from "./tenant-keys";
 
@@ -31,6 +33,8 @@ type Tx = Prisma.TransactionClient;
 export interface ReturnLineInput {
   codigoItem: string;
   cantidad: number;
+  /** Series que regresan (productos con número de serie); si faltan, las últimas vendidas. */
+  series?: string[];
 }
 
 export interface ReturnInput {
@@ -51,6 +55,8 @@ export interface ReturnContext {
   puntos?: { valorPuntoPesos: number; pesosCompraPorPunto?: number };
   /** Tasa de IVA del negocio (porcentaje); solo rige si la venta no la trae. */
   ivaRate?: number;
+  /** Sucursal donde se recibe la mercancía devuelta. */
+  idSucursal?: string | null;
 }
 
 export interface ReturnResult {
@@ -133,6 +139,7 @@ export async function executeReturn(
     include: {
       lineasDetalle: true,
       devoluciones: { include: { lineas: true } },
+      pagos: true,
     },
   });
   if (!venta) {
@@ -159,7 +166,10 @@ export async function executeReturn(
       );
     }
     metodoReembolso = "PUNTOS_MONEDERO";
-  } else if (metodoReembolso === "PUNTOS_MONEDERO") {
+  } else if (
+    metodoReembolso === "PUNTOS_MONEDERO" &&
+    !((venta as any).pagos ?? []).some((p: any) => p.metodo === "PUNTOS_MONEDERO")
+  ) {
     // Blindaje financiero: los puntos solo se restituyen si ASÍ se cobró la
     // venta. Sin esto, una venta normal de $1,000 en efectivo podría
     // "reembolsarse" en puntos y convertir dinero en lealtad.
@@ -192,9 +202,12 @@ export async function executeReturn(
   const codigosVenta = venta.lineasDetalle.map((l) => l.codigoItem);
   const productosVenta = await tx.producto.findMany({
     where: { codigoItem: { in: codigosVenta } },
-    select: { codigoItem: true, esServicio: true },
+    select: { codigoItem: true, esServicio: true, usaSeries: true },
   });
   const serviciosMap = new Map(productosVenta.map((p) => [p.codigoItem, p.esServicio]));
+  const conSeries = new Set(
+    productosVenta.filter((p) => p.usaSeries === true).map((p) => p.codigoItem)
+  );
 
   for (const l of venta.lineasDetalle) {
     const actual = originales.get(l.codigoItem);
@@ -279,11 +292,24 @@ export async function executeReturn(
   const cantidadesReales = cantidades.filter(
     (c) => originales.get(c.codigoItem)?.esServicio !== true
   );
+  // La mercancía devuelta regresa a la existencia de la sucursal (sin
+  // lote: la trazabilidad del lote vendido queda en la línea de venta).
   for (const c of cantidadesReales) {
-    await tx.producto.update({
-      where: claveProducto(c.codigoItem),
-      data: { stockActual: { increment: c.cantidad } },
-    });
+    await moverStock(tx, { codigoItem: c.codigoItem, delta: c.cantidad, idSucursal: ctx.idSucursal });
+    if (conSeries.has(c.codigoItem)) {
+      try {
+        await devolverSeries(tx, {
+          codigoItem: c.codigoItem,
+          folioVenta: input.folioVenta,
+          cantidad: c.cantidad,
+          series: input.items.find((i) => i.codigoItem === c.codigoItem)?.series,
+          idSucursal: ctx.idSucursal ?? null,
+        });
+      } catch (e) {
+        if (e instanceof SerieError) throw new ReturnError(e.message, e.status);
+        throw e;
+      }
+    }
   }
 
   // Kardex inmutable (ENTRADA por línea).
@@ -295,6 +321,7 @@ export async function executeReturn(
       cantidad: c.cantidad,
       motivo: `${tipo === "NOTA_CREDITO" ? "Nota de crédito" : "Devolución"} ${folioDevolucion}`,
       idUsuario: ctx.idUsuario,
+      idSucursal: ctx.idSucursal,
     }))
   );
 
@@ -305,10 +332,17 @@ export async function executeReturn(
     // habría usado para pagar la venta (al valor vigente de la tasa).
     // No toca la caja.
     const valorPunto = ctx.puntos?.valorPuntoPesos ?? 1;
+    const pagoPuntos = ((venta as any).pagos ?? []).find(
+      (p: any) => p.metodo === "PUNTOS_MONEDERO"
+    );
+    const restituir =
+      pagoPuntos && !ventaMonedero
+        ? Math.min(puntosRequeridos(totalNeto, valorPunto), Number(pagoPuntos.puntos ?? 0))
+        : puntosRequeridos(totalNeto, valorPunto);
     await tx.cliente.update({
       where: { idCliente: venta.idCliente },
       data: {
-        puntosFidelidad: { increment: puntosRequeridos(totalNeto, valorPunto) },
+        puntosFidelidad: { increment: restituir },
       },
     });
     idCaja = null;

@@ -263,6 +263,93 @@ export async function getReporteData(
       };
     }
 
+    case "margen": {
+      // Margen por producto: lo vendido (base sin impuestos) contra su costo
+      // CONGELADO al vender, descontando lo devuelto. Lo vendido antes de
+      // registrar costos queda como "sin costo" (no se inventa un margen).
+      const whereLinea: any = {
+        venta: filtrarUsuario(
+          {
+            ...rangoFecha(params.desde, params.hasta),
+            estado: { not: "CANCELADA" },
+            ...(await excluirAnuladas(prisma)),
+          },
+          params.usuario
+        ),
+      };
+      const lineas = await prisma.lineaDetalleVenta.findMany({
+        where: whereLinea,
+        include: { producto: { select: { descripcion: true } } },
+      });
+      const folios = [...new Set(lineas.map((l) => l.folioVenta))];
+      const devueltas = folios.length
+        ? await prisma.devolucionLinea.findMany({
+            where: { devolucion: { folioVenta: { in: folios } } },
+            include: { devolucion: { select: { folioVenta: true } } },
+          })
+        : [];
+
+      type Fila = { descripcion: string; unidades: number; venta: number; costo: number; sinCosto: number };
+      const agg = new Map<string, Fila>();
+      const fila = (codigo: string, descripcion: string) => {
+        const f = agg.get(codigo) ?? { descripcion, unidades: 0, venta: 0, costo: 0, sinCosto: 0 };
+        agg.set(codigo, f);
+        return f;
+      };
+      // Costo unitario por (ticket, producto) para descontar devoluciones.
+      const costoDe = new Map<string, number | null>();
+      for (const l of lineas) {
+        const f = fila(l.codigoItem, l.producto.descripcion);
+        const cant = Number(l.cantidad);
+        f.unidades += cant;
+        f.venta += Number(l.subtotalLinea);
+        if (l.costoUnitario != null) f.costo += cant * Number(l.costoUnitario);
+        else f.sinCosto += cant;
+        costoDe.set(`${l.folioVenta}|${l.codigoItem}`, l.costoUnitario != null ? Number(l.costoUnitario) : null);
+      }
+      for (const d of devueltas) {
+        const f = agg.get(d.codigoItem);
+        if (!f) continue;
+        const cant = Number(d.cantidad);
+        const costo = costoDe.get(`${d.devolucion.folioVenta}|${d.codigoItem}`);
+        f.unidades -= cant;
+        f.venta -= Number(d.subtotalLinea);
+        if (costo != null) f.costo -= cant * costo;
+        else f.sinCosto = Math.max(f.sinCosto - cant, 0);
+      }
+
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const filas = [...agg.entries()]
+        .map(([codigo, f]) => {
+          const margen = r2(f.venta - f.costo);
+          const conCosto = f.sinCosto === 0;
+          return [
+            codigo,
+            f.descripcion,
+            r2(f.unidades),
+            r2(f.venta),
+            conCosto ? r2(f.costo) : "Sin costo",
+            conCosto ? margen : "—",
+            conCosto && f.venta > 0 ? `${((margen / f.venta) * 100).toFixed(1)}%` : "—",
+          ] as (string | number)[];
+        })
+        .sort((a, b) => Number(b[3]) - Number(a[3]));
+      return {
+        title: "Margen por producto",
+        sheetName: "Margen",
+        columns: [
+          { header: "Código", width: 16 },
+          { header: "Descripción", width: 34 },
+          { header: "Unidades", total: true },
+          { header: "Venta (sin impuestos)", numFmt: MONEDA_FMT, total: true },
+          { header: "Costo", numFmt: MONEDA_FMT },
+          { header: "Margen", numFmt: MONEDA_FMT },
+          { header: "Margen %", width: 12 },
+        ],
+        rows: filas,
+      };
+    }
+
     case "top-mas-vendidos": {
       // Antes ignoraba `desde`/`hasta`; ahora el top se calcula sobre el
       // mismo rango, usuario y exclusión de cajas anuladas.
@@ -423,6 +510,7 @@ export const TIPOS_REPORTE = [
   "reabastecimiento",
   "ventas",
   "ventas-por-producto",
+  "margen",
   "top-mas-vendidos",
   "cierre-caja",
   "bitacora",

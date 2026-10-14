@@ -119,6 +119,7 @@ model Negocio {
   facturas         Factura[]
   apartados        Apartado[]
   retirosEfectivo  RetiroEfectivo[]
+  promociones      Promocion[]
 
   @@map("negocios")
 }
@@ -319,6 +320,10 @@ model Venta {
   subtotal                Decimal     @db.Decimal(10, 2)
   iva                     Decimal     @db.Decimal(10, 2)
   ieps                    Decimal     @default(0) @db.Decimal(10, 2)
+  // Descuentos aplicados (promociones + manuales) y quién autorizó los
+  // manuales que excedían el tope de la cajera.
+  descuentoTotal          Decimal     @default(0) @db.Decimal(10, 2)
+  idAutorizoDescuento     String?
   totalNeto               Decimal     @db.Decimal(10, 2)
   idUsuario               String
   idCaja                  String?
@@ -345,6 +350,7 @@ model Venta {
   cliente       Cliente?            @relation(fields: [idCliente], references: [idCliente])
   lineasDetalle LineaDetalleVenta[]
   devoluciones  Devolucion[]
+  pagos         PagoVenta[]
   // Fase 12: un ticket genera como máximo una factura.
   factura       Factura?
   negocio       Negocio             @relation(fields: [idNegocio], references: [idNegocio])
@@ -368,6 +374,8 @@ model LineaDetalleVenta {
   cantidad       Decimal  @db.Decimal(10, 3)
   precioMomento  Decimal  @db.Decimal(10, 2)
   descuentoLinea Decimal  @default(0) @db.Decimal(10, 2)
+  // Promoción aplicada a la línea (nombre congelado al vender).
+  promocion      String?
   subtotalLinea  Decimal  @db.Decimal(10, 2)
   // ---- Impuestos por línea (los exigirá el CFDI) ----
   // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
@@ -444,6 +452,10 @@ model ConfiguracionNegocio {
   // true = los precios de lista YA incluyen impuestos (lo usual en mostrador):
   // el ticket los desglosa hacia atrás. false = se suman al cobrar.
   preciosIncluyenIva   Boolean     @default(false)
+  // ---- Descuentos (Paso 3) ----
+  // % máximo de descuento manual que una CAJERA aplica sin autorización.
+  // Arriba de él, una ADMINISTRADORA autoriza con su usuario y contraseña.
+  descuentoMaxCajera   Decimal     @default(10) @db.Decimal(5, 2)
   // Feature flags { inventario: boolean; facturacion: boolean; dashboard: boolean; ... }
   featureFlags         Json        @default("{}")
   // Metodos de pago habilitados ["EFECTIVO","TARJETA_TERMINAL","TRANSFERENCIA"]
@@ -799,4 +811,50 @@ model RetiroEfectivo {
   @@index([fechaHora])
   @@index([idNegocio])
   @@map("retiros_efectivo")
+}
+
+// ============================================================
+// PASO 3 — Promociones y pagos mixtos
+// ============================================================
+
+// Promoción automática: el POS y el servidor la aplican sin intervención.
+model Promocion {
+  idPromocion String    @id @default(uuid())
+  idNegocio   String    @default("default")
+  nombre      String
+  // "PORCENTAJE" (% de descuento) | "NXM" (lleva N paga M).
+  tipo        String
+  valor       Decimal?  @db.Decimal(5, 2)
+  llevaN      Int?
+  pagaM       Int?
+  // Alcance: un producto, una categoría o (ambos nulos) todo el catálogo.
+  codigoItem  String?
+  idCategoria String?
+  fechaInicio DateTime  @default(now())
+  fechaFin    DateTime?
+  activa      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio, activa])
+  @@map("promociones")
+}
+
+// Cada parte de un pago (una venta MIXTA tiene varias).
+model PagoVenta {
+  idPago     String  @id @default(uuid())
+  idNegocio  String  @default("default")
+  folioVenta String
+  metodo     String
+  monto      Decimal @db.Decimal(10, 2)
+  referencia String?
+  // Puntos canjeados cuando el método es PUNTOS_MONEDERO.
+  puntos     Int?
+
+  venta Venta @relation(fields: [folioVenta], references: [folioVenta])
+
+  @@index([idNegocio])
+  @@index([folioVenta])
+  @@map("pagos_venta")
 }

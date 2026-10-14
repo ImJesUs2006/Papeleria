@@ -99,6 +99,11 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                       </span>
                     </div>
                   ))}
+                  {numeroSeguro(result.descuentoTotal) > 0 && (
+                    <div className="flex justify-between pt-1">
+                      <span>Descuentos</span><span>−${numeroSeguro(result.descuentoTotal).toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between pt-1">
                     <span>Subtotal</span><span>${numeroSeguro(result.subtotal).toFixed(2)}</span>
                   </div>
@@ -178,6 +183,7 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, onClose 
                     subtotal: result.subtotal,
                     iva: result.iva,
                     ieps: result.ieps,
+                    descuentoTotal: result.descuentoTotal,
                     cambio: result.cambio,
                     metodoPago: result.metodoPago,
                     nombreCliente: result.nombreCliente,

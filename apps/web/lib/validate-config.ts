@@ -185,6 +185,7 @@ export const CONFIG_INPUT_SCHEMA = z
     moneda: z.string().trim().min(3).max(8).default("MXN"),
     ivaRate: z.number().min(0).max(100).default(16),
     preciosIncluyenIva: z.boolean().default(false),
+    descuentoMaxCajera: z.number().min(0).max(100).default(10),
     featureFlags: FEATURE_FLAGS_SCHEMA,
     metodosPago: z.array(z.enum(METODOS_PAGO_DISPONIBLES)).min(1),
     politicaStockOffline: z.enum(["PERMITIR_NEGATIVO", "RECHAZAR"]).default("PERMITIR_NEGATIVO"),

@@ -61,6 +61,9 @@ export async function PUT(request: Request) {
         ...(body?.preciosIncluyenIva !== undefined
           ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
           : {}),
+        ...(body?.descuentoMaxCajera !== undefined
+          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
+          : {}),
         featureFlags: flagsMerged,
         metodosPago: parsed.data.metodosPago,
         politicaStockOffline: parsed.data.politicaStockOffline,

@@ -14,6 +14,7 @@ import { crearNegocio } from "@/lib/negocios";
 import { executeSale } from "@/lib/sales";
 import { executeReturn } from "@/lib/returns";
 import { getBusinessConfig } from "@/lib/feature-flags";
+import { promocionesVigentes } from "@/lib/promociones";
 
 let fallos = 0;
 function comprobar(nombre: string, ok: boolean, detalle?: unknown) {
@@ -40,6 +41,8 @@ async function limpiar(ids: string[]) {
   await prisma.devolucion.deleteMany(w);
   await prisma.lineaDetalleVenta.deleteMany(w);
   await prisma.movimientoKardex.deleteMany(w);
+  await prisma.pagoVenta.deleteMany(w);
+  await prisma.promocion.deleteMany(w);
   await prisma.venta.deleteMany(w);
   await prisma.sesionCaja.deleteMany(w);
   await prisma.cliente.deleteMany(w);
@@ -177,6 +180,35 @@ async function main() {
         { idUsuario: adminA!.idPersona, idCaja: caja.idCaja })
     );
     comprobar("la devolución reembolsa exactamente lo cobrado por la línea", devFiscal.totalNeto === 125.28, devFiscal);
+
+    console.log("Promociones y pago mixto (Paso 3)");
+    await dbA.promocion.create({
+      data: { nombre: "3x2 lápices", tipo: "NXM", llevaN: 3, pagaM: 2, codigoItem: "X1" },
+    });
+    comprobar("B no ve las promociones de A", (await promocionesVigentes(dbB)).length === 0);
+    const promosA = await promocionesVigentes(dbA);
+    await dbA.producto.updateMany({ where: { codigoItem: "X1" }, data: { stockActual: 10 } });
+    const mixta = await dbA.$transaction((tx) =>
+      executeSale(
+        tx,
+        {
+          items: [{ codigoItem: "X1", cantidad: 3 }],
+          metodoPago: "EFECTIVO",
+          pagos: [
+            { metodo: "TARJETA", monto: 132 },
+            { metodo: "EFECTIVO", monto: 100 },
+          ],
+          montoRecibido: 200,
+        },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, ivaRate: 16, promociones: promosA }
+      )
+    );
+    comprobar("el 3x2 cobra 2 de 3 (200 + IVA = 232)", mixta.totalNeto === 232 && mixta.descuentoTotal === 100, mixta);
+    comprobar("el cambio sale solo del efectivo", mixta.cambio === 100);
+    const pagosGuardados = await prisma.pagoVenta.findMany({ where: { folioVenta: mixta.folioVenta } });
+    comprobar("los pagos se guardan por separado y sellados con A",
+      pagosGuardados.length === 2 && pagosGuardados.every((x) => x.idNegocio === a.idNegocio));
+    comprobar("B no ve los pagos de A", (await dbB.pagoVenta.findMany()).length === 0);
 
     console.log("Configuración");
     const cfgA = await getBusinessConfig(a.idNegocio);

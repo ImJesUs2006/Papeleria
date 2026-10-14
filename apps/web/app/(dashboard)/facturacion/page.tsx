@@ -226,6 +226,7 @@ function extractConfig(raw: any): BusinessConfig {
     moneda: raw?.moneda ?? "MXN",
     ivaRate: Number(raw?.ivaRate ?? 0),
     preciosIncluyenIva: raw?.preciosIncluyenIva === true,
+    descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
     featureFlags: {
       inventario: flags.inventario === true,
       facturacion: flags.facturacion === true,

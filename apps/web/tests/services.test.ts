@@ -44,6 +44,8 @@ function crearTxMock(producto: any) {
 
 async function postVenta(tx: any, body: any) {
   const prisma = {
+    // Sin promociones vigentes (el POS las consulta en cada venta).
+    promocion: { findMany: vi.fn(async () => []) },
     configuracionNegocio: { findUnique: vi.fn(async () => null) },
     // Desde la auditoría de caja, toda venta exige una sesión ABIERTA.
     sesionCaja: { findFirst: vi.fn(async () => ({ idCaja: "CAJA-1" })) },

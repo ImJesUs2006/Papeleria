@@ -55,6 +55,7 @@ export async function middleware(request: NextRequest) {
     !esCacheConfigLectura &&
     (ADMIN_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
       pathname.startsWith("/setup") ||
+      pathname.startsWith("/promociones") ||
       pathname.startsWith("/configuracion") ||
       pathname.startsWith("/reportes") ||
       pathname.startsWith("/bitacora") ||

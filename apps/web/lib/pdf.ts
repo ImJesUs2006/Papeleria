@@ -12,6 +12,8 @@ export interface ResultadoVentaPDF {
   iva: number;
   /** IEPS de la venta (opcional; solo se imprime si es mayor a 0). */
   ieps?: number;
+  /** Descuentos aplicados (opcional; solo se imprime si es mayor a 0). */
+  descuentoTotal?: number;
   cambio: number | null;
   metodoPago: string;
   nombreCliente: string | null;
@@ -134,6 +136,9 @@ export function construirTicketPDF(resultado: ResultadoVentaPDF, negocio: string
   }
 
   lineas.push({ doble: true });
+  if ((resultado.descuentoTotal ?? 0) > 0) {
+    lineas.push({ texto: "Descuentos", der: `-${pdfMoneda(resultado.descuentoTotal ?? 0)}`, tam: 9 });
+  }
   lineas.push({ texto: "Subtotal", der: pdfMoneda(resultado.subtotal), tam: 9 });
   if ((resultado.ieps ?? 0) > 0) {
     lineas.push({ texto: "IEPS", der: pdfMoneda(resultado.ieps ?? 0), tam: 9 });

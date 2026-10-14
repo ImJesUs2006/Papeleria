@@ -269,6 +269,8 @@ describe("POST /api/ventas/sync · atomicidad y autoría", () => {
       bitacoraLog: { create: vi.fn(async () => ({})) },
     };
     const prisma = {
+      // Sin promociones vigentes (el POS las consulta en cada venta).
+      promocion: { findMany: vi.fn(async () => []) },
       configuracionNegocio: { findUnique: vi.fn(async () => null) },
       bitacoraLog: { create: vi.fn(async () => ({})) },
       $transaction: vi.fn(async (cb: any) => cb(tx)),

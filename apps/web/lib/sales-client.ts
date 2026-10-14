@@ -9,7 +9,8 @@ import { guardarVentaOffline } from "@/lib/offline/idb";
 import { obtenerDispositivoId } from "@/lib/offline/sync";
 import { obtenerInventarioLocal } from "@/store/inventory";
 import type { CartItem } from "@/store/cart";
-import { totalesCarrito } from "@/store/cart";
+import { totalesCarrito, useCartStore } from "@/store/cart";
+import type { DescuentoManual } from "@/lib/descuentos";
 
 export interface ResultadoLineaVenta {
   codigoItem: string;
@@ -30,6 +31,10 @@ export interface ResultadoVenta {
   iva: number;
   /** IEPS de la venta (0 si ningún producto lo causa). */
   ieps: number;
+  /** Total descontado (promociones + manuales). */
+  descuentoTotal?: number;
+  /** Partes del pago (venta mixta). */
+  pagos?: Array<{ metodo: string; monto: number }>;
   metodoPago: string;
   nombreCliente: string | null;
   fechaHora: string;
@@ -50,13 +55,26 @@ export async function registrarVentaClient(items: CartItem[], extra: {
   montoRecibido?: number | null;
   referenciaTransferencia?: string | null;
   idCliente?: string | null;
+  /** Descuento manual al ticket. */
+  descuentoTicket?: DescuentoManual | null;
+  /** Pago mixto: varias partes que suman el total. */
+  pagos?: Array<{ metodo: string; monto: number; referencia?: string | null }> | null;
+  /** Autorización de la administradora (descuento sobre el tope). */
+  autorizacion?: { username: string; password: string } | null;
   /** Fase 12: cobra el precio de mayoreo cuando el producto lo tiene. */
   esMayoreo?: boolean;
   idUsuario: string;
   nombreUsuario: string;
 }): Promise<ResultadoVenta> {
   const body = {
-    items: items.map((i) => ({ codigoItem: i.codigoItem, cantidad: i.cantidad })),
+    items: items.map((i) => ({
+      codigoItem: i.codigoItem,
+      cantidad: i.cantidad,
+      ...(i.descuento ? { descuento: i.descuento } : {}),
+    })),
+    descuentoTicket: extra.descuentoTicket ?? null,
+    pagos: extra.pagos ?? null,
+    autorizacion: extra.autorizacion ?? null,
     metodoPago: extra.metodoPago,
     tipoVenta: extra.tipoVenta,
     montoRecibido: extra.montoRecibido ?? null,
@@ -75,6 +93,7 @@ export async function registrarVentaClient(items: CartItem[], extra: {
     if (!res.ok) {
       const err = new Error(data.error || "Error al procesar la venta");
       (err as any).status = res.status;
+      (err as any).codigo = data.codigo;
       throw err;
     }
     // El servidor devuelve items para el ticket (Fase 12); si llegara un
@@ -104,6 +123,8 @@ export async function registrarVentaClient(items: CartItem[], extra: {
       subtotal: numeroSeguro(data.subtotal),
       iva: numeroSeguro(data.iva),
       ieps: numeroSeguro(data.ieps),
+      descuentoTotal: numeroSeguro(data.descuentoTotal),
+      pagos: Array.isArray(data.pagos) ? data.pagos : undefined,
       metodoPago: data.metodoPago ?? extra.metodoPago,
       nombreCliente: data.nombreCliente ?? null,
       fechaHora: data.fechaHora ?? new Date().toISOString(),
@@ -115,6 +136,17 @@ export async function registrarVentaClient(items: CartItem[], extra: {
 
     // Monedero: los puntos NO se pueden encolar offline: no existe un
     // idCliente verificado ni un saldo de puntos que el sync pueda validar.
+    // Descuentos manuales, pagos divididos y autorizaciones necesitan al
+    // servidor (tope de la cajera, contraseña de la administradora).
+    if (
+      items.some((i) => i.descuento) ||
+      extra.descuentoTicket ||
+      (extra.pagos && extra.pagos.length > 0)
+    ) {
+      throw new Error(
+        "Sin conexión: los descuentos manuales y el pago dividido requieren conexión"
+      );
+    }
     if (extra.metodoPago === "PUNTOS_MONEDERO") {
       throw new Error(
         "Pago con puntos: requiere conexión para validar el saldo del cliente"
@@ -123,11 +155,13 @@ export async function registrarVentaClient(items: CartItem[], extra: {
 
     // Mismo motor fiscal que el servidor (que de todos modos recalcula al
     // sincronizar): IVA por producto, IEPS y precios con impuestos incluidos.
+    // Las promociones vigentes sí aplican offline (el servidor las reaplica).
     const fiscal = totalesCarrito(
       items.map((i) => ({
         ...i,
         subtotalLinea: numeroSeguro(i.cantidad) * numeroSeguro(i.precioUnitario),
-      }))
+      })),
+      { promociones: useCartStore.getState().promociones }
     );
     const subtotal = fiscal.subtotal;
     const iva = fiscal.iva;

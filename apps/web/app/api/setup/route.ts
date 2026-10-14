@@ -71,6 +71,9 @@ export async function POST(request: Request) {
         ...(body?.preciosIncluyenIva !== undefined
           ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
           : {}),
+        ...(body?.descuentoMaxCajera !== undefined
+          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
+          : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,
         temaBase: parsed.data.temaBase,
@@ -94,6 +97,9 @@ export async function POST(request: Request) {
         ivaRate: parsed.data.ivaRate,
         ...(body?.preciosIncluyenIva !== undefined
           ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+          : {}),
+        ...(body?.descuentoMaxCajera !== undefined
+          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
           : {}),
         politicaStockOffline: parsed.data.politicaStockOffline,
         logo: parsed.data.logo ?? null,

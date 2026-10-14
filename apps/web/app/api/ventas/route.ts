@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { puedeCobrar } from "@/lib/permisos";
 import { executeSale, SaleError } from "@/lib/sales";
+import { promocionesVigentes } from "@/lib/promociones";
+import { AutorizacionError, verificarAutorizacion } from "@/lib/autorizacion";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { tenantDb } from "@/lib/tenant";
 
@@ -13,6 +15,13 @@ const MAPA_METODO: Record<string, string> = {
   TRANSFERENCIA: "TRANSFERENCIA",
   PUNTOS_MONEDERO: "PUNTOS_MONEDERO",
 };
+
+/** Métodos que usará la venta (uno, o los de un pago mixto). */
+function metodosDe(body: any): string[] {
+  return Array.isArray(body?.pagos) && body.pagos.length > 0
+    ? body.pagos.map((p: any) => String(p?.metodo ?? ""))
+    : [String(body?.metodoPago ?? "")];
+}
 
 export async function POST(request: Request) {
   const auth = await requireAuth()();
@@ -34,12 +43,14 @@ export async function POST(request: Request) {
 
   // Feature flag: métodos de pago habilitados por el negocio (Marca Blanca).
   const config = await getBusinessConfig(user.idNegocio);
-  const requerido = MAPA_METODO[body.metodoPago as string];
-  if (!requerido || !config.metodosPago.includes(requerido as any)) {
-    return NextResponse.json(
-      { error: `El método de pago ${body.metodoPago} no está habilitado para este negocio` },
-      { status: 403 }
-    );
+  for (const metodo of metodosDe(body)) {
+    const requerido = MAPA_METODO[metodo];
+    if (!requerido || !config.metodosPago.includes(requerido as any)) {
+      return NextResponse.json(
+        { error: `El método de pago ${metodo} no está habilitado para este negocio` },
+        { status: 403 }
+      );
+    }
   }
 
   // Fase 12 · interruptor de mayoreo: solo se acepta booleano real.
@@ -52,12 +63,31 @@ export async function POST(request: Request) {
       orderBy: { horaApertura: "desc" },
     });
 
+    // Descuento por encima del tope: la administradora autoriza en mostrador.
+    let autorizadoPor: string | null = null;
+    try {
+      autorizadoPor = await verificarAutorizacion(prisma, body.autorizacion);
+    } catch (e) {
+      if (e instanceof AutorizacionError) {
+        return NextResponse.json(
+          { error: e.message, codigo: "AUTORIZACION_INVALIDA" },
+          { status: 403 }
+        );
+      }
+      throw e;
+    }
+    const promociones = await promocionesVigentes(prisma);
+
     const resultado = await prisma.$transaction((tx) =>
       executeSale(tx, { ...body, esMayoreo }, {
         idUsuario: user.idPersona,
         idCaja: sesion?.idCaja ?? null,
         ivaRate: config.ivaRate,
         preciosIncluyenIva: config.preciosIncluyenIva,
+        rol: user.rol,
+        descuentoMaxCajera: config.descuentoMaxCajera,
+        autorizadoPor,
+        promociones,
         puntos: config.puntosConfig,
       })
     );
@@ -77,7 +107,10 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof SaleError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: error.message, ...(error.codigo ? { codigo: error.codigo } : {}) },
+        { status: error.status }
+      );
     }
     return NextResponse.json(
       { error: "Error interno al registrar la venta" },

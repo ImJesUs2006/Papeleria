@@ -7,6 +7,8 @@ import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
 import { elegirPrecioUnitario, sufijoFolio, fechaFolio } from "@/lib/sales";
 import { calcularImpuestos, tasasProducto } from "@/lib/impuestos";
+import { aplicarDescuentos } from "@/lib/descuentos";
+import { promocionesVigentes } from "@/lib/promociones";
 import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
 
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
   try {
     const config = await getBusinessConfig(user.idNegocio);
     const politicaStockOffline = config.politicaStockOffline;
+    const promociones = await promocionesVigentes(prisma);
 
     const resultados = await prisma.$transaction(
       async (tx) => {
@@ -256,8 +259,22 @@ export async function POST(request: Request) {
           // 5. Liquidación: IVA y totales SIEMPRE recalculados en servidor.
           //    Mismo motor fiscal que la venta en línea (IVA por producto, IEPS,
           //    precios con impuestos incluidos).
+          //    Las promociones vigentes también aplican a lo vendido sin red.
+          const precios = aplicarDescuentos(
+            lineas.map((l) => ({
+              codigoItem: l.codigoItem,
+              idCategoria: mapaProductos.get(l.codigoItem)?.idCategoria ?? null,
+              cantidad: l.cantidad,
+              precio: l.precioMomento,
+            })),
+            promociones
+          );
           const fiscal = calcularImpuestos(
-            lineas.map((l) => ({ importe: l.subtotalLinea, tasaIva: l.tasaIva, tasaIeps: l.tasaIeps })),
+            precios.lineas.map((pl, i) => ({
+              importe: pl.importeNeto,
+              tasaIva: lineas[i].tasaIva,
+              tasaIeps: lineas[i].tasaIeps,
+            })),
             { preciosIncluyenIva: config.preciosIncluyenIva }
           );
           fiscal.lineas.forEach((f, i) => {
@@ -290,6 +307,7 @@ export async function POST(request: Request) {
               subtotal: Math.round(subtotal * 100) / 100,
               iva,
               ieps,
+              descuentoTotal: precios.totalPromociones,
               totalNeto,
               idUsuario: cajero.idPersona,
               idCaja: cajaAbierta?.idCaja ?? null,
@@ -310,7 +328,8 @@ export async function POST(request: Request) {
                 codigoItem: l.codigoItem,
                 cantidad: l.cantidad,
                 precioMomento: l.precioMomento,
-                descuentoLinea: 0,
+                descuentoLinea: precios.lineas[lineas.indexOf(l)].descuentoTotal,
+                promocion: precios.lineas[lineas.indexOf(l)].promocion,
                 subtotalLinea: l.subtotalLinea,
                 tasaIva: l.tasaIva,
                 ivaLinea: l.ivaLinea,

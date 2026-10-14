@@ -76,6 +76,7 @@ export function ProductGrid() {
       tasaIva: (p as any).tasaIva ?? null,
       exentoIva: (p as any).exentoIva === true,
       tasaIeps: (p as any).tasaIeps ?? null,
+      idCategoria: (p as any).idCategoria ?? null,
     });
     // Fase 12: feedback instantáneo al tocar una tarjeta del catálogo.
     pushToast(`Producto ${p.descripcion} agregado`);

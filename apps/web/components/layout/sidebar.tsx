@@ -16,6 +16,7 @@ import {
   RotateCcw,
   FileText,
   PackageOpen,
+  Tag,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
@@ -82,7 +83,13 @@ const NAV_ITEMS: Array<{
     permission: "pedidos.ver",
     flag: "proveedores",
   },
-{
+  {
+    label: "Promociones",
+    href: "/promociones",
+    icon: Tag,
+    permission: "inventario.editar",
+  },
+  {
     label: "Clientes",
     href: "/clientes",
     icon: Users,

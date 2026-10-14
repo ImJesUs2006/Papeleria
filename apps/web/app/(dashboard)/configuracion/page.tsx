@@ -113,6 +113,7 @@ function normalizeConfig(raw: any): BusinessConfig {
     moneda: typeof raw?.moneda === "string" ? raw.moneda : "MXN",
     ivaRate: Number.isFinite(iva) ? iva : 16,
     preciosIncluyenIva: raw?.preciosIncluyenIva === true,
+    descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
     featureFlags,
     metodosPago,
     politicaStockOffline:
@@ -372,6 +373,7 @@ const guardar = async () => {
           moneda: config.moneda,
           ivaRate: Number(config.ivaRate),
           preciosIncluyenIva: config.preciosIncluyenIva === true,
+          descuentoMaxCajera: Number(config.descuentoMaxCajera ?? 10),
           featureFlags: config.featureFlags,
           metodosPago: config.metodosPago,
           politicaStockOffline: config.politicaStockOffline,
@@ -569,6 +571,21 @@ const guardar = async () => {
             IEPS) desde Inventario.
           </span>
         </span>
+      </label>
+
+      <label className="block max-w-xs">
+        <span className="text-xs text-muted mb-1 block">
+          Descuento máximo de la cajera sin autorización (%)
+        </span>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step="0.5"
+          value={config.descuentoMaxCajera ?? 10}
+          onChange={(e) => setConfig({ ...config, descuentoMaxCajera: Number(e.target.value) })}
+          className="input-dark"
+        />
       </label>
 
       <div className="border-t border-surface-600 pt-4">

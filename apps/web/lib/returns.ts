@@ -133,6 +133,7 @@ export async function executeReturn(
     include: {
       lineasDetalle: true,
       devoluciones: { include: { lineas: true } },
+      pagos: true,
     },
   });
   if (!venta) {
@@ -159,7 +160,10 @@ export async function executeReturn(
       );
     }
     metodoReembolso = "PUNTOS_MONEDERO";
-  } else if (metodoReembolso === "PUNTOS_MONEDERO") {
+  } else if (
+    metodoReembolso === "PUNTOS_MONEDERO" &&
+    !((venta as any).pagos ?? []).some((p: any) => p.metodo === "PUNTOS_MONEDERO")
+  ) {
     // Blindaje financiero: los puntos solo se restituyen si ASÍ se cobró la
     // venta. Sin esto, una venta normal de $1,000 en efectivo podría
     // "reembolsarse" en puntos y convertir dinero en lealtad.
@@ -305,10 +309,17 @@ export async function executeReturn(
     // habría usado para pagar la venta (al valor vigente de la tasa).
     // No toca la caja.
     const valorPunto = ctx.puntos?.valorPuntoPesos ?? 1;
+    const pagoPuntos = ((venta as any).pagos ?? []).find(
+      (p: any) => p.metodo === "PUNTOS_MONEDERO"
+    );
+    const restituir =
+      pagoPuntos && !ventaMonedero
+        ? Math.min(puntosRequeridos(totalNeto, valorPunto), Number(pagoPuntos.puntos ?? 0))
+        : puntosRequeridos(totalNeto, valorPunto);
     await tx.cliente.update({
       where: { idCliente: venta.idCliente },
       data: {
-        puntosFidelidad: { increment: puntosRequeridos(totalNeto, valorPunto) },
+        puntosFidelidad: { increment: restituir },
       },
     });
     idCaja = null;

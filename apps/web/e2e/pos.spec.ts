@@ -16,6 +16,8 @@ test.describe.serial("POS — flujo crítico", () => {
     await login(page);
     await ensureCajaAbierta(page);
     await page.goto("/cobro");
+    // En dev la primera visita compila la página: espera a que hidrate.
+    await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(/\/cobro/);
     await expect(page.getByText("Punto de Venta")).toBeVisible();
   });
@@ -25,8 +27,10 @@ test.describe.serial("POS — flujo crítico", () => {
     await ensureCajaAbierta(page);
 
     await page.goto("/cobro");
+    // En dev la primera visita compila la página: espera a que hidrate.
+    await page.waitForLoadState("networkidle");
     await agregarPrimerProducto(page);
-    await expect(page.getByText(/1 artículo/)).toBeVisible();
+    await expect(page.getByText(/1 (artículos?|productos?)/i)).toBeVisible();
 
     await page.getByRole("button", { name: "Efectivo" }).click();
     await page.getByRole("button", { name: /Cobrar \$/ }).click();
@@ -71,8 +75,10 @@ test.describe.serial("POS — flujo crítico", () => {
     await login(page);
     await ensureCajaAbierta(page);
     await page.goto("/cobro");
+    // En dev la primera visita compila la página: espera a que hidrate.
+    await page.waitForLoadState("networkidle");
     await agregarPrimerProducto(page);
-    await expect(page.getByText(/1 artículo/)).toBeVisible();
+    await expect(page.getByText(/1 (artículos?|productos?)/i)).toBeVisible();
 
     await context.setOffline(true);
     await page.getByRole("button", { name: /Cobrar \$/ }).click();

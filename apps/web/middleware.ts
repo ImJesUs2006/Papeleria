@@ -5,6 +5,8 @@ import { verifyToken } from "@/lib/jwt";
 const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/negocios",
+  // Alta de negocios: se autoriza con el token de plataforma, no con sesión.
+  "/plataforma/",
   // Service worker, manifiesto e íconos de la app instalable (Paso 8).
   "/sw.js",
   "/manifest.webmanifest",

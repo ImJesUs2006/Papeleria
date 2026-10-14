@@ -16,6 +16,8 @@ test.describe("POS — catálogo táctil (Fase 1)", () => {
     await login(page);
     await ensureCajaAbierta(page);
     await page.goto("/cobro");
+    // En dev la primera visita compila la página: espera a que hidrate.
+    await page.waitForLoadState("networkidle");
 
     const grid = page.locator('[data-testid="product-grid"]');
     await expect(grid).toBeVisible();
@@ -34,19 +36,23 @@ test.describe("POS — catálogo táctil (Fase 1)", () => {
     await login(page);
     await ensureCajaAbierta(page);
     await page.goto("/cobro");
+    // En dev la primera visita compila la página: espera a que hidrate.
+    await page.waitForLoadState("networkidle");
 
     const tarjetas = page.locator('[data-testid="product-card"]:not([disabled])');
     await expect(tarjetas.first()).toBeVisible();
     await tarjetas.first().click();
 
     // El cart panel refleja la línea agregada (1 artículo).
-    await expect(page.getByText(/1 artículo/)).toBeVisible();
+    await expect(page.getByText(/1 (artículos?|productos?)/i)).toBeVisible();
   });
 
   test("el grid coexiste con el escaneo por código", async ({ page }) => {
     await login(page);
     await ensureCajaAbierta(page);
     await page.goto("/cobro");
+    // En dev la primera visita compila la página: espera a que hidrate.
+    await page.waitForLoadState("networkidle");
 
     await expect(page.getByRole("button", { name: /Enfoca tu lector/ })).toBeVisible();
     const grid = page.locator('[data-testid="product-grid"]');

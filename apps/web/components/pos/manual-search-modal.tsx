@@ -63,6 +63,7 @@ export function ManualSearchModal({ open, onClose }: Props) {
       exentoIva: (p as any).exentoIva === true,
       tasaIeps: (p as any).tasaIeps ?? null,
       idCategoria: (p as any).idCategoria ?? null,
+      usaSeries: (p as any).usaSeries === true,
     });
   };
 

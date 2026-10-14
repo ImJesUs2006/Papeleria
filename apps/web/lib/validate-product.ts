@@ -92,6 +92,9 @@ const BASE_PRODUCTO = z.object({
   // puede vender fracciones de tiempo; un producto a granel jamás es servicio.
   permiteDecimales: z.boolean().optional(),
   esServicio: z.boolean().optional(),
+  // Paso 6: control por lotes con caducidad y/o por número de serie.
+  usaLotes: z.boolean().optional(),
+  usaSeries: z.boolean().optional(),
   // Categoría opcional (Fase 10); se valida contra la BD al crear/editar.
   idCategoria: z.string().trim().max(40).nullable().optional(),
   codigoBarras: textoOpcional(64),

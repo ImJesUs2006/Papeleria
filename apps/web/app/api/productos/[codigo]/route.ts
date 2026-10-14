@@ -49,6 +49,10 @@ export async function GET(
       stockMinimo: producto.stockMinimo,
       permiteDecimales: producto.permiteDecimales,
       esServicio: producto.esServicio,
+      usaLotes: producto.usaLotes,
+      usaSeries: producto.usaSeries,
+      grupoVariante: producto.grupoVariante ?? null,
+      atributosVariante: producto.atributosVariante ?? null,
       idCategoria: producto.idCategoria,
       atributos: (producto.atributos as Record<string, unknown> | null) ?? null,
       ubicacionEstante: producto.ubicacionEstante,
@@ -302,6 +306,14 @@ export async function PATCH(
     if (body.esServicio !== undefined) {
       data.esServicio = body.esServicio === true;
     }
+    if (body.usaLotes !== undefined) data.usaLotes = body.usaLotes === true;
+    if (body.usaSeries !== undefined) data.usaSeries = body.usaSeries === true;
+    // Un servicio no tiene existencia; las series son por unidad (sin granel).
+    if (data.esServicio === true || (data.esServicio === undefined && existente.esServicio)) {
+      data.usaLotes = false;
+      data.usaSeries = false;
+    }
+    if (data.permiteDecimales === true) data.usaSeries = false;
     if (body.idCategoria !== undefined) {
       if (body.idCategoria === null || body.idCategoria === "") {
         data.idCategoria = null;

@@ -141,6 +141,8 @@ const formSchema = z
       .optional()
       .or(z.literal("")),
     permiteDecimales: z.boolean().optional(),
+    usaLotes: z.boolean().optional(),
+    usaSeries: z.boolean().optional(),
     esServicio: z.boolean().optional(),
   })
   .refine(
@@ -270,6 +272,8 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
             tipoImpresion: p.tipoImpresion ?? "",
             fechaCaducidad: p.fechaCaducidad ? p.fechaCaducidad.slice(0, 10) : "",
             permiteDecimales: Boolean(p.permiteDecimales),
+            usaLotes: Boolean(p.usaLotes),
+            usaSeries: Boolean(p.usaSeries),
             esServicio: Boolean(p.esServicio),
           });
         })
@@ -318,6 +322,8 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       tipoImpresion: values.tipoImpresion || null,
       fechaCaducidad: values.fechaCaducidad?.trim() || null,
       permiteDecimales: values.permiteDecimales === true,
+      usaLotes: values.usaLotes === true,
+      usaSeries: values.usaSeries === true,
       esServicio: values.esServicio === true,
       atributos: camposGiro.length
         ? Object.fromEntries(
@@ -642,6 +648,24 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   <span className="block text-sm font-bold text-gray-100">Es un servicio</span>
                   <span className="block text-[11px] text-muted">
                     No usa inventario ni Kardex; se cobra directamente
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-amber-400/40 transition-colors">
+                <input type="checkbox" {...register("usaLotes")} className="mt-0.5 rounded accent-amber-400" />
+                <span>
+                  <span className="block text-sm font-bold text-gray-100">Controla lotes y caducidad</span>
+                  <span className="block text-[11px] text-muted">
+                    La venta toma primero lo que caduca antes y nunca lotes vencidos
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-sky-400/40 transition-colors">
+                <input type="checkbox" {...register("usaSeries")} className="mt-0.5 rounded accent-sky-400" />
+                <span>
+                  <span className="block text-sm font-bold text-gray-100">Número de serie por unidad</span>
+                  <span className="block text-[11px] text-muted">
+                    Al vender se escanea la serie de cada pieza (garantías)
                   </span>
                 </span>
               </label>

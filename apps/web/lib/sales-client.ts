@@ -71,6 +71,7 @@ export async function registrarVentaClient(items: CartItem[], extra: {
       codigoItem: i.codigoItem,
       cantidad: i.cantidad,
       ...(i.descuento ? { descuento: i.descuento } : {}),
+      ...(i.series?.length ? { series: i.series } : {}),
     })),
     descuentoTicket: extra.descuentoTicket ?? null,
     pagos: extra.pagos ?? null,
@@ -138,6 +139,9 @@ export async function registrarVentaClient(items: CartItem[], extra: {
     // idCliente verificado ni un saldo de puntos que el sync pueda validar.
     // Descuentos manuales, pagos divididos y autorizaciones necesitan al
     // servidor (tope de la cajera, contraseña de la administradora).
+    if (items.some((i) => i.usaSeries)) {
+      throw new Error("Sin conexión: los productos con número de serie requieren conexión");
+    }
     if (
       items.some((i) => i.descuento) ||
       extra.descuentoTicket ||

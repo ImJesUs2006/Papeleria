@@ -36,6 +36,7 @@ import {
   PagoDivididoModal,
 } from "@/components/pos/descuentos-pago";
 import type { LineaPrecio } from "@/lib/descuentos";
+import { SerieModal } from "@/components/pos/serie-modal";
 import { cn } from "@/lib/utils";
 
 function CartItemRow({
@@ -47,7 +48,7 @@ function CartItemRow({
   index: number;
   precio?: LineaPrecio;
 }) {
-  const { removeItem, updateQuantity, setDescuentoLinea } = useCartStore();
+  const { removeItem, updateQuantity, setDescuentoLinea, quitarSerie } = useCartStore();
   const [editando, setEditando] = useState(false);
   const decimales = item.permiteDecimales === true || item.esServicio === true;
   const descontado = precio && precio.descuentoTotal - precio.descuentoTicket > 0;
@@ -85,7 +86,11 @@ function CartItemRow({
         )}
       </div>
 
-      {decimales ? (
+      {item.usaSeries ? (
+        <span className="w-16 text-center text-sm font-bold" title="Una pieza por serie">
+          {item.cantidad}
+        </span>
+      ) : decimales ? (
         <input
           type="number"
           value={item.cantidad}
@@ -150,6 +155,26 @@ function CartItemRow({
         <Trash2 className="h-3 w-3 text-neon-red" />
       </button>
      </div>
+      {item.usaSeries && (item.series ?? []).length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {(item.series ?? []).map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 rounded-md bg-surface-600 px-2 py-0.5 text-[11px] font-mono text-slate-200"
+            >
+              {s}
+              <button
+                type="button"
+                onClick={() => quitarSerie(item.codigoItem, s)}
+                aria-label={`Quitar serie ${s}`}
+                className="text-rose-300 hover:text-rose-200"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {editando && (
         <DescuentoEditor
           actual={item.descuento}
@@ -456,6 +481,9 @@ export function CartPanel() {
     descuentoTicket,
     setDescuentoTicket,
     setPromociones,
+    pendienteSerie,
+    cancelarSerie,
+    addItem,
   } = useCartStore();
   const { idPersona, nombre } = useAuthStore();
   const config = useConfigStore((s) => s.config);
@@ -983,6 +1011,13 @@ export function CartPanel() {
           />
         )}
       </AnimatePresence>
+      <SerieModal
+        producto={pendienteSerie}
+        yaEnCarrito={items.find((i) => i.codigoItem === pendienteSerie?.codigoItem)?.series ?? []}
+        onClose={cancelarSerie}
+        onAgregar={(serie) => pendienteSerie && addItem({ ...pendienteSerie, series: [serie] })}
+      />
+
       <PagoDivididoModal
         open={pagoDivididoOpen}
         total={total}

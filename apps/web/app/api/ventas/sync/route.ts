@@ -6,6 +6,7 @@ import { getBusinessConfig } from "@/lib/feature-flags";
 import { metodoPagoValido } from "@/lib/offline/conflict";
 import { registrarMovimientosKardex } from "@/lib/kardex";
 import { moverStock } from "@/lib/existencias";
+import { consumirLotesFEFO } from "@/lib/lotes";
 import { elegirPrecioUnitario, sufijoFolio, fechaFolio } from "@/lib/sales";
 import { calcularImpuestos, tasasProducto } from "@/lib/impuestos";
 import { aplicarDescuentos } from "@/lib/descuentos";
@@ -183,6 +184,10 @@ export async function POST(request: Request) {
               break;
             }
             const esServicio = producto.esServicio;
+            if (producto.usaSeries) {
+              rechazo = `"${producto.descripcion}" lleva número de serie: se vende solo con conexión`;
+              break;
+            }
             if (!esServicio && !producto.permiteDecimales && !Number.isInteger(cantidad)) {
               rechazo = `Cantidad entera requerida para ${codigo}`;
               break;
@@ -342,11 +347,19 @@ export async function POST(request: Request) {
             if (!l.esServicio) {
               // Política de stock offline: la venta YA ocurrió; se descuenta
               // aunque quede en negativo (la alerta queda en bitácora).
+              const idSucursalVenta = cajaAbierta?.idSucursal ?? user.idSucursal;
               await moverStock(tx, {
                 codigoItem: l.codigoItem,
                 delta: -l.cantidad,
-                idSucursal: cajaAbierta?.idSucursal ?? user.idSucursal,
+                idSucursal: idSucursalVenta,
               });
+              if (mapaProductos.get(l.codigoItem)?.usaLotes && idSucursalVenta) {
+                await consumirLotesFEFO(tx, {
+                  codigoItem: l.codigoItem,
+                  idSucursal: idSucursalVenta,
+                  cantidad: l.cantidad,
+                });
+              }
             }
           }
 

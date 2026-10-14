@@ -17,6 +17,7 @@ import {
   FileText,
   PackageOpen,
   Tag,
+  Boxes,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore, usePersonalizacion } from "@/store/config";
@@ -83,6 +84,12 @@ const NAV_ITEMS: Array<{
     icon: Truck,
     permission: "pedidos.ver",
     flag: "proveedores",
+  },
+  {
+    label: "Lotes y series",
+    href: "/lotes",
+    icon: Boxes,
+    permission: "inventario.editar",
   },
   {
     label: "Traspasos",

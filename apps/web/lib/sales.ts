@@ -7,6 +7,8 @@ import {
 } from "./fidelidad";
 import { claveProducto } from "./tenant-keys";
 import { moverStock, stockEnSucursal } from "./existencias";
+import { consumirLotesFEFO, type ConsumoLote } from "./lotes";
+import { normalizarSeries, SerieError, venderSeries } from "./series";
 import {
   aplicarDescuentos,
   normalizarDescuento,
@@ -116,6 +118,8 @@ export interface SaleLineInput {
   cantidad: number;
   /** Descuento manual de la línea (porcentaje o monto). */
   descuento?: DescuentoManual | null;
+  /** Números de serie vendidos (productos con `usaSeries`). */
+  series?: string[];
 }
 
 export interface SaleInput {
@@ -272,6 +276,9 @@ export async function executeSale(
     descuentoLinea: number;
     promocion: string | null;
     esServicio: boolean;
+    usaLotes: boolean;
+    series: string[];
+    lotes: ConsumoLote[];
     tasaIva: number;
     tasaIeps: number;
     ivaLinea: number;
@@ -311,10 +318,20 @@ export async function executeSale(
     }
 
     let descuento: DescuentoManual | null = null;
+    let series: string[] = [];
     try {
       descuento = normalizarDescuento(item.descuento);
+      series = producto.usaSeries ? normalizarSeries(item.series) : [];
     } catch (e: any) {
       throw new SaleError(`${producto.descripcion}: ${e.message}`);
+    }
+    // Productos con número de serie: una serie por unidad vendida.
+    if (producto.usaSeries && (!Number.isInteger(cantidad) || series.length !== cantidad)) {
+      throw new SaleError(
+        `"${producto.descripcion}" lleva número de serie: indica ${cantidad} serie(s) (capturaste ${series.length})`,
+        400,
+        "REQUIERE_SERIES"
+      );
     }
 
     lineas.push({
@@ -328,6 +345,9 @@ export async function executeSale(
       descuentoLinea: 0,
       promocion: null,
       esServicio,
+      usaLotes: producto.usaLotes === true,
+      series,
+      lotes: [],
       ...tasasProducto(producto, ivaNegocio),
       ivaLinea: 0,
       iepsLinea: 0,
@@ -439,6 +459,28 @@ export async function executeSale(
         409
       );
     }
+    // Trazabilidad: series vendidas y lotes consumidos (primero lo que
+    // caduca antes; nunca lotes vencidos).
+    if (l.series.length > 0) {
+      try {
+        await venderSeries(tx, {
+          codigoItem: l.codigoItem,
+          idSucursal: ctx.idSucursal ?? null,
+          series: l.series,
+          folioVenta,
+        });
+      } catch (e) {
+        if (e instanceof SerieError) throw new SaleError(`${l.descripcion}: ${e.message}`, e.status);
+        throw e;
+      }
+    }
+    if (l.usaLotes && ctx.idSucursal) {
+      l.lotes = await consumirLotesFEFO(tx, {
+        codigoItem: l.codigoItem,
+        idSucursal: ctx.idSucursal,
+        cantidad: l.cantidad,
+      });
+    }
   }
 
   // 5. Venta, líneas, pagos y kardex.
@@ -480,6 +522,8 @@ export async function executeSale(
         precioMomento: l.precioUnitario,
         descuentoLinea: l.descuentoLinea,
         promocion: l.promocion,
+        ...(l.lotes.length ? { lotes: l.lotes as unknown as Prisma.InputJsonValue } : {}),
+        ...(l.series.length ? { series: l.series } : {}),
         subtotalLinea: l.subtotalLinea,
         tasaIva: l.tasaIva,
         ivaLinea: l.ivaLinea,

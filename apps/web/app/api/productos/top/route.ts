@@ -105,6 +105,7 @@ export async function GET(request: Request) {
       exentoIva: p.exentoIva === true,
       tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
       idCategoria: p.idCategoria ?? null,
+      usaSeries: p.usaSeries === true,
       imagenUrl: p.imagenUrl ?? null,
       stockActual: p.stockActual,
       tipoImpresion: p.tipoImpresion ?? null,

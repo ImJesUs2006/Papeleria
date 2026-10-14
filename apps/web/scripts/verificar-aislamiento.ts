@@ -18,6 +18,9 @@ import { promocionesVigentes, validarPromocion } from "@/lib/promociones";
 import { moverStock, stockEnSucursal } from "@/lib/existencias";
 import { cajaDelUsuario } from "@/lib/cajas";
 import { ejecutarTraspaso } from "@/lib/traspasos";
+import { lotesPorCaducar, registrarEntradaLote } from "@/lib/lotes";
+import { registrarSeries } from "@/lib/series";
+import { generarVariantes } from "@/lib/variantes";
 
 let fallos = 0;
 function comprobar(nombre: string, ok: boolean, detalle?: unknown) {
@@ -44,6 +47,8 @@ async function limpiar(ids: string[]) {
   await prisma.devolucion.deleteMany(w);
   await prisma.lineaDetalleVenta.deleteMany(w);
   await prisma.movimientoKardex.deleteMany(w);
+  await prisma.lote.deleteMany(w);
+  await prisma.numeroSerie.deleteMany(w);
   await prisma.existencia.deleteMany(w);
   await prisma.traspaso.deleteMany(w);
   await prisma.pagoVenta.deleteMany(w);
@@ -272,6 +277,76 @@ async function main() {
         ejecutarTraspaso(tx, { idOrigen: matrizA!.idSucursal, idDestino: centro.idSucursal, items: [{ codigoItem: "SUC1", cantidad: 50 }] }, adminA!.idPersona)
       )
     ));
+
+    console.log("Lotes, series y variantes (Paso 6)");
+    const matriz = matrizA!.idSucursal;
+    await dbA.producto.create({
+      data: { codigoItem: "MEDL", descripcion: "Amoxicilina", precioUnitario: 50, usaLotes: true, tasaIva: 0 },
+    });
+    const ayer = new Date(Date.now() - 86_400_000);
+    const pronto = new Date(Date.now() + 10 * 86_400_000);
+    const despues = new Date(Date.now() + 90 * 86_400_000);
+    await dbA.$transaction(async (tx) => {
+      await registrarEntradaLote(tx, { codigoItem: "MEDL", idSucursal: matriz, numeroLote: "VENCIDO", caducidad: ayer, cantidad: 4, idUsuario: adminA!.idPersona });
+      await registrarEntradaLote(tx, { codigoItem: "MEDL", idSucursal: matriz, numeroLote: "TARDE", caducidad: despues, cantidad: 5, idUsuario: adminA!.idPersona });
+      await registrarEntradaLote(tx, { codigoItem: "MEDL", idSucursal: matriz, numeroLote: "PRONTO", caducidad: pronto, cantidad: 3, idUsuario: adminA!.idPersona });
+    });
+    const ventaLotes = await dbA.$transaction((tx) =>
+      executeSale(tx, { items: [{ codigoItem: "MEDL", cantidad: 4 }], metodoPago: "EFECTIVO" },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, idSucursal: matriz })
+    );
+    const lineaLotes = await dbA.lineaDetalleVenta.findFirst({ where: { folioVenta: ventaLotes.folioVenta } });
+    const lotesUsados = (lineaLotes?.lotes as any[]) ?? [];
+    comprobar("FEFO: toma primero el que caduca pronto y nunca el vencido",
+      lotesUsados.length === 2 && lotesUsados[0].numeroLote === "PRONTO" && lotesUsados[0].cantidad === 3 &&
+      lotesUsados[1].numeroLote === "TARDE" && lotesUsados[1].cantidad === 1, lotesUsados);
+    const porCaducar = await lotesPorCaducar(dbA, 30, matriz);
+    comprobar("alerta: el vencido aparece por caducar y el agotado no",
+      porCaducar.some((l) => l.numeroLote === "VENCIDO") && !porCaducar.some((l) => l.numeroLote === "PRONTO"));
+
+    await dbA.producto.create({
+      data: { codigoItem: "TAL", descripcion: "Taladro", precioUnitario: 1000, usaSeries: true },
+    });
+    await dbA.$transaction((tx) =>
+      registrarSeries(tx, { codigoItem: "TAL", idSucursal: matriz, series: ["SN-1", "SN-2"], idUsuario: adminA!.idPersona })
+    );
+    comprobar("registrar series da entrada a la existencia",
+      (await stockEnSucursal(dbA, matriz, ["TAL"])).get("TAL") === 2);
+    comprobar("no se vende sin indicar la serie", await rechaza(() =>
+      dbA.$transaction((tx) =>
+        executeSale(tx, { items: [{ codigoItem: "TAL", cantidad: 1 }], metodoPago: "EFECTIVO" },
+          { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, idSucursal: matriz })
+      )
+    ));
+    const ventaSerie = await dbA.$transaction((tx) =>
+      executeSale(tx, { items: [{ codigoItem: "TAL", cantidad: 1, series: ["sn-2"] }], metodoPago: "EFECTIVO" },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, idSucursal: matriz })
+    );
+    const sn2 = await dbA.numeroSerie.findFirst({ where: { serie: "SN-2" } });
+    comprobar("la serie vendida queda ligada al ticket", sn2?.estado === "VENDIDO" && sn2.folioVenta === ventaSerie.folioVenta);
+    comprobar("la misma serie no se vende dos veces", await rechaza(() =>
+      dbA.$transaction((tx) =>
+        executeSale(tx, { items: [{ codigoItem: "TAL", cantidad: 1, series: ["SN-2"] }], metodoPago: "EFECTIVO" },
+          { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, idSucursal: matriz })
+      )
+    ));
+    comprobar("B no ve las series de A", (await dbB.numeroSerie.findMany()).length === 0);
+    await dbA.$transaction((tx) =>
+      executeReturn(tx, { folioVenta: ventaSerie.folioVenta, items: [{ codigoItem: "TAL", cantidad: 1 }], metodoReembolso: "EFECTIVO" },
+        { idUsuario: adminA!.idPersona, idCaja: caja.idCaja, idSucursal: matriz })
+    );
+    comprobar("la devolución vuelve a dejar disponible la serie",
+      (await dbA.numeroSerie.findFirst({ where: { serie: "SN-2" } }))?.estado === "DISPONIBLE");
+
+    await dbA.producto.create({ data: { codigoItem: "PLAY", descripcion: "Playera", precioUnitario: 199 } });
+    const vars = await dbA.$transaction((tx) =>
+      generarVariantes(tx, "PLAY", [{ nombre: "Talla", valores: ["CH", "M"] }, { nombre: "Color", valores: ["Rojo"] }])
+    );
+    comprobar("genera una variante por combinación con su propio código",
+      vars.creadas.join(",") === "PLAY-CH-ROJO,PLAY-M-ROJO");
+    const variante = await dbA.producto.findUnique({ where: claveProducto("PLAY-M-ROJO") });
+    comprobar("la variante hereda precio y pertenece al grupo del modelo",
+      Number(variante?.precioUnitario) === 199 && variante?.grupoVariante === "PLAY");
 
     console.log("Configuración");
     const cfgA = await getBusinessConfig(a.idNegocio);

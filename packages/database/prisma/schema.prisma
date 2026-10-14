@@ -201,6 +201,16 @@ model Producto {
   // ---- Campos personalizados del giro (Paso 4) ----
   // Valores de los campos que define el negocio (sustancia activa, marca…).
   atributos          Json?
+  // ---- Lotes, series y variantes (Paso 6) ----
+  // Lotes con caducidad (farmacia, abarrotes): la venta consume primero
+  // los lotes que caducan antes.
+  usaLotes           Boolean        @default(false)
+  // Número de serie por unidad (electrónica, herramienta): venderla exige
+  // indicar la serie.
+  usaSeries          Boolean        @default(false)
+  // Variantes: productos del mismo modelo (talla, color) comparten el grupo.
+  grupoVariante      String?
+  atributosVariante  Json?
   // ---- Fase 12 · Imágenes Cloudinary ----
   // URL pública de la imagen en Cloudinary (o data URI). Solo se usa cuando
   // el feature flag `imagenesCloudinary` está activo en Configuración.
@@ -240,6 +250,8 @@ model Producto {
   kardexMovimientos MovimientoKardex[]
   apartadoLineas    ApartadoLinea[]
   existencias       Existencia[]
+  lotes             Lote[]
+  numerosSerie      NumeroSerie[]
   negocio           Negocio               @relation(fields: [idNegocio], references: [idNegocio])
 
   @@id([idNegocio, codigoItem])
@@ -392,6 +404,9 @@ model LineaDetalleVenta {
   descuentoLinea Decimal  @default(0) @db.Decimal(10, 2)
   // Promoción aplicada a la línea (nombre congelado al vender).
   promocion      String?
+  // Trazabilidad (Paso 6): lotes consumidos y series vendidas en la línea.
+  lotes          Json?
+  series         Json?
   subtotalLinea  Decimal  @db.Decimal(10, 2)
   // ---- Impuestos por línea (los exigirá el CFDI) ----
   // Null en tasaIva/ivaLinea = línea anterior al desglose por producto: su
@@ -964,4 +979,45 @@ model Traspaso {
 
   @@index([idNegocio, fecha])
   @@map("traspasos")
+}
+
+// ============================================================
+// PASO 6 — Lotes con caducidad y números de serie
+// ============================================================
+
+model Lote {
+  idLote     String    @id @default(uuid())
+  idNegocio  String    @default("default")
+  idSucursal String
+  codigoItem String
+  numeroLote String
+  caducidad  DateTime?
+  // Unidades del lote que siguen en existencia.
+  cantidad   Decimal   @db.Decimal(10, 3)
+  createdAt  DateTime  @default(now())
+
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
+
+  @@unique([idSucursal, codigoItem, numeroLote])
+  @@index([idNegocio, caducidad])
+  @@map("lotes")
+}
+
+model NumeroSerie {
+  idSerie    String   @id @default(uuid())
+  idNegocio  String   @default("default")
+  idSucursal String
+  codigoItem String
+  serie      String
+  // DISPONIBLE | VENDIDO
+  estado     String   @default("DISPONIBLE")
+  folioVenta String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  producto Producto @relation(fields: [idNegocio, codigoItem], references: [idNegocio, codigoItem])
+
+  @@unique([idNegocio, codigoItem, serie])
+  @@index([idNegocio, estado])
+  @@map("numeros_serie")
 }

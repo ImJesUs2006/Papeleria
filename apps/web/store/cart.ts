@@ -35,6 +35,9 @@ export interface CartItem {
   idCategoria?: string | null;
   /** Descuento manual de la línea (porcentaje o monto). */
   descuento?: DescuentoManual | null;
+  /** Producto con número de serie: la cantidad es el número de series. */
+  usaSeries?: boolean;
+  series?: string[];
 }
 
 export interface TotalesCarrito extends ResumenFiscal {
@@ -124,6 +127,10 @@ interface CartState {
   descuentoTicket: DescuentoManual | null;
   /** Promociones vigentes del negocio (se cargan al abrir el POS). */
   promociones: PromocionVigente[];
+  /** Producto con serie esperando que se escanee su número. */
+  pendienteSerie: Omit<CartItem, "subtotalLinea"> | null;
+  cancelarSerie: () => void;
+  quitarSerie: (codigoItem: string, serie: string) => void;
 
   addItem: (item: Omit<CartItem, "subtotalLinea">) => void;
   removeItem: (codigoItem: string) => void;
@@ -168,15 +175,43 @@ export const useCartStore = create<CartState>((set, get) => ({
   esMayoreo: false,
   descuentoTicket: null,
   promociones: [],
+  pendienteSerie: null,
+  cancelarSerie: () => set({ pendienteSerie: null }),
+  quitarSerie: (codigoItem, serie) =>
+    set((state) => ({
+      items: state.items
+        .map((i) => {
+          if (i.codigoItem !== codigoItem) return i;
+          const series = (i.series ?? []).filter((s) => s !== serie);
+          const precio = precioUnitarioEfectivo(i, state.esMayoreo);
+          return { ...i, series, cantidad: series.length, subtotalLinea: series.length * precio };
+        })
+        .filter((i) => !i.usaSeries || i.cantidad > 0),
+    })),
 
   addItem: (item) =>
     set((state) => {
+      // Producto con número de serie: primero se escanea la serie.
+      if (item.usaSeries && !(item.series && item.series.length)) {
+        return { pendienteSerie: item };
+      }
       const existing = state.items.find(
         (i) => i.codigoItem === item.codigoItem
       );
       // Si el carrito está en mayoreo, la línea nueva entra a ese precio.
       const precioUnitario = precioUnitarioEfectivo(item, state.esMayoreo);
 
+      if (existing && item.usaSeries) {
+        const series = [...new Set([...(existing.series ?? []), ...(item.series ?? [])])];
+        return {
+          pendienteSerie: null,
+          items: state.items.map((i) =>
+            i.codigoItem === item.codigoItem
+              ? { ...i, series, cantidad: series.length, subtotalLinea: series.length * i.precioUnitario }
+              : i
+          ),
+        };
+      }
       if (existing) {
         return {
           items: state.items.map((i) =>
@@ -192,13 +227,16 @@ export const useCartStore = create<CartState>((set, get) => ({
         };
       }
 
+      const cantidad = item.usaSeries ? (item.series ?? []).length : item.cantidad;
       return {
+        pendienteSerie: null,
         items: [
           ...state.items,
           {
             ...item,
+            cantidad,
             precioUnitario,
-            subtotalLinea: item.cantidad * precioUnitario,
+            subtotalLinea: cantidad * precioUnitario,
           },
         ],
       };

@@ -25,6 +25,7 @@ interface ProductoRapido {
   exentoIva?: boolean;
   tasaIeps?: number | null;
   idCategoria?: string | null;
+  usaSeries?: boolean;
 }
 
 export default function CobroPage() {
@@ -126,6 +127,7 @@ export default function CobroPage() {
         exentoIva: p.exentoIva === true,
         tasaIeps: p.tasaIeps ?? null,
         idCategoria: p.idCategoria ?? null,
+        usaSeries: p.usaSeries === true,
       });
     } catch {
       setCodigoError("No se pudo conectar con el servidor");

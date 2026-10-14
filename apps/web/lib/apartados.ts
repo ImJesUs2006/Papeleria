@@ -1,6 +1,7 @@
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
 import { moverStock } from "./existencias";
+import { consumirLotesFEFO } from "./lotes";
 import { ivaFraccion, round2, sufijoFolio, fechaFolio } from "./sales";
 import { calcularImpuestos, tasasProducto } from "./impuestos";
 import { claveProducto } from "./tenant-keys";
@@ -131,6 +132,11 @@ export async function crearApartado(
     }
 
     const esServicio = producto.esServicio;
+    if (producto.usaSeries) {
+      throw new ApartadoError(
+        `"${producto.descripcion}" lleva número de serie: véndelo directamente (no se aparta)`
+      );
+    }
     if (!esServicio && !producto.permiteDecimales && !Number.isInteger(cantidad)) {
       throw new ApartadoError(
         `La cantidad de "${producto.descripcion}" debe ser un número entero`
@@ -235,6 +241,19 @@ export async function crearApartado(
         `Stock insuficiente para "${l.descripcion}": otra operación tomó la existencia`,
         409
       );
+    }
+    if (ctx.idSucursal) {
+      const producto = await tx.producto.findUnique({
+        where: claveProducto(l.codigoItem),
+        select: { usaLotes: true },
+      });
+      if (producto?.usaLotes) {
+        await consumirLotesFEFO(tx, {
+          codigoItem: l.codigoItem,
+          idSucursal: ctx.idSucursal,
+          cantidad: l.cantidad,
+        });
+      }
     }
   }
   await registrarMovimientosKardex(

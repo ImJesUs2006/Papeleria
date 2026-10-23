@@ -28,6 +28,7 @@ import { useAuthStore } from "@/store/auth";
 import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { registrarVentaClient, type ResultadoVenta } from "@/lib/sales-client";
 import { puntosRequeridos } from "@/lib/fidelidad";
+import { montosSugeridos } from "@/lib/pagos";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { ClientSelectModal } from "@/components/pos/client-select";
 import { VentaExitosaModal } from "@/components/pos/venta-exitosa";
@@ -908,17 +909,69 @@ export function CartPanel() {
               <span className="text-xs text-muted mb-1 block">Recibido ($)</span>
               <input
                 type="number"
+                inputMode="decimal"
                 value={montoRecibido}
-                onChange={(e) => setMontoRecibido(e.target.value)}
+                onChange={(e) => {
+                  // Sin negativos ni más de 2 decimales.
+                  const v = e.target.value;
+                  if (v === "" || /^\d{0,7}(\.\d{0,2})?$/.test(v)) setMontoRecibido(v);
+                }}
                 placeholder="0.00"
                 min={0}
+                step="0.01"
+                data-testid="monto-recibido"
                 className="w-full bg-surface-700 border border-surface-500 rounded-lg px-3 py-2.5 text-lg text-neon-green font-bold focus:border-neon-green focus:shadow-neon focus:outline-none transition-all"
               />
             </label>
-            {recibido >= total && (
-              <p className="text-sm mt-1 text-neon-green font-bold">
-                Cambio: ${cambio!.toFixed(2)}
-              </p>
+            {/* Billetes rápidos: un toque y el cambio aparece. */}
+            {total > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Montos rápidos">
+                {montosSugeridos(total).map((m, i) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMontoRecibido(m.toFixed(2))}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-bold tabular-nums transition-colors",
+                      Number(montoRecibido) === m
+                        ? "border-neon-green bg-neon-green/15 text-neon-green"
+                        : "border-surface-500 bg-surface-700 text-gray-200 hover:border-neon-green/60"
+                    )}
+                  >
+                    {i === 0 ? "Exacto" : `$${m.toLocaleString("es-MX")}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* El cambio es lo primero que mira la cajera: grande y sin ambigüedad. */}
+            {montoRecibido !== "" && (
+              <div
+                role="status"
+                data-testid="cambio"
+                className={cn(
+                  "mt-3 flex items-baseline justify-between gap-3 rounded-xl border-2 px-4 py-3",
+                  recibido >= total
+                    ? "border-neon-green/60 bg-neon-green/10"
+                    : "border-rose-500/60 bg-rose-500/10"
+                )}
+              >
+                <span
+                  className={cn(
+                    "text-xs font-black uppercase tracking-widest",
+                    recibido >= total ? "text-neon-green" : "text-rose-300"
+                  )}
+                >
+                  {recibido >= total ? "Cambio" : "Faltan"}
+                </span>
+                <span
+                  className={cn(
+                    "text-4xl font-black tabular-nums leading-none",
+                    recibido >= total ? "text-neon-green" : "text-rose-300"
+                  )}
+                >
+                  ${(recibido >= total ? cambio! : Math.round((total - recibido) * 100) / 100).toFixed(2)}
+                </span>
+              </div>
             )}
           </div>
         )}

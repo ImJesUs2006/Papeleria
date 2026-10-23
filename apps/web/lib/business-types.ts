@@ -165,6 +165,8 @@ export interface BusinessConfig {
   usarCaducidad: boolean;
   usarUbicaciones: boolean;
   requerirFondoInicial: boolean;
+  /** Días que se guarda un apartado antes de considerarse vencido. */
+  diasApartado: number;
   configVersion: number;
   setupPendiente: boolean;
 }
@@ -179,6 +181,7 @@ export const DEFAULT_VISTA_POS: VistaPOS = "ESCANER";
 export const DEFAULT_USAR_CADUCIDAD = false;
 export const DEFAULT_USAR_UBICACIONES = true;
 export const DEFAULT_REQUERIR_FONDO_INICIAL = true;
+export const DEFAULT_DIAS_APARTADO = 30;
 
 /** Para qué sirve cada módulo (Configuración y asistente inicial). */
 export const MODULOS_INFO: Record<keyof FeatureFlags, { label: string; desc: string }> = {

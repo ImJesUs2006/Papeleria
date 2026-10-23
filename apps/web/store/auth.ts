@@ -98,6 +98,8 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         try {
           await fetch("/api/auth/login", { method: "DELETE" });
+          // El siguiente usuario de esta pestaña vuelve a ver el aviso de alertas.
+          sessionStorage.removeItem("papeleria-alertas-avisado");
         } catch {
           // silent fail — cookie gets cleared server-side
         }

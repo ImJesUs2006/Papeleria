@@ -172,6 +172,7 @@ function normalizeConfig(raw: any): BusinessConfig {
       typeof raw?.usarUbicaciones === "boolean" ? raw.usarUbicaciones : true,
     requerirFondoInicial:
       typeof raw?.requerirFondoInicial === "boolean" ? raw.requerirFondoInicial : true,
+    diasApartado: Number(raw?.diasApartado) > 0 ? Number(raw.diasApartado) : 30,
     puntosConfig: normalizePuntosConfigLocal(raw?.puntosConfig),
     configVersion: Number.isFinite(Number(raw?.configVersion)) ? Number(raw.configVersion) : 1,
     setupPendiente: Boolean(raw?.setupPendiente),
@@ -395,6 +396,7 @@ const guardar = async () => {
           usarCaducidad: config.usarCaducidad,
           usarUbicaciones: config.usarUbicaciones,
           requerirFondoInicial: config.requerirFondoInicial,
+          diasApartado: Math.round(Number(config.diasApartado) || 30),
           puntosConfig: config.puntosConfig,
         }),
       });
@@ -1011,6 +1013,24 @@ const guardar = async () => {
             </button>
           ))}
         </div>
+        <label className="mt-3 flex max-w-md flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-gray-100">Días que se guarda un apartado</span>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            step={1}
+            inputMode="numeric"
+            value={config.diasApartado}
+            onChange={(e) =>
+              setConfig({ ...config, diasApartado: Math.min(365, Math.max(1, Math.round(Number(e.target.value) || 1))) })
+            }
+            className="input-dark w-24"
+          />
+          <span className="w-full text-[11px] text-muted">
+            Pasado ese plazo te avisamos para contactar al cliente o cancelar el apartado.
+          </span>
+        </label>
       </div>
 
       <div className="border-t border-surface-600 pt-4">

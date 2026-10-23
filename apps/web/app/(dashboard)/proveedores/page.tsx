@@ -16,8 +16,12 @@ import {
   ShieldCheck,
   HandCoins,
   History,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { validar } from "@/lib/validacion";
+import { PROVEEDOR_SCHEMA } from "@/lib/esquemas";
+import { notificar } from "@/store/notificaciones";
 
 interface Proveedor {
   idProveedor: string;
@@ -28,7 +32,24 @@ interface Proveedor {
   contacto: string | null;
   limiteCredito: number | null;
   saldoCredito: number;
+  diasCredito: number;
   activo: boolean;
+}
+
+interface CuentaPendiente {
+  idCuenta: string;
+  concepto: string;
+  monto: number;
+  saldo: number;
+  fechaVencimiento: string;
+  estado: "VENCIDA" | "VENCE_PRONTO" | "AL_CORRIENTE";
+  dias: number;
+}
+
+function textoVencimiento(c: CuentaPendiente): string {
+  if (c.dias < 0) return `Vencida hace ${-c.dias} día${c.dias === -1 ? "" : "s"}`;
+  if (c.dias === 0) return "Vence hoy";
+  return `Vence en ${c.dias} día${c.dias === 1 ? "" : "s"}`;
 }
 
 interface PagoProveedor {
@@ -55,6 +76,7 @@ const VACIO = {
   direccion: "",
   contacto: "",
   limiteCredito: "",
+  diasCredito: "0",
 };
 
 export default function ProveedoresPage() {
@@ -65,6 +87,8 @@ export default function ProveedoresPage() {
   const [form, setForm] = useState({ ...VACIO });
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [erroresCampo, setErroresCampo] = useState<Record<string, string>>({});
+  const [ayudaCredito, setAyudaCredito] = useState(false);
 
   // Abonos
   const [abono, setAbono] = useState<Proveedor | null>(null);
@@ -72,6 +96,7 @@ export default function ProveedoresPage() {
   const [abonando, setAbonando] = useState(false);
   const [abonoError, setAbonoError] = useState("");
   const [historial, setHistorial] = useState<PagoProveedor[]>([]);
+  const [cuentas, setCuentas] = useState<CuentaPendiente[]>([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
 
   const cargar = useCallback(async () => {
@@ -93,6 +118,7 @@ export default function ProveedoresPage() {
   const abrirCrear = () => {
     setForm({ ...VACIO });
     setError("");
+    setErroresCampo({});
     setModal({ modo: "crear" });
   };
 
@@ -104,18 +130,24 @@ export default function ProveedoresPage() {
       direccion: p.direccion ?? "",
       contacto: p.contacto ?? "",
       limiteCredito: p.limiteCredito != null ? String(p.limiteCredito) : "",
+      diasCredito: String(p.diasCredito ?? 0),
     });
     setError("");
+    setErroresCampo({});
     setModal({ modo: "editar", p });
   };
 
   const guardar = async () => {
-    if (!form.nombre.trim()) {
-      setError("El nombre es obligatorio");
+    // Mismas reglas que el servidor (lib/esquemas): el error sale junto al campo.
+    const v = validar(PROVEEDOR_SCHEMA, form);
+    if (!v.ok) {
+      setErroresCampo(v.campos);
+      setError(v.error);
       return;
     }
     setGuardando(true);
     setError("");
+    setErroresCampo({});
     try {
       const esCrear = modal?.modo === "crear";
       const res = await fetch(esCrear ? "/api/proveedores" : `/api/proveedores/${(modal as any).p.idProveedor}`, {
@@ -126,7 +158,9 @@ export default function ProveedoresPage() {
       if (!res.ok) {
         const d = await res.json();
         setError(d.error || "Error al guardar");
+        setErroresCampo(d.campos ?? {});
       } else {
+        notificar.exito(esCrear ? "Proveedor creado" : "Proveedor actualizado", v.datos.nombre);
         setModal(null);
         cargar();
       }
@@ -149,13 +183,8 @@ export default function ProveedoresPage() {
     setAbonoForm({ monto: "", metodoPago: "EFECTIVO", referencia: "" });
     setAbonoError("");
     setHistorial([]);
-    setLoadingHistorial(true);
-    try {
-      const res = await fetch(`/api/proveedores/${p.idProveedor}/pagos`);
-      if (res.ok) setHistorial((await res.json()).data ?? []);
-    } finally {
-      setLoadingHistorial(false);
-    }
+    setCuentas([]);
+    await abrirHistorial(p.idProveedor);
   };
 
   const registrarAbono = async () => {
@@ -182,6 +211,7 @@ export default function ProveedoresPage() {
         setAbonoError(data.error || "Error al registrar el abono");
         return;
       }
+      notificar.exito(`Abono de $${monto.toFixed(2)} registrado`, `Saldo pendiente: $${Number(data.saldoNuevo).toFixed(2)}`);
       setAbonoForm({ monto: "", metodoPago: abonoForm.metodoPago, referencia: "" });
       setAbono((a) => (a ? { ...a, saldoCredito: data.saldoNuevo } : a));
       await Promise.all([cargar(), abrirHistorial(abono.idProveedor)]);
@@ -194,7 +224,11 @@ export default function ProveedoresPage() {
     setLoadingHistorial(true);
     try {
       const res = await fetch(`/api/proveedores/${idProveedor}/pagos`);
-      if (res.ok) setHistorial((await res.json()).data ?? []);
+      if (res.ok) {
+        const d = await res.json();
+        setHistorial(d.data ?? []);
+        setCuentas(d.cuentas ?? []);
+      }
     } finally {
       setLoadingHistorial(false);
     }
@@ -205,7 +239,40 @@ export default function ProveedoresPage() {
       <div className="p-6 max-w-6xl mx-auto">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <h2 className="text-2xl font-black text-gray-100 mb-1">Proveedores</h2>
-          <p className="text-sm text-muted">Catálogo de proveedores, contactos y créditos</p>
+          <p className="text-sm text-muted">
+            Catálogo de proveedores, contactos y lo que les debes por compras a crédito.{" "}
+            <button
+              type="button"
+              onClick={() => setAyudaCredito((v) => !v)}
+              className="inline-flex items-center gap-1 font-semibold text-acento hover:underline"
+            >
+              <Info className="h-3.5 w-3.5" /> ¿Cómo funciona el crédito?
+            </button>
+          </p>
+          <AnimatePresence>
+            {ayudaCredito && (
+              <motion.ol
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 grid gap-2 overflow-hidden text-xs text-gray-200 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                {[
+                  ["Define el plazo", "En el proveedor indica cuántos días te da para pagar y, si quieres, un límite de crédito."],
+                  ["Pide a crédito", "Al crear el pedido elige “A crédito”. De contado no genera deuda."],
+                  ["Recibe la mercancía", "Lo recibido se convierte en una cuenta por pagar que vence en ese plazo."],
+                  ["Abona", "Cada abono liquida primero la compra más antigua. Te avisamos antes de que venza."],
+                ].map(([t, d], i) => (
+                  <li key={t} className="rounded-xl border border-surface-500 bg-surface-800 p-3">
+                    <span className="mb-1 block font-bold text-gray-100">
+                      {i + 1}. {t}
+                    </span>
+                    {d}
+                  </li>
+                ))}
+              </motion.ol>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         <div className="flex gap-3 mb-5">
@@ -285,18 +352,20 @@ export default function ProveedoresPage() {
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        {p.limiteCredito != null ? (
+                        {p.diasCredito > 0 || p.saldoCredito > 0 ? (
                           <div className="text-xs">
-                            <span className="text-neon-cyan font-bold">
-                              ${p.limiteCredito.toFixed(2)}
+                            <span className="font-bold text-neon-cyan">
+                              {p.diasCredito > 0 ? `${p.diasCredito} días` : "Sin plazo"}
                             </span>
-                            <span className="text-muted"> límite</span>
+                            {p.limiteCredito != null && (
+                              <span className="text-muted"> · límite ${p.limiteCredito.toFixed(2)}</span>
+                            )}
                             <span className={cn("block font-bold mt-0.5", p.saldoCredito > 0 ? "text-warning" : "text-muted")}>
-                              Saldo: ${p.saldoCredito.toFixed(2)}
+                              {p.saldoCredito > 0 ? `Le debes $${p.saldoCredito.toFixed(2)}` : "Sin deuda"}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-muted text-xs">—</span>
+                          <span className="text-muted text-xs">De contado</span>
                         )}
                       </td>
                       <td className="px-5 py-3">
@@ -384,30 +453,43 @@ export default function ProveedoresPage() {
                 <div className="space-y-3">
                   <label className="block">
                     <span className="text-xs text-muted mb-1 block">Nombre *</span>
-                    <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="input-dark" placeholder="Ej: Office Depot" />
+                    <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="input-dark" placeholder="Ej: Office Depot" maxLength={120} />
+                    <ErrorCampo msg={erroresCampo.nombre} />
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
                       <span className="text-xs text-muted mb-1 block">Contacto</span>
-                      <input value={form.contacto} onChange={(e) => setForm({ ...form, contacto: e.target.value })} className="input-dark" placeholder="Nombre de contacto" />
+                      <input value={form.contacto} onChange={(e) => setForm({ ...form, contacto: e.target.value })} className="input-dark" placeholder="Nombre de contacto" maxLength={120} />
+                      <ErrorCampo msg={erroresCampo.contacto} />
                     </label>
                     <label className="block">
                       <span className="text-xs text-muted mb-1 block">Teléfono</span>
-                      <input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} className="input-dark" placeholder="55-1234-5678" />
+                      <input type="tel" inputMode="tel" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} className="input-dark" placeholder="55 1234 5678" maxLength={20} />
+                      <ErrorCampo msg={erroresCampo.telefono} />
                     </label>
                   </div>
                   <label className="block">
                     <span className="text-xs text-muted mb-1 block">Email</span>
-                    <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input-dark" placeholder="contacto@proveedor.com" />
+                    <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input-dark" placeholder="contacto@proveedor.com" maxLength={120} />
+                    <ErrorCampo msg={erroresCampo.email} />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted mb-1 block">Dirección</span>
+                    <input value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} className="input-dark" placeholder="Calle, colonia, CP" maxLength={200} />
+                    <ErrorCampo msg={erroresCampo.direccion} />
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
-                      <span className="text-xs text-muted mb-1 block">Dirección</span>
-                      <input value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} className="input-dark" placeholder="Calle, colonia, CP" />
+                      <span className="text-xs text-muted mb-1 block">Días de crédito</span>
+                      <input type="number" min={0} max={365} step={1} inputMode="numeric" value={form.diasCredito} onChange={(e) => setForm({ ...form, diasCredito: e.target.value })} className="input-dark" placeholder="0 = contado" />
+                      <span className="mt-1 block text-[11px] text-muted">Plazo para pagar lo recibido. 0 = de contado.</span>
+                      <ErrorCampo msg={erroresCampo.diasCredito} />
                     </label>
                     <label className="block">
                       <span className="text-xs text-muted mb-1 block">Límite de crédito ($)</span>
-                      <input type="number" min={0} value={form.limiteCredito} onChange={(e) => setForm({ ...form, limiteCredito: e.target.value })} className="input-dark" placeholder="5000.00" />
+                      <input type="number" min={0} step="0.01" inputMode="decimal" value={form.limiteCredito} onChange={(e) => setForm({ ...form, limiteCredito: e.target.value })} className="input-dark" placeholder="Opcional" />
+                      <span className="mt-1 block text-[11px] text-muted">Te avisamos si una compra lo rebasa.</span>
+                      <ErrorCampo msg={erroresCampo.limiteCredito} />
                     </label>
                   </div>
 
@@ -451,7 +533,7 @@ export default function ProveedoresPage() {
                       <HandCoins className="h-5 w-5 text-neon-green" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-100 text-lg">Abonar a proveedor</h3>
+                      <h3 className="font-bold text-gray-100 text-lg">Estado de cuenta</h3>
                       <p className="text-[11px] text-muted">{abono.nombre}</p>
                     </div>
                   </div>
@@ -466,6 +548,29 @@ export default function ProveedoresPage() {
                     ${abono.saldoCredito.toFixed(2)}
                   </span>
                 </div>
+
+                {cuentas.length > 0 && (
+                  <div className="mb-4 space-y-1.5">
+                    <span className="block text-xs font-bold text-gray-100">Compras por pagar</span>
+                    {cuentas.map((c) => (
+                      <div key={c.idCuenta} className="flex items-center justify-between gap-3 rounded-lg bg-surface-900/40 px-3 py-2 text-xs">
+                        <div className="min-w-0">
+                          <span className="block truncate text-gray-100">{c.concepto}</span>
+                          <span
+                            className={cn(
+                              "font-semibold",
+                              c.estado === "VENCIDA" ? "text-rose-300" : c.estado === "VENCE_PRONTO" ? "text-amber-300" : "text-muted"
+                            )}
+                          >
+                            {textoVencimiento(c)} · {new Date(c.fechaVencimiento).toLocaleDateString("es-MX")}
+                          </span>
+                        </div>
+                        <span className="shrink-0 font-bold text-gray-100 tabular-nums">${c.saldo.toFixed(2)}</span>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-muted">Los abonos se aplican primero a la compra más antigua.</p>
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   <label className="block">
@@ -568,4 +673,9 @@ export default function ProveedoresPage() {
       </div>
     </>
   );
+}
+
+function ErrorCampo({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <span className="mt-1 block text-[11px] font-semibold text-rose-300">{msg}</span>;
 }

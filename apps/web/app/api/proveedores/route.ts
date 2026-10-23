@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { validar } from "@/lib/validacion";
+import { PROVEEDOR_PATCH_SCHEMA, PROVEEDOR_SCHEMA } from "@/lib/esquemas";
 
 export async function GET(request: Request) {
   const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario", modulo: "proveedores" })();
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
         contacto: p.contacto,
         limiteCredito: p.limiteCredito != null ? Number(p.limiteCredito) : null,
         saldoCredito: p.saldoCredito != null ? Number(p.saldoCredito) : 0,
+        diasCredito: p.diasCredito,
         activo: p.activo,
         createdAt: p.createdAt,
       })),
@@ -67,26 +70,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  if (!body.nombre || typeof body.nombre !== "string" || !body.nombre.trim()) {
-    return NextResponse.json({ error: "El nombre es obligatorio" }, { status: 400 });
+  const v = validar(PROVEEDOR_SCHEMA, body);
+  if (!v.ok) {
+    return NextResponse.json({ error: v.error, campos: v.campos }, { status: 400 });
   }
-
-  let limiteCredito: number | null = null;
-  if (body.limiteCredito !== undefined && body.limiteCredito !== null && body.limiteCredito !== "") {
-    const lim = Number(body.limiteCredito);
-    if (!Number.isFinite(lim) || lim < 0) {
-      return NextResponse.json({ error: "Límite de crédito inválido" }, { status: 400 });
-    }
-    limiteCredito = Math.round(lim * 100) / 100;
-  }
-
   const data = {
-    nombre: body.nombre.trim(),
-    telefono: body.telefono || null,
-    email: body.email || null,
-    direccion: body.direccion || null,
-    contacto: body.contacto || null,
-    ...(limiteCredito !== null ? { limiteCredito } : {}),
+    nombre: v.datos.nombre,
+    telefono: v.datos.telefono ?? null,
+    email: v.datos.email ?? null,
+    direccion: v.datos.direccion ?? null,
+    contacto: v.datos.contacto ?? null,
+    limiteCredito: v.datos.limiteCredito ?? null,
+    diasCredito: v.datos.diasCredito ?? 0,
   };
 
   try {

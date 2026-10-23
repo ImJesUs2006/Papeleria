@@ -73,8 +73,9 @@ export async function PATCH(
     const actualizado = await prisma.$transaction(async (tx) => {
       // "ENTREGADO" = recibir TODO lo pendiente (total o lo que faltaba de
       // una recepción parcial) con su kardex y costo promedio.
+      let recepcion: Awaited<ReturnType<typeof recibirPedido>> | null = null;
       if (recibe) {
-        await recibirPedido(tx, {
+        recepcion = await recibirPedido(tx, {
           idPedido: id,
           renglones: "TODO",
           idUsuario: user.idPersona,
@@ -103,12 +104,13 @@ export async function PATCH(
           jsonPayload: { idPedido: id, cambios: Object.keys(data) },
         },
       });
-      return pedido;
+      return { ...pedido, cuentaPorPagar: recepcion?.cuentaPorPagar ?? null };
     });
 
     return NextResponse.json({
       idPedido: actualizado.idPedido,
       estado: actualizado.estado,
+      cuentaPorPagar: actualizado.cuentaPorPagar,
     });
   } catch (error: any) {
     if (error instanceof CompraError) {

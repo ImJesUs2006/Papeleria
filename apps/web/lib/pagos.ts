@@ -112,3 +112,21 @@ export function normalizarPagos(
     cambio,
   };
 }
+
+const DENOMINACIONES_COBRO = [20, 50, 100, 200, 500, 1000];
+
+/**
+ * Montos que probablemente entregue el cliente en efectivo: el exacto y los
+ * billetes (o combinaciones redondas) inmediatamente mayores al total.
+ */
+export function montosSugeridos(total: number, maximo = 4): number[] {
+  if (!Number.isFinite(total) || total <= 0) return [];
+  const exacto = Math.round(total * 100) / 100;
+  const candidatos = new Set<number>([exacto]);
+  for (const paso of [10, 50, 100]) candidatos.add(Math.ceil(exacto / paso) * paso);
+  for (const billete of DENOMINACIONES_COBRO) if (billete > exacto) candidatos.add(billete);
+  return [...candidatos]
+    .filter((m) => m >= exacto)
+    .sort((a, b) => a - b)
+    .slice(0, maximo);
+}

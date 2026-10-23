@@ -17,6 +17,7 @@ import {
   DEFAULT_USAR_CADUCIDAD,
   DEFAULT_USAR_UBICACIONES,
   DEFAULT_REQUERIR_FONDO_INICIAL,
+  DEFAULT_DIAS_APARTADO,
   DEFAULT_PUNTOS_CONFIG,
 } from "@/lib/business-types";
 import { buildSignedConfig } from "@/lib/config-signing";
@@ -162,6 +163,7 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
       usarCaducidad: DEFAULT_USAR_CADUCIDAD,
       usarUbicaciones: DEFAULT_USAR_UBICACIONES,
       requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
+      diasApartado: DEFAULT_DIAS_APARTADO,
       puntosConfig: { ...DEFAULT_PUNTOS_CONFIG },
       configVersion: 1,
       setupPendiente: true,
@@ -199,6 +201,8 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
       typeof row.requerirFondoInicial === "boolean"
         ? row.requerirFondoInicial
         : DEFAULT_REQUERIR_FONDO_INICIAL,
+    diasApartado:
+      Number.isInteger(row.diasApartado) && row.diasApartado > 0 ? row.diasApartado : DEFAULT_DIAS_APARTADO,
     puntosConfig: normalizePuntosConfig(row.puntosConfig),
     configVersion: row.configVersion,
     setupPendiente: row.setupPendiente,

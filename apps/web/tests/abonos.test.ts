@@ -4,11 +4,13 @@ const mocks = vi.hoisted(() => {
   const tx = {
     pagoProveedor: { create: vi.fn() },
     proveedor: { update: vi.fn() },
+    cuentaPorPagar: { findMany: vi.fn(async () => []), update: vi.fn() },
     bitacoraLog: { create: vi.fn() },
   };
   const prisma = {
     proveedor: { findUnique: vi.fn() },
     pagoProveedor: { findMany: vi.fn() },
+    cuentaPorPagar: { findMany: vi.fn() },
     $transaction: vi.fn((cb: any) => cb(tx)),
   };
   return { tx, prisma };
@@ -90,6 +92,7 @@ describe("GET /api/proveedores/[id]/pagos", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("lista el historial de abonos", async () => {
+    mocks.prisma.cuentaPorPagar.findMany.mockResolvedValue([]);
     mocks.prisma.pagoProveedor.findMany.mockResolvedValue([
       {
         idPago: "p1",

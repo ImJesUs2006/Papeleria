@@ -93,6 +93,11 @@ export default function InventarioPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  // Enlaces desde las alertas: /inventario?buscar=CODIGO
+  useEffect(() => {
+    const buscar = new URLSearchParams(window.location.search).get("buscar");
+    if (buscar) setSearchQuery(buscar.slice(0, 60));
+  }, []);
   const [sortBy, setSortBy] = useState<SortField>("descripcion");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);

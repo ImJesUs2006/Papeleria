@@ -103,26 +103,28 @@ model Negocio {
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  configuracion    ConfiguracionNegocio?
-  usuarios         Usuario[]
-  productos        Producto[]
-  categorias       Categoria[]
-  proveedores      Proveedor[]
-  pedidosProveedor PedidoProveedor[]
-  ventas           Venta[]
-  sesionesCaja     SesionCaja[]
-  snapshots        SnapshotSeguridad[]
-  bitacoraLogs     BitacoraLog[]
-  devoluciones     Devolucion[]
-  pagosProveedor   PagoProveedor[]
-  clientes         Cliente[]
-  facturas         Factura[]
-  apartados        Apartado[]
-  retirosEfectivo  RetiroEfectivo[]
-  promociones      Promocion[]
-  perfiles         Perfil[]
-  sucursales       Sucursal[]
-  traspasos        Traspaso[]
+  configuracion      ConfiguracionNegocio?
+  usuarios           Usuario[]
+  productos          Producto[]
+  categorias         Categoria[]
+  proveedores        Proveedor[]
+  pedidosProveedor   PedidoProveedor[]
+  ventas             Venta[]
+  sesionesCaja       SesionCaja[]
+  snapshots          SnapshotSeguridad[]
+  bitacoraLogs       BitacoraLog[]
+  devoluciones       Devolucion[]
+  pagosProveedor     PagoProveedor[]
+  clientes           Cliente[]
+  facturas           Factura[]
+  apartados          Apartado[]
+  retirosEfectivo    RetiroEfectivo[]
+  promociones        Promocion[]
+  perfiles           Perfil[]
+  sucursales         Sucursal[]
+  traspasos          Traspaso[]
+  cuentasPorPagar    CuentaPorPagar[]
+  alertasDescartadas AlertaDescartada[]
 
   @@map("negocios")
 }
@@ -165,6 +167,7 @@ model Usuario {
   cierresIniciados   SesionCaja[]           @relation("CierreIniciadoPor")
   devoluciones       Devolucion[]
   pagosProveedor     PagoProveedor[]
+  alertasDescartadas AlertaDescartada[]
   snapshotsSeguridad SnapshotSeguridad[]    @relation("SnapshotCreadoPor")
   retirosAutorizados RetiroEfectivo[]       @relation("RetiroAutorizadoPor")
   movimientosKardex  MovimientoKardex[]
@@ -293,11 +296,14 @@ model Proveedor {
   contacto      String?
   limiteCredito Decimal? @db.Decimal(10, 2)
   saldoCredito  Decimal? @default(0) @db.Decimal(10, 2)
+  // Plazo que da el proveedor para pagar lo recibido a crédito (0 = contado).
+  diasCredito   Int      @default(0)
   activo        Boolean  @default(true)
   createdAt     DateTime @default(now())
 
   pedidos PedidoProveedor[]
   pagos   PagoProveedor[]
+  cuentas CuentaPorPagar[]
 
   negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
 
@@ -314,12 +320,15 @@ model PedidoProveedor {
   fechaEntrega  DateTime?
   totalEstimado Decimal   @db.Decimal(10, 2)
   estado        String    @default("PENDIENTE")
+  // CONTADO | CREDITO. A crédito, cada recepción genera una cuenta por pagar.
+  condicionPago String    @default("CONTADO")
   notas         String?
   createdBy     String
 
   proveedor Proveedor             @relation(fields: [idProveedor], references: [idProveedor])
   usuario   Usuario               @relation(fields: [createdBy], references: [idPersona])
   items     ItemPedidoProveedor[]
+  cuentas   CuentaPorPagar[]
   negocio   Negocio               @relation(fields: [idNegocio], references: [idNegocio])
 
   @@index([idProveedor])
@@ -543,6 +552,8 @@ model ConfiguracionNegocio {
   // true = la apertura de caja exige capturar el fondo inicial (por defecto).
   // false = la caja puede abrirse sin fondo (caja de puesto rápido en ferias).
   requerirFondoInicial Boolean     @default(true)
+  // Días que se guarda un apartado antes de considerarse vencido (alertas).
+  diasApartado         Int         @default(30)
   // ---- Puntos Monedero (Fase 12) ----
   // Tasa del programa de fidelización: cuánto gastar para ganar 1 punto y
   // cuánto cubre 1 punto al pagar. Ej: { pesosCompraPorPunto: 100, valorPuntoPesos: 1 }
@@ -1028,4 +1039,49 @@ model NumeroSerie {
   @@unique([idNegocio, codigoItem, serie])
   @@index([idNegocio, estado])
   @@map("numeros_serie")
+}
+
+// ============================================================
+// Cuentas por pagar a proveedores (Fase A): cada recepción de un pedido a
+// crédito genera una cuenta con su vencimiento (hoy + días de crédito del
+// proveedor). Los abonos se aplican a la más antigua primero.
+// ============================================================
+model CuentaPorPagar {
+  idNegocio        String   @default("default")
+  idCuenta         String   @id @default(uuid())
+  idProveedor      String
+  idPedido         String?
+  concepto         String
+  monto            Decimal  @db.Decimal(10, 2)
+  saldo            Decimal  @db.Decimal(10, 2)
+  fechaVencimiento DateTime
+  // PENDIENTE | PAGADA
+  estado           String   @default("PENDIENTE")
+  createdAt        DateTime @default(now())
+
+  proveedor Proveedor        @relation(fields: [idProveedor], references: [idProveedor])
+  pedido    PedidoProveedor? @relation(fields: [idPedido], references: [idPedido])
+  negocio   Negocio          @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@index([idNegocio, estado, fechaVencimiento])
+  @@index([idProveedor])
+  @@map("cuentas_por_pagar")
+}
+
+// Alertas que un usuario ocultó ("Entendido"): no se vuelven a mostrar hasta
+// `hasta`. Las alertas en sí se calculan al momento (lib/alertas.ts).
+model AlertaDescartada {
+  idNegocio String   @default("default")
+  idAlerta  String   @id @default(uuid())
+  idPersona String
+  clave     String
+  hasta     DateTime
+  createdAt DateTime @default(now())
+
+  usuario Usuario @relation(fields: [idPersona], references: [idPersona])
+  negocio Negocio @relation(fields: [idNegocio], references: [idNegocio])
+
+  @@unique([idPersona, clave])
+  @@index([idNegocio])
+  @@map("alertas_descartadas")
 }

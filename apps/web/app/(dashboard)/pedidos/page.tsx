@@ -18,7 +18,8 @@ import {
   Navigation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RecepcionModal } from "@/components/pedidos/recepcion-modal";
+import { RecepcionModal, type ResultadoRecepcion } from "@/components/pedidos/recepcion-modal";
+import { notificar } from "@/store/notificaciones";
 
 interface PedidoItem {
   idItemPedido: string;
@@ -38,6 +39,7 @@ interface Pedido {
   fechaEntrega: string | null;
   totalEstimado: number;
   estado: "PENDIENTE" | "ENTREGADO" | "CANCELADO" | "EN_RUTA" | "PARCIAL";
+  condicionPago?: "CONTADO" | "CREDITO";
   notas: string | null;
   items: PedidoItem[];
   totalItems: number;
@@ -46,6 +48,7 @@ interface Pedido {
 interface Proveedor {
   idProveedor: string;
   nombre: string;
+  diasCredito?: number;
 }
 
 interface ItemParaAgregar {
@@ -70,13 +73,15 @@ function difDias(fecha: Date): number {
   return Math.round((startF.getTime() - startHoy.getTime()) / 86400000);
 }
 
+// Etiquetas del calendario: fondo tenue + texto del mismo tono, legibles
+// en los cuatro temas (antes era texto claro fijo sobre color sólido).
 function colorEntrega(p: Pedido): string {
-  if (p.estado === "ENTREGADO" || p.estado === "CANCELADO") return "bg-surface-500";
-  if (!p.fechaEntrega) return "bg-neon-yellow";
+  if (p.estado === "ENTREGADO" || p.estado === "CANCELADO") return "border-surface-500 bg-surface-600 text-muted";
+  if (!p.fechaEntrega) return "border-amber-500/50 bg-amber-500/15 text-amber-300";
   const d = difDias(new Date(p.fechaEntrega));
-  if (d < 0) return "bg-neon-red";
-  if (d <= 3) return "bg-neon-yellow";
-  return "bg-neon-green";
+  if (d < 0) return "border-rose-500/50 bg-rose-500/15 text-rose-300";
+  if (d <= 3) return "border-amber-500/50 bg-amber-500/15 text-amber-300";
+  return "border-emerald-500/50 bg-emerald-500/15 text-emerald-300";
 }
 
 function buildMonth(año: number, mes: number): (Date | null)[] {
@@ -105,6 +110,7 @@ export default function PedidosPage() {
   const [fProveedor, setFProveedor] = useState("");
   const [fFecha, setFFecha] = useState("");
   const [fEstado, setFEstado] = useState<"PENDIENTE" | "EN_RUTA">("PENDIENTE");
+  const [fCondicion, setFCondicion] = useState<"CONTADO" | "CREDITO">("CONTADO");
   const [fNotas, setFNotas] = useState("");
   const [items, setItems] = useState<ItemParaAgregar[]>([]);
   const [busqueda, setBusqueda] = useState("");
@@ -186,6 +192,7 @@ export default function PedidosPage() {
           idProveedor: fProveedor,
           fechaEntrega: fFecha || null,
           estado: fEstado,
+          condicionPago: fCondicion,
           notas: fNotas || null,
           items: items.map((i) => ({ codigoItem: i.codigoItem, cantidad: i.cantidad, precioCotizado: i.precioCotizado })),
         }),
@@ -194,7 +201,12 @@ export default function PedidosPage() {
       if (!res.ok) {
         setError(d.error || "Error al crear pedido");
       } else {
+        notificar.exito(
+          "Pedido creado",
+          fCondicion === "CREDITO" ? "A crédito: al recibirlo se generará la cuenta por pagar" : undefined
+        );
         setModal(false);
+        setFCondicion("CONTADO");
         setItems([]);
         setFProveedor("");
         setFFecha("");
@@ -214,7 +226,28 @@ export default function PedidosPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado }),
     });
-    if (res.ok) cargar();
+    if (res.ok) {
+      const d = await res.json().catch(() => ({}));
+      avisarRecepcion(d);
+      cargar();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      notificar.error("No se pudo cambiar el pedido", d.error);
+    }
+  };
+
+  // Recepción: confirma y, si fue a crédito, dice cuánto se debe y cuándo vence.
+  const avisarRecepcion = (r: Partial<ResultadoRecepcion>) => {
+    const c = r.cuentaPorPagar;
+    if (!c) {
+      if (r.estado) notificar.exito(r.estado === "PARCIAL" ? "Recepción parcial registrada" : "Pedido recibido");
+      return;
+    }
+    notificar.exito(
+      `Cuenta por pagar de $${c.monto.toFixed(2)}`,
+      `Vence el ${new Date(c.vence).toLocaleDateString("es-MX")} · Saldo con el proveedor: $${c.saldoProveedor.toFixed(2)}`
+    );
+    if (c.excedeLimite) notificar.aviso("Se rebasó el límite de crédito del proveedor", "Revisa el saldo antes del próximo pedido.");
   };
 
   const totalEstimado = items.reduce((a, i) => a + i.cantidad * i.precioCotizado, 0);
@@ -298,7 +331,7 @@ export default function PedidosPage() {
                     </span>
                     <div className="mt-1 space-y-1">
                       {dia.slice(0, 3).map((p) => (
-                        <div key={p.idPedido} className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-100 truncate", colorEntrega(p))}>
+                        <div key={p.idPedido} className={cn("flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold truncate", colorEntrega(p))}>
                           <span className="truncate">{p.proveedor.split(" ")[0]} ${p.totalEstimado.toFixed(0)}</span>
                         </div>
                       ))}
@@ -345,6 +378,11 @@ export default function PedidosPage() {
                         <span className={cn("inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border", ESTADO_STYLE[p.estado])}>
                           {p.estado}
                         </span>
+                        {p.condicionPago === "CREDITO" && (
+                          <span className="ml-1 inline-block rounded-full border border-amber-400/50 bg-amber-400/10 px-2 py-1 text-[10px] font-bold text-amber-300">
+                            CRÉDITO
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-xs text-muted">{p.totalItems} artículos</td>
                       <td className="px-5 py-3">
@@ -396,7 +434,15 @@ export default function PedidosPage() {
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <label className="block">
                     <span className="text-xs text-muted mb-1 block">Proveedor *</span>
-                    <select value={fProveedor} onChange={(e) => setFProveedor(e.target.value)} className="input-dark">
+                    <select
+                      value={fProveedor}
+                      onChange={(e) => {
+                        setFProveedor(e.target.value);
+                        const prov = proveedores.find((p) => p.idProveedor === e.target.value);
+                        setFCondicion((prov?.diasCredito ?? 0) > 0 ? "CREDITO" : "CONTADO");
+                      }}
+                      className="input-dark"
+                    >
                       <option value="">Seleccionar...</option>
                       {proveedores.map((p) => (<option key={p.idProveedor} value={p.idProveedor}>{p.nombre}</option>))}
                     </select>
@@ -413,6 +459,37 @@ export default function PedidosPage() {
                   <button onClick={() => setFEstado("EN_RUTA")} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold border transition-all", fEstado === "EN_RUTA" ? "text-neon-cyan border-neon-cyan/40 bg-neon-cyan/10" : "text-muted border-surface-500")}>EN RUTA</button>
                   <div className="ml-auto text-xs text-muted">Total estimado: <span className="text-neon-cyan font-black text-sm">${totalEstimado.toFixed(2)}</span></div>
                 </div>
+
+                {(() => {
+                  const dias = proveedores.find((p) => p.idProveedor === fProveedor)?.diasCredito ?? 0;
+                  return (
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                      <span className="text-xs text-muted">Pago:</span>
+                      <button
+                        type="button"
+                        onClick={() => setFCondicion("CONTADO")}
+                        className={cn("px-3 py-1.5 rounded-lg text-xs font-bold border transition-all", fCondicion === "CONTADO" ? "text-neon-green border-neon-green/40 bg-neon-green/10" : "text-muted border-surface-500")}
+                      >
+                        De contado
+                      </button>
+                      <button
+                        type="button"
+                        disabled={dias <= 0}
+                        onClick={() => setFCondicion("CREDITO")}
+                        className={cn("px-3 py-1.5 rounded-lg text-xs font-bold border transition-all disabled:opacity-40", fCondicion === "CREDITO" ? "text-amber-300 border-amber-400/50 bg-amber-400/10" : "text-muted border-surface-500")}
+                      >
+                        A crédito{dias > 0 ? ` (${dias} días)` : ""}
+                      </button>
+                      <span className="text-[11px] text-muted">
+                        {fProveedor && dias <= 0
+                          ? "Este proveedor no tiene días de crédito; configúralos en Proveedores."
+                          : fCondicion === "CREDITO"
+                            ? "Al recibir la mercancía se registra lo que debes y su vencimiento."
+                            : "Se paga al recibir; no genera deuda."}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -444,8 +521,8 @@ export default function PedidosPage() {
                         {items.map((it) => (
                           <tr key={it.codigoItem} className="border-b border-surface-700 last:border-0">
                             <td className="px-3 py-2 text-gray-200 text-xs">{it.descripcion}</td>
-                            <td className="px-3 py-2"><input type="number" min={1} value={it.cantidad} onChange={(e) => setItems((prev) => prev.map((x) => x.codigoItem === it.codigoItem ? { ...x, cantidad: Math.max(1, Math.round(Number(e.target.value))) } : x))} className="w-full bg-surface-700 border border-surface-500 rounded px-2 py-1 text-sm text-gray-100" /></td>
-                            <td className="px-3 py-2"><input type="number" min={0} step="0.01" value={it.precioCotizado} onChange={(e) => setItems((prev) => prev.map((x) => x.codigoItem === it.codigoItem ? { ...x, precioCotizado: Number(e.target.value) } : x))} className="w-full bg-surface-700 border border-surface-500 rounded px-2 py-1 text-sm text-neon-cyan font-bold" /></td>
+                            <td className="px-3 py-2"><input type="number" min={1} value={it.cantidad} onChange={(e) => setItems((prev) => prev.map((x) => x.codigoItem === it.codigoItem ? { ...x, cantidad: Math.max(1, Math.round(Number(e.target.value) || 1)) } : x))} className="w-full bg-surface-700 border border-surface-500 rounded px-2 py-1 text-sm text-gray-100" /></td>
+                            <td className="px-3 py-2"><input type="number" min={0} step="0.01" value={it.precioCotizado} onChange={(e) => setItems((prev) => prev.map((x) => x.codigoItem === it.codigoItem ? { ...x, precioCotizado: Math.max(0, Number(e.target.value) || 0) } : x))} className="w-full bg-surface-700 border border-surface-500 rounded px-2 py-1 text-sm text-neon-cyan font-bold" /></td>
                             <td className="px-3 py-2 text-right text-neon-green font-bold text-xs">${(it.cantidad * it.precioCotizado).toFixed(2)}</td>
                             <td className="px-2 py-2"><button onClick={() => setItems((prev) => prev.filter((x) => x.codigoItem !== it.codigoItem))} className="text-muted hover:text-neon-red"><X className="h-4 w-4" /></button></td>
                           </tr>
@@ -477,8 +554,9 @@ export default function PedidosPage() {
       <RecepcionModal
         pedido={recibiendo}
         onClose={() => setRecibiendo(null)}
-        onRecibido={() => {
+        onRecibido={(r) => {
           setRecibiendo(null);
+          avisarRecepcion(r);
           cargar();
         }}
       />

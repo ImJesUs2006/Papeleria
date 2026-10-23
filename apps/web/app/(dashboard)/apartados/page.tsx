@@ -34,6 +34,7 @@ const dinero = (n: number) =>
 export default function ApartadosPage() {
   const esAdmin = useAuthStore((s) => s.rol === "ADMINISTRADORA");
   const metodosHabilitados = useConfigStore((s) => s.config?.metodosPago);
+  const diasApartado = useConfigStore((s) => s.config?.diasApartado ?? 30);
 
   const [apartados, setApartados] = useState<Apartado[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -137,6 +138,7 @@ export default function ApartadosPage() {
                         {a.folio} · {new Date(a.fechaCreado).toLocaleDateString("es-MX")}
                         {a.telefono ? ` · ${a.telefono}` : ""}
                       </p>
+                      <Vencimiento creado={a.fechaCreado} dias={diasApartado} />
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-xs text-muted">Saldo pendiente</p>
@@ -305,5 +307,31 @@ export default function ApartadosPage() {
         </Modal>
       </ErrorBoundary>
     </>
+  );
+}
+
+/** "Vence el …" con color según lo que falta (configurable en Configuración). */
+function Vencimiento({ creado, dias }: { creado: string; dias: number }) {
+  const inicio = new Date(creado);
+  const vence = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + dias);
+  const hoy = new Date();
+  const restantes = Math.round(
+    (vence.getTime() - new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime()) / 86_400_000
+  );
+  const texto =
+    restantes < 0
+      ? `Venció el ${vence.toLocaleDateString("es-MX")}`
+      : restantes === 0
+        ? "Vence hoy"
+        : `Vence el ${vence.toLocaleDateString("es-MX")} (${restantes} día${restantes === 1 ? "" : "s"})`;
+  return (
+    <p
+      className={cn(
+        "mt-0.5 text-xs font-semibold",
+        restantes < 0 ? "text-rose-300" : restantes <= 3 ? "text-amber-300" : "text-muted"
+      )}
+    >
+      {texto}
+    </p>
   );
 }

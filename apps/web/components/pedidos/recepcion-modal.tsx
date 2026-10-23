@@ -34,7 +34,7 @@ export function RecepcionModal({
 }: {
   pedido: { idPedido: string; proveedor: string; items: RenglonPedido[] } | null;
   onClose: () => void;
-  onRecibido: (estado: string) => void;
+  onRecibido: (resultado: ResultadoRecepcion) => void;
 }) {
   const [captura, setCaptura] = useState<Record<string, Captura>>({});
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +80,7 @@ export function RecepcionModal({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo registrar la recepción");
-      onRecibido(data.estado);
+      onRecibido(data);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -180,4 +180,9 @@ export function RecepcionModal({
       )}
     </Modal>
   );
+}
+
+export interface ResultadoRecepcion {
+  estado: string;
+  cuentaPorPagar: { monto: number; vence: string; saldoProveedor: number; excedeLimite: boolean } | null;
 }

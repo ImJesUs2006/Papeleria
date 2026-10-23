@@ -123,7 +123,7 @@ describe("construirTicketPDF · contenido", () => {
     expect(pdf).toContain("$0.00");
   });
 
-  it("genera varias páginas sin repetir números de objeto", () => {
+  it("un ticket largo es UNA página que crece en alto (rollo continuo)", () => {
     const items = Array.from({ length: 120 }, (_, i) => ({
       codigoItem: `P${i}`,
       descripcion: `Artículo de prueba número ${i}`,
@@ -132,10 +132,61 @@ describe("construirTicketPDF · contenido", () => {
       importe: 10,
     }));
     const pdf = decodificar(construirTicketPDF({ ...RESULTADO, items } as any, "Negocio"));
-    const paginas = Number(objeto(pdf, 2).match(/\/Count (\d+)/)?.[1] ?? 1);
-    expect(paginas).toBeGreaterThan(1);
+    expect(Number(objeto(pdf, 2).match(/\/Count (\d+)/)?.[1])).toBe(1);
+    const [, , ancho, alto] = medidas(pdf);
+    expect(ancho).toBeCloseTo(226.77, 1);
+    expect(alto).toBeGreaterThan(1000);
     // Cada objeto aparece una sola vez.
     const nums = [...pdf.matchAll(/(?:^|\n)(\d+) 0 obj\n/g)].map((m) => Number(m[1]));
     expect(new Set(nums).size).toBe(nums.length);
+  });
+});
+
+/** [x0, y0, ancho, alto] de la página. */
+function medidas(pdf: string): number[] {
+  const m = pdf.match(/\/MediaBox \[([\d. ]+)\]/);
+  expect(m).toBeTruthy();
+  return m![1].trim().split(/\s+/).map(Number);
+}
+
+describe("construirTicketPDF · tamaño ticket", () => {
+  it("80 mm y 58 mm de ancho, nunca carta ni A4", () => {
+    const ancho80 = medidas(decodificar(construirTicketPDF(RESULTADO as any, "N")))[2];
+    const ancho58 = medidas(decodificar(construirTicketPDF(RESULTADO as any, "N", "58mm")))[2];
+    expect(ancho80).toBeCloseTo((80 * 72) / 25.4, 1);
+    expect(ancho58).toBeCloseTo((58 * 72) / 25.4, 1);
+  });
+
+  it("todo el texto queda DENTRO de la página (antes salía en blanco)", () => {
+    const pdf = decodificar(construirTicketPDF(RESULTADO as any, "Papelería"));
+    const [, , ancho, alto] = medidas(pdf);
+    const posiciones = [...pdf.matchAll(/([\d.]+) ([\d.-]+) Td/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    expect(posiciones.length).toBeGreaterThan(5);
+    for (const [x, y] of posiciones) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThan(ancho);
+      expect(y).toBeGreaterThan(0);
+      expect(y).toBeLessThan(alto);
+    }
+  });
+
+  it("los separadores no usan caracteres fuera de WinAnsi", () => {
+    const pdf = decodificar(construirTicketPDF(RESULTADO as any, "N"));
+    expect(pdf).not.toContain("???");
+    expect(pdf).toContain("- - -");
+  });
+
+  it("parte descripciones y mensajes largos en varios renglones", () => {
+    const largo = "Cuaderno profesional de raya cien hojas pasta dura edición especial escolar";
+    const pdf = decodificar(
+      construirTicketPDF(
+        { ...RESULTADO, mensajeTicket: "Cambios y devoluciones dentro de los 7 días con su ticket.", items: [{ ...RESULTADO.items[0], descripcion: largo }] } as any,
+        "N",
+        "58mm"
+      )
+    );
+    const renglones = [...pdf.matchAll(/\(([^)]*)\) Tj/g)].map((m) => m[1]);
+    expect(renglones.filter((r) => largo.includes(r) && r.length > 3).length).toBeGreaterThan(1);
+    expect(renglones.join(" ")).toContain("7 d");
   });
 });

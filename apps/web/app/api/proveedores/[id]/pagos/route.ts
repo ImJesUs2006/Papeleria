@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { aplicarAbono, diasParaVencer, estadoVencimiento } from "@/lib/cuentas-pagar";
 
 const METODOS_ABONO = ["EFECTIVO", "TRANSFERENCIA", "TARJETA_TERMINAL", "CHEQUE"];
 
@@ -23,6 +24,13 @@ export async function GET(
       take: 100,
       include: { usuario: { select: { nombre: true } } },
     });
+    // Estado de cuenta: lo que se debe, por compra y con su vencimiento.
+    const cuentas = await prisma.cuentaPorPagar.findMany({
+      where: { idProveedor: id, estado: "PENDIENTE" },
+      orderBy: { fechaVencimiento: "asc" },
+      take: 100,
+    });
+    const hoy = new Date();
 
     return NextResponse.json({
       data: pagos.map((p) => ({
@@ -33,6 +41,15 @@ export async function GET(
         referencia: p.referencia,
         notas: p.notas,
         usuario: p.usuario.nombre,
+      })),
+      cuentas: cuentas.map((c) => ({
+        idCuenta: c.idCuenta,
+        concepto: c.concepto,
+        monto: Number(c.monto),
+        saldo: Number(c.saldo),
+        fechaVencimiento: c.fechaVencimiento,
+        estado: estadoVencimiento(c.fechaVencimiento, hoy),
+        dias: diasParaVencer(c.fechaVencimiento, hoy),
       })),
     });
   } catch (error) {
@@ -105,6 +122,8 @@ export async function POST(
         where: { idProveedor: id },
         data: { saldoCredito: { decrement: abonoRedondeado } },
       });
+      // Liquida las cuentas por pagar de la más antigua a la más reciente.
+      const aplicado = await aplicarAbono(tx, id, abonoRedondeado);
 
       await tx.bitacoraLog.create({
         data: {
@@ -118,6 +137,7 @@ export async function POST(
             metodoPago,
             saldoAnterior: saldo,
             saldoNuevo: Number(actualizado.saldoCredito ?? 0),
+            aplicado,
           },
         },
       });

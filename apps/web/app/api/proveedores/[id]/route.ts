@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { validar } from "@/lib/validacion";
+import { PROVEEDOR_PATCH_SCHEMA, PROVEEDOR_SCHEMA } from "@/lib/esquemas";
 
 export async function PATCH(
   request: Request,
@@ -21,19 +23,16 @@ export async function PATCH(
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const data: Record<string, any> = {};
-  const STRING_FIELDS = ["nombre", "telefono", "email", "direccion", "contacto"] as const;
-  for (const f of STRING_FIELDS) {
-    if (body[f] !== undefined) data[f] = body[f] || null;
+  const v = validar(PROVEEDOR_PATCH_SCHEMA, body);
+  if (!v.ok) {
+    return NextResponse.json({ error: v.error, campos: v.campos }, { status: 400 });
   }
-  if (body.activo !== undefined) data.activo = !!body.activo;
-  if (body.limiteCredito !== undefined) {
-    const v = body.limiteCredito === "" || body.limiteCredito === null ? null : Number(body.limiteCredito);
-    if (v !== null && (!Number.isFinite(v) || v < 0)) {
-      return NextResponse.json({ error: "Límite de crédito inválido" }, { status: 400 });
-    }
-    data.limiteCredito = v === null ? null : Math.round(v * 100) / 100;
+  // Solo los campos enviados; los vacíos opcionales quedan en null.
+  const data: Record<string, unknown> = {};
+  for (const [k, valor] of Object.entries(v.datos)) {
+    if (body[k] !== undefined) data[k] = valor ?? null;
   }
+  if (data.diasCredito === null) data.diasCredito = 0;
 
   try {
     const existente = await prisma.proveedor.findUnique({

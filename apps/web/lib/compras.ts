@@ -3,6 +3,7 @@ import { moverStock } from "./existencias";
 import { registrarMovimientosKardex } from "./kardex";
 import { registrarEntradaLote } from "./lotes";
 import { claveProducto } from "./tenant-keys";
+import { registrarCuentaPorPagar } from "./cuentas-pagar";
 
 // ============================================================
 // Compras (Paso 7): recepción de pedidos a proveedor, total o PARCIAL.
@@ -178,13 +179,41 @@ export async function recibirPedido(
     where: { idPedido: r.idPedido },
     data: { estado, ...(completo && !pedido.fechaEntrega ? { fechaEntrega: new Date() } : {}) },
   });
+
+  // A crédito: lo recibido se convierte en una cuenta por pagar.
+  let credito: Awaited<ReturnType<typeof registrarCuentaPorPagar>> = null;
+  if (pedido.condicionPago === "CREDITO") {
+    const importe = recibidos.reduce((s, x) => s + x.cantidad * x.costo, 0);
+    credito = await registrarCuentaPorPagar(tx, {
+      idProveedor: pedido.idProveedor,
+      idPedido: r.idPedido,
+      monto: importe,
+      concepto: `Recepción ${completo ? "total" : "parcial"} del pedido ${r.idPedido.slice(0, 8)}`,
+    });
+  }
   await tx.bitacoraLog.create({
     data: {
       idUsuario: r.idUsuario,
       accion: `Recepción ${completo ? "total" : "parcial"} de pedido a ${pedido.proveedor.nombre}`,
       moduloSistema: "INVENTARIO",
-      jsonPayload: { idPedido: r.idPedido, estado, recibidos },
+      jsonPayload: {
+        idPedido: r.idPedido,
+        estado,
+        recibidos,
+        ...(credito ? { cuentaPorPagar: credito.cuenta.idCuenta, saldoProveedor: credito.saldo } : {}),
+      },
     },
   });
-  return { estado, recibidos };
+  return {
+    estado,
+    recibidos,
+    cuentaPorPagar: credito
+      ? {
+          monto: Number(credito.cuenta.monto),
+          vence: credito.cuenta.fechaVencimiento.toISOString(),
+          saldoProveedor: credito.saldo,
+          excedeLimite: credito.excedeLimite,
+        }
+      : null,
+  };
 }

@@ -23,6 +23,7 @@ import { useAuthStore } from "@/store/auth";
 import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { ShortcutsHelp } from "./shortcuts-help";
 import { SucursalSelector } from "./sucursal-selector";
+import { CentroAlertas } from "@/components/alertas/centro-alertas";
 import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 
@@ -173,11 +174,12 @@ export function Sidebar() {
             </div>
           )}
           <h1
-            className="text-base font-black tracking-tight text-gray-100 truncate"
+            className="min-w-0 flex-1 text-base font-black tracking-tight text-gray-100 truncate"
             title={config?.nombreNegocio}
           >
             {config?.nombreNegocio ?? "Mi Negocio"}
           </h1>
+          <CentroAlertas />
         </div>
         <p
           className="text-xs text-muted mt-1 text-ellipsis overflow-hidden whitespace-nowrap"

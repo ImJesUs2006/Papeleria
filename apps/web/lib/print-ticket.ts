@@ -1,42 +1,54 @@
 "use client";
 
 // ============================================================
-// Impresión térmica estricta (Fase 11).
+// Impresión de tickets al tamaño real del rollo térmico (58 u 80 mm).
 //
-// El navegador ignora `@page ticket57/ticket80` de la hoja de
-// estilos principal y siempre imprime en carta. Para respetar el
-// ancho real del rodillo (58mm o 80mm), imprimimos el contenido
-// dentro de un <iframe> OCULTO cuyo propio documento declara
-// `@page { size: 58mm|80mm auto; margin: 0 }`. Se copian los
-// estilos del documento padre y se dispara
-// `iframe.contentWindow.print()`, eliminando el iframe al terminar.
+// Se imprime una COPIA limpia del ticket dentro de un <iframe> oculto que
+// tiene el ancho del rollo. Ahí se mide el alto del contenido y se declara
+// `@page { size: <ancho>mm <alto>mm }`, así el navegador no usa carta.
+//
+// Antes salía en tamaño carta por tres razones:
+//   1. `size: 80mm auto` es inválido (auto no se combina con una medida) y
+//      el navegador ignoraba la regla completa;
+//   2. los estilos globales se cargaban DESPUÉS y volvían a poner el ticket
+//      en posición absoluta con la altura del recuadro de vista previa;
+//   3. el iframe medía 0 px, así que no había forma de saber el alto.
 // ============================================================
 
 export type AnchoTicketImpresion = "58mm" | "80mm";
 
-function cssDelDoc (): string {
-  const partes: string[] = [];
+const PX_POR_MM = 96 / 25.4;
 
-  // Copia <link rel="stylesheet"> (estilos globales de Next).
-  document.querySelectorAll<HTMLLinkElement>(
-    'link[rel="stylesheet"]'
-  ).forEach((link) => {
+/** Hojas de estilo de la app (Tailwind) para que el ticket conserve su formato. */
+function cssDelDoc(): string {
+  const partes: string[] = [];
+  document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]').forEach((link) => {
     if (link.href) partes.push(`<link rel="stylesheet" href="${link.href}">`);
   });
-
-  // Copia <style> inline del documento padre.
   document.querySelectorAll<HTMLStyleElement>("style").forEach((el) => {
     if (el.textContent) partes.push(`<style>${el.textContent}</style>`);
   });
-
   return partes.join("\n");
 }
 
-/**
- * Imprime el contenido de `elemento` en papel térmico estricto.
- * - `elemento`: nodo DOM del ticket (`.print-label-area`).
- * - `ancho`: "58mm" | "80mm" según la configuración del negocio.
- */
+/** Copia del ticket sin animaciones ni posicionamiento de la vista previa. */
+function copiaLimpia(elemento: HTMLElement): HTMLElement {
+  const clon = elemento.cloneNode(true) as HTMLElement;
+  for (const el of [clon, ...Array.from(clon.querySelectorAll<HTMLElement>("*"))]) {
+    el.style.removeProperty("transform");
+    el.style.removeProperty("opacity");
+    el.style.removeProperty("position");
+    el.style.removeProperty("top");
+    el.style.removeProperty("bottom");
+  }
+  return clon;
+}
+
+/** Alto de la página en mm para un contenido de `altoPx` (con margen, mínimo 40 mm). */
+export function altoPaginaMm(altoPx: number, margenMm = 6): number {
+  return Math.max(40, Math.ceil(altoPx / PX_POR_MM + margenMm));
+}
+
 export function imprimirTicket(
   elemento: HTMLElement | null | undefined,
   ancho: AnchoTicketImpresion = "80mm"
@@ -46,76 +58,75 @@ export function imprimirTicket(
   const anchoMM = ancho === "58mm" ? 58 : 80;
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
+  // Ancho real del rollo (para que el texto acomode igual que en el papel)
+  // y fuera de la vista.
   Object.assign(iframe.style, {
     position: "fixed",
-    top: "-9999px",
-    left: "-9999px",
-    width: "0",
-    height: "0",
+    left: "-10000px",
+    top: "0",
+    width: `${anchoMM}mm`,
+    height: "2000px",
     border: "0",
     visibility: "hidden",
     pointerEvents: "none",
-  } as CSSStyleDeclaration);
+  } as Partial<CSSStyleDeclaration>);
   document.body.appendChild(iframe);
 
   const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
-  if (!doc || !iframe.contentWindow) {
+  const win = iframe.contentWindow;
+  if (!doc || !win) {
     iframe.remove();
     return;
   }
 
   doc.open();
+  // Los estilos de la app van PRIMERO y los del ticket DESPUÉS: así ganan.
   doc.write(`<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <title>Ticket</title>
-<style>
-  /* Ancho estricto del rodillo térmico. */
-  @page { size: ${anchoMM}mm auto; margin: 0; }
-  html, body { margin: 0; padding: 0; background: #fff !important; color: #000 !important; }
+${cssDelDoc()}
+<style id="ticket-base">
+  html, body { margin: 0 !important; padding: 0 !important; width: ${anchoMM}mm !important;
+    background: #fff !important; color: #000 !important; }
   * { box-sizing: border-box; }
-  .print-doc-render { width: ${anchoMM}mm; margin: 0 auto; }
-  /* Si el documento padre esconde .print-label-area en pantalla,
-     aquí debe revelarse siempre. */
-  .print-label-area {
-    position: static !important;
-    display: block !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    background: #fff !important;
-    color: #000 !important;
-    padding: 2mm !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
+  .ticket-hoja { width: ${anchoMM}mm; padding: 3mm 3mm 2mm; }
+  .ticket-hoja > * {
+    position: static !important; inset: auto !important; transform: none !important;
+    width: 100% !important; max-width: 100% !important; height: auto !important;
+    min-height: 0 !important; overflow: visible !important; margin: 0 !important;
+    padding: 0 !important; box-shadow: none !important; border: none !important;
+    border-radius: 0 !important; background: #fff !important; display: block !important;
   }
-  .print-ticket-57, .print-ticket-80 {
-    width: 100% !important;
-    max-width: 100% !important;
+  .ticket-hoja, .ticket-hoja * {
+    visibility: visible !important; color: #000 !important; text-shadow: none !important;
+    overflow-wrap: anywhere; -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  .print-ticket-57 *, .print-ticket-80 * {
-    max-width: 100% !important;
-    overflow-wrap: break-word !important;
-    color: #000 !important;
-    text-shadow: none !important;
+  .ticket-hoja .truncate { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+  .ticket-hoja [class*="max-w-"] { max-width: none !important; }
+  @media print {
+    body * { visibility: visible !important; }
+    .print-label-area { position: static !important; width: 100% !important; max-width: 100% !important; }
   }
 </style>
-${cssDelDoc()}
 </head>
 <body>
-  <div class="print-doc-render">${elemento.outerHTML}</div>
+  <div class="ticket-hoja"></div>
 </body>
 </html>`);
   doc.close();
+  doc.querySelector(".ticket-hoja")?.appendChild(doc.importNode(copiaLimpia(elemento), true));
 
-  const win = iframe.contentWindow;
-  const limpiar = () => {
-    setTimeout(() => iframe.remove(), 50);
-  };
+  const limpiar = () => setTimeout(() => iframe.remove(), 500);
 
   const imprimir = () => {
     try {
+      const hoja = doc.querySelector<HTMLElement>(".ticket-hoja");
+      const alto = altoPaginaMm(hoja?.getBoundingClientRect().height ?? 0);
+      const pagina = doc.createElement("style");
+      pagina.textContent = `@page { size: ${anchoMM}mm ${alto}mm; margin: 0; }`;
+      doc.head.appendChild(pagina);
       win.focus();
       win.print();
     } catch {
@@ -124,9 +135,17 @@ ${cssDelDoc()}
     limpiar();
   };
 
-  if (doc.readyState === "complete") {
-    setTimeout(imprimir, 60);
-  } else {
-    win.addEventListener("load", () => setTimeout(imprimir, 60), { once: true });
-  }
+  // Espera a que carguen las hojas de estilo para medir el alto real.
+  const hojas = Array.from(doc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'));
+  Promise.all(
+    hojas.map(
+      (l) =>
+        new Promise<void>((ok) => {
+          if (l.sheet) return ok();
+          l.addEventListener("load", () => ok(), { once: true });
+          l.addEventListener("error", () => ok(), { once: true });
+          setTimeout(ok, 1500);
+        })
+    )
+  ).then(() => setTimeout(imprimir, 60));
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validarRfc } from "./validacion";
 
 // ============================================================
 // FASE 12 · Datos fiscales del cliente (para facturación CFDI)
@@ -17,8 +18,13 @@ export const RFC_ERROR =
 export const RFC_CLIENTE_SCHEMA = z
   .union([z.string().trim().max(13), z.null()])
   .optional()
-  .transform((v) => (v ? v.toUpperCase() : null))
-  .refine((v) => !v || RFC_REGEX.test(v), RFC_ERROR);
+  .transform((v) => (v ? v.toUpperCase().replace(/[\s-]/g, "") : null))
+  // Estructura, fecha real y dígito verificador (lib/validacion).
+  .superRefine((v, ctx) => {
+    if (!v) return;
+    const r = validarRfc(v);
+    if (!r.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.error });
+  });
 
 /** Razón social opcional (persona moral). */
 export const RAZON_SOCIAL_SCHEMA = z

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validarCurp, validarRfc } from "./validacion";
 import {
   TIPO_NEGOCIO,
   METODOS_PAGO_DISPONIBLES,
@@ -53,12 +54,7 @@ const DATOS_BANCARIOS_SCHEMA = z
 // guardar datos fiscales incompletos, pero cuando un campo se
 // llena debe cumplir el formato oficial para emitir CFDI.
 // ============================================================
-const RFC_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
-const RFC_ERROR =
-  "RFC inválido (persona física: 13 caracteres; persona moral: 12, sin espacios)";
-const CURP_REGEX = /^[A-Z][AEIOU][A-Z]{2}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$/;
-const CURP_ERROR =
-  "CURP inválida (18 caracteres: iniciales + fecha AAMMDD + género + entidad + consecutivo + dígito)";
+// RFC y CURP: estructura, fecha real y dígito verificador en lib/validacion.
 
 // Catálogo del SAT de Clave de Régimen Fiscal (sat.gob.mx).
 const CLAVES_REGIMEN_FISCAL = [
@@ -145,14 +141,22 @@ const DATOS_FISCALES_SCHEMA = z
       .trim()
       .max(13, "RFC inválido (máx 13 caracteres)")
       .optional()
-      .refine((v) => !v || RFC_REGEX.test(v.toUpperCase()), RFC_ERROR),
+      .superRefine((v, ctx) => {
+        if (!v) return;
+        const r = validarRfc(v);
+        if (!r.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.error });
+      }),
     razonSocial: TEXTO_DIRECCION("Razón social", 120),
     curp: z
       .string()
       .trim()
       .max(18)
       .optional()
-      .refine((v) => !v || CURP_REGEX.test(v.toUpperCase()), CURP_ERROR),
+      .superRefine((v, ctx) => {
+        if (!v) return;
+        const r = validarCurp(v);
+        if (!r.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.error });
+      }),
     regimenFiscal: catSat(
       CLAVES_REGIMEN_FISCAL,
       "Régimen fiscal inválido (usa una clave del catálogo SAT: 601, 612, 626, …)"
@@ -221,6 +225,12 @@ export const CONFIG_INPUT_SCHEMA = z
     usarCaducidad: z.boolean().default(DEFAULT_USAR_CADUCIDAD),
     usarUbicaciones: z.boolean().default(DEFAULT_USAR_UBICACIONES),
     requerirFondoInicial: z.boolean().default(DEFAULT_REQUERIR_FONDO_INICIAL),
+    diasApartado: z
+      .number({ invalid_type_error: "Los días de apartado deben ser un número" })
+      .int("Los días de apartado deben ser un número entero")
+      .min(1, "Un apartado se guarda al menos 1 día")
+      .max(365, "Máximo 365 días de apartado")
+      .default(30),
   })
   .strict();
 

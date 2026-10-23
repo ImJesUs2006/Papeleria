@@ -61,6 +61,7 @@ export interface SnapshotJson {
     usarCaducidad: boolean;
     usarUbicaciones: boolean;
     requerirFondoInicial: boolean;
+    diasApartado?: number;
     configVersion: number;
     setupPendiente: boolean;
   };
@@ -113,6 +114,7 @@ export function buildResetJson(
       usarCaducidad: Boolean(configRow?.usarCaducidad ?? false),
       usarUbicaciones: Boolean(configRow?.usarUbicaciones ?? true),
       requerirFondoInicial: Boolean(configRow?.requerirFondoInicial ?? true),
+      diasApartado: Number(configRow?.diasApartado ?? 30),
       configVersion: Number(configRow?.configVersion ?? 1),
       setupPendiente: Boolean(configRow?.setupPendiente ?? true),
     },
@@ -302,6 +304,7 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
       usarUbicaciones: typeof cfg.usarUbicaciones === "boolean" ? cfg.usarUbicaciones : true,
       requerirFondoInicial:
         typeof cfg.requerirFondoInicial === "boolean" ? cfg.requerirFondoInicial : true,
+      diasApartado: Number.isInteger(cfg.diasApartado) && (cfg.diasApartado ?? 0) > 0 ? (cfg.diasApartado as number) : 30,
       setupPendiente: false,
       configVersion: proximaVersion + 1,
       updatedById: input.idUsuario,

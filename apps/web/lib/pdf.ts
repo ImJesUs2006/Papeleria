@@ -1,8 +1,12 @@
 // ============================================================
-// Generador de PDF "casero" (Fase 12) para el comprobante de venta.
-// No usa librerías externas: construye un PDF mínimo PDF-1.4 con
-// fuentes estándar Type1 (Helvetica / Helvetica-Bold) y codificación
-// WinAnsi, sin compresión. Suficiente para un ticket descargable.
+// Generador de PDF "casero" para el comprobante de venta.
+// No usa librerías externas: construye un PDF-1.4 mínimo con fuentes
+// estándar Type1 (Helvetica / Helvetica-Bold) y codificación WinAnsi.
+//
+// El documento tiene el tamaño de un TICKET (58 u 80 mm de ancho y el alto
+// justo del contenido), no de una hoja carta/A4. Antes era A4 y además el
+// texto arrancaba en la esquina inferior (fuera de la página): el PDF salía
+// en blanco.
 // ============================================================
 
 export interface ResultadoVentaPDF {
@@ -29,18 +33,21 @@ export interface ResultadoVentaPDF {
   }>;
 }
 
+export type AnchoTicketPDF = "58mm" | "80mm";
+
 interface LineaPDF {
   texto?: string;
   negrita?: boolean;
   tam?: number;
-  der?: string; // columna derecha (totales)
-  doble?: boolean; // línea separadora -----
+  der?: string; // columna derecha (importes)
+  centro?: boolean;
+  separador?: boolean;
+  espacio?: number; // renglón en blanco de este alto (pt)
 }
 
-const ANCHO_PAGINA = 595; // A4 portrait (puntos @72dpi)
-const MARGEN_X = 40;
-const MARGEN_S = 40;
-const MARGEN_I = 40;
+const PT_POR_MM = 72 / 25.4;
+const MARGEN_X_MM = 3;
+const MARGEN_Y_MM = 4;
 
 const ETIQUETA_PAGO: Record<string, string> = {
   EFECTIVO: "Efectivo",
@@ -49,6 +56,7 @@ const ETIQUETA_PAGO: Record<string, string> = {
   DIGITAL: "Transferencia",
   TRANSFERENCIA: "Transferencia",
   PUNTOS_MONEDERO: "Monedero (puntos)",
+  MIXTO: "Pago dividido",
 };
 
 /** Escapa un string a bytes WinAnsi seguros para el stream PDF. */
@@ -56,126 +64,93 @@ function pdfBytes(s: string): string {
   let out = "";
   for (const ch of s) {
     const c = ch.codePointAt(0) ?? 0;
-    // WinAnsi sube de número de código: 0x20-0xFF se escriben como byte crudo.
+    // WinAnsi: 0x20-0xFF se escriben como byte crudo; lo demás no existe.
     if (c >= 0x20 && c <= 0xff) out += String.fromCharCode(c);
     else out += "?";
   }
   return out.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-function anchoTx(s: string, tam: number): number {
-  // Aproximación: Helvetica ~0.5 * tamaño por carácter.
-  return pdfBytes(s).length * tam * 0.5;
+/** Ancho aproximado en puntos de un texto en Helvetica (métricas medias por tipo de carácter). */
+export function anchoTexto(s: string, tam: number, negrita = false): number {
+  let unidades = 0;
+  for (const ch of s) {
+    if (/[0-9$]/.test(ch)) unidades += 0.556;
+    else if (/[ .,:;'|!il]/.test(ch)) unidades += 0.278;
+    else if (/[A-ZÁÉÍÓÚÑÜ&@%]/.test(ch)) unidades += /[MW@%]/.test(ch) ? 0.85 : 0.68;
+    else unidades += 0.53;
+  }
+  return unidades * tam * (negrita ? 1.06 : 1);
 }
 
-interface PaginaPDF {
-  cuerpo: string[];
-  altura: number; // puntero y
+/** Parte un texto en renglones que caben en `ancho` puntos. */
+export function partirTexto(texto: string, ancho: number, tam: number, negrita = false): string[] {
+  const renglones: string[] = [];
+  for (const parrafo of texto.split("\n")) {
+    let actual = "";
+    for (const palabra of parrafo.split(/\s+/).filter(Boolean)) {
+      const prueba = actual ? `${actual} ${palabra}` : palabra;
+      if (anchoTexto(prueba, tam, negrita) <= ancho) {
+        actual = prueba;
+        continue;
+      }
+      if (actual) renglones.push(actual);
+      // Palabra más larga que el renglón: se corta.
+      let resto = palabra;
+      while (anchoTexto(resto, tam, negrita) > ancho && resto.length > 1) {
+        let n = resto.length - 1;
+        while (n > 1 && anchoTexto(resto.slice(0, n), tam, negrita) > ancho) n--;
+        renglones.push(resto.slice(0, n));
+        resto = resto.slice(n);
+      }
+      actual = resto;
+    }
+    renglones.push(actual);
+  }
+  return renglones;
 }
 
-/** Construye el byte stream de contenido (BT/ET) para todas las páginas. */
-function construirStream(lineas: LineaPDF[]): { streams: string[]; paginas: number } {
-  const paginas: PaginaPDF[] = [{ cuerpo: [], altura: 800 }];
-  const agregar = (l: string) => paginas[paginas.length - 1].cuerpo.push(l);
+const saltoDe = (l: LineaPDF) => (l.espacio != null ? l.espacio : (l.tam ?? 8) * 1.35);
+
+/** Stream de contenido de UNA página del alto exacto del ticket. */
+function construirStream(lineas: LineaPDF[], anchoPagina: number, altoPagina: number): string {
+  const margenX = MARGEN_X_MM * PT_POR_MM;
+  const util = anchoPagina - margenX * 2;
+  const cuerpo: string[] = [];
+  let y = altoPagina - MARGEN_Y_MM * PT_POR_MM;
+
+  const escribir = (texto: string, x: number, yy: number, tam: number, negrita: boolean) => {
+    cuerpo.push(
+      `BT ${negrita ? "/F2" : "/F1"} ${tam.toFixed(1)} Tf 0 g ${x.toFixed(2)} ${yy.toFixed(2)} Td (${pdfBytes(texto)}) Tj ET`
+    );
+  };
 
   for (const l of lineas) {
-    const tam = l.tam ?? 10;
-    const salto = tam + 6;
-    if (paginas[paginas.length - 1].altura - salto < MARGEN_S) {
-      paginas.push({ cuerpo: [], altura: 800 });
-    }
-
-    if (l.doble) {
-      agregar(`0 ${-salto} Td`);
-      agregar(`(${pdfBytes("─".repeat(64))}) Tj`);
-      paginas[paginas.length - 1].altura -= salto;
+    const salto = saltoDe(l);
+    y -= salto;
+    if (l.espacio != null) continue;
+    const tam = l.tam ?? 8;
+    if (l.separador) {
+      // Línea punteada con caracteres WinAnsi (el "─" anterior salía como "?").
+      const guion = "- ";
+      const veces = Math.max(1, Math.floor(util / anchoTexto(guion, tam)));
+      escribir(guion.repeat(veces).trimEnd(), margenX, y + tam * 0.3, tam, false);
       continue;
     }
-
-    const fuente = l.negrita ? "/F2" : "/F1";
-    const color = l.negrita ? " 0 g" : " 0.25 0.25 0.25 rg";
-    agregar(`${fuente} ${tam.toFixed(1)} Tf${color}`);
-    agregar(`0 ${-salto} Td`);
-
-    const textoLinea = l.texto ?? "";
-    if (!l.der) {
-      agregar(`(${pdfBytes(textoLinea)}) Tj`);
-    } else {
-      const wIzq = anchoTx(textoLinea, tam);
-      const wDer = anchoTx(l.der, tam);
-      const espacio =
-        (ANCHO_PAGINA - MARGEN_X * 2) - wIzq - wDer;
-      const gap = Math.max(espacio, 2);
-      agregar(`(${pdfBytes(textoLinea)}) Tj`);
-      agregar(`${gap.toFixed(2)} 0 Td`);
-      agregar(`(${pdfBytes(l.der)}) Tj`);
-      agregar(`${(-gap).toFixed(2)} 0 Td`);
+    const negrita = !!l.negrita;
+    const texto = l.texto ?? "";
+    if (l.centro) {
+      const w = anchoTexto(texto, tam, negrita);
+      escribir(texto, margenX + Math.max(0, (util - w) / 2), y, tam, negrita);
+    } else if (texto) {
+      escribir(texto, margenX, y, tam, negrita);
     }
-    paginas[paginas.length - 1].altura -= salto;
-  }
-
-  const streams = paginas.map(
-    (p) => `BT\n${p.cuerpo.join("\n")}\nET`
-  );
-  return { streams, paginas: paginas.length };
-}
-
-/** Construye el documento PDF completo y devuelve sus bytes. */
-export function construirTicketPDF(resultado: ResultadoVentaPDF, negocio: string): Uint8Array {
-  const lineas: LineaPDF[] = [];
-  lineas.push({ texto: negocio.toUpperCase() || "MI NEGOCIO", negrita: true, tam: 14 });
-  lineas.push({ texto: "Comprobante de venta", tam: 9, der: new Date(resultado.fechaHora).toLocaleString("es-MX") });
-  lineas.push({ texto: `Folio: ${resultado.folioVenta}`, tam: 9, der: resultado.offline ? "OFFLINE" : "EN LÍNEA" });
-  if (resultado.nombreCliente) {
-    lineas.push({ texto: `Cliente: ${resultado.nombreCliente}`, tam: 9 });
-  }
-  lineas.push({ doble: true });
-
-  for (const i of resultado.items) {
-    const detalle = `${pdfCantidad(i.cantidad)} × ${pdfMoneda(i.importe)}`;
-    lineas.push({ texto: i.descripcion.slice(0, 42), tam: 9 });
-    lineas.push({ texto: "", tam: 7, der: detalle });
-  }
-
-  lineas.push({ doble: true });
-  if ((resultado.descuentoTotal ?? 0) > 0) {
-    lineas.push({ texto: "Descuentos", der: `-${pdfMoneda(resultado.descuentoTotal ?? 0)}`, tam: 9 });
-  }
-  lineas.push({ texto: "Subtotal", der: pdfMoneda(resultado.subtotal), tam: 9 });
-  if ((resultado.ieps ?? 0) > 0) {
-    lineas.push({ texto: "IEPS", der: pdfMoneda(resultado.ieps ?? 0), tam: 9 });
-  }
-  lineas.push({ texto: "IVA", der: pdfMoneda(resultado.iva), tam: 9 });
-  lineas.push({ texto: "TOTAL", der: pdfMoneda(resultado.totalNeto), negrita: true, tam: 12 });
-  lineas.push({ texto: `Método: ${ETIQUETA_PAGO[resultado.metodoPago] ?? resultado.metodoPago}`, tam: 9 });
-  if (resultado.cambio != null && resultado.cambio > 0) {
-    lineas.push({ texto: "CAMBIO A ENTREGAR", negrita: true, tam: 9, der: pdfMoneda(resultado.cambio) });
-  }
-  const mensaje = resultado.mensajeTicket?.trim();
-  if (mensaje) {
-    lineas.push({ doble: true });
-    // Ajuste de línea simple: el PDF no parte el texto por sí solo.
-    for (const parrafo of mensaje.split("\n")) {
-      let actual = "";
-      for (const palabra of parrafo.split(/\s+/)) {
-        if ((actual + " " + palabra).trim().length > 70) {
-          lineas.push({ texto: actual, tam: 9 });
-          actual = palabra;
-        } else {
-          actual = (actual + " " + palabra).trim();
-        }
-      }
-      if (actual) lineas.push({ texto: actual, tam: 9 });
+    if (l.der) {
+      const w = anchoTexto(l.der, tam, negrita);
+      escribir(l.der, margenX + util - w, y, tam, negrita);
     }
-  } else {
-    lineas.push({ texto: "¡Gracias por su compra!", tam: 9 });
   }
-
-  return construirPDF(lineas, "A4");
-}
-
-function pdfMoneda(n: number): string {
-  return `$${Number.isFinite(n) ? n.toFixed(2) : "0.00"}`;
+  return cuerpo.join("\n");
 }
 
 /**
@@ -192,36 +167,26 @@ function pdfCantidad(n: number): string {
   return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function construirPDF(lineas: LineaPDF[], formato: "A4"): Uint8Array {
-  const { streams, paginas } = construirStream(lineas);
+function pdfMoneda(n: number): string {
+  return `$${Number.isFinite(n) ? n.toFixed(2) : "0.00"}`;
+}
 
-  // Numeración de objetos:
-  //   1 = catálogo, 2 = árbol de páginas,
-  //   (3 + 2i) = página i, (4 + 2i) = contenido (stream) de la página i,
-  //   3 + 2N = fuente regular, 4 + 2N = fuente negrita.
-  const objPagina = (i: number) => 3 + i * 2;
-  const objStream = (i: number) => 4 + i * 2;
-  const objFuenteRegular = 3 + paginas * 2;
-  const objFuenteNegrita = 4 + paginas * 2;
+/** Arma el PDF de una sola página con el tamaño del ticket. */
+function construirPDF(lineas: LineaPDF[], ancho: AnchoTicketPDF): Uint8Array {
+  const anchoPagina = (ancho === "58mm" ? 58 : 80) * PT_POR_MM;
+  const altoContenido = lineas.reduce((s, l) => s + saltoDe(l), 0);
+  const altoPagina = Math.max(altoContenido + MARGEN_Y_MM * 2 * PT_POR_MM + 4, 60 * PT_POR_MM);
+  const stream = construirStream(lineas, anchoPagina, altoPagina);
 
-  const catalog = "<< /Type /Catalog /Pages 2 0 R >>";
-  const pages = `<< /Type /Pages /Kids [${Array.from({ length: paginas }, (_, i) => `${objPagina(i)} 0 R`).join(" ")}] /Count ${paginas} >>`;
-  const fuentes = `<< /F1 ${objFuenteRegular} 0 R /F2 ${objFuenteNegrita} 0 R >>`;
-
-  const objs: string[] = [catalog, pages];
-  for (let i = 0; i < paginas; i++) {
-    objs.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${ANCHO_PAGINA} 842] /Resources << /Font ${fuentes} >> /Contents ${objStream(i)} 0 R >>`,
-      // Un stream de contenido SIEMPRE necesita su diccionario y /Length.
-      envolverStream(streams[i])
-    );
-  }
-  objs.push(
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
-  );
-  objs.push(
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"
-  );
+  // 1 = catálogo, 2 = páginas, 3 = página, 4 = contenido, 5/6 = fuentes.
+  const objs: string[] = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${anchoPagina.toFixed(2)} ${altoPagina.toFixed(2)}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`,
+    envolverStream(stream),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+  ];
 
   const partes: string[] = ["%PDF-1.4\n"];
   const xref: number[] = [];
@@ -245,13 +210,67 @@ function construirPDF(lineas: LineaPDF[], formato: "A4"): Uint8Array {
   return bytes;
 }
 
+/** Construye el comprobante de venta en PDF (tamaño ticket) y devuelve sus bytes. */
+export function construirTicketPDF(
+  resultado: ResultadoVentaPDF,
+  negocio: string,
+  ancho: AnchoTicketPDF = "80mm"
+): Uint8Array {
+  const angosto = ancho === "58mm";
+  const T = angosto ? 7 : 8; // tamaño base
+  const util = ((angosto ? 58 : 80) - MARGEN_X_MM * 2) * PT_POR_MM;
+  const lineas: LineaPDF[] = [];
+  const parrafo = (texto: string, opciones: Partial<LineaPDF> = {}) => {
+    const tam = opciones.tam ?? T;
+    for (const r of partirTexto(texto, util, tam, !!opciones.negrita)) lineas.push({ ...opciones, tam, texto: r });
+  };
+
+  parrafo((negocio || "Mi negocio").toUpperCase(), { negrita: true, tam: T + 3, centro: true });
+  lineas.push({ texto: "Comprobante de venta", tam: T, centro: true });
+  lineas.push({ espacio: 4 });
+  lineas.push({ texto: `Folio: ${resultado.folioVenta}`, tam: T, negrita: true });
+  lineas.push({ texto: new Date(resultado.fechaHora).toLocaleString("es-MX"), tam: T });
+  if (resultado.offline) lineas.push({ texto: "Venta sin conexión (se sincroniza después)", tam: T - 1 });
+  if (resultado.nombreCliente) parrafo(`Cliente: ${resultado.nombreCliente}`);
+  lineas.push({ separador: true, tam: T });
+
+  for (const i of resultado.items) {
+    parrafo(i.descripcion);
+    lineas.push({
+      texto: `   ${pdfCantidad(i.cantidad)} x ${pdfMoneda(i.precioUnitario)}`,
+      der: pdfMoneda(i.importe),
+      tam: T,
+    });
+  }
+
+  lineas.push({ separador: true, tam: T });
+  if ((resultado.descuentoTotal ?? 0) > 0) {
+    lineas.push({ texto: "Descuentos", der: `-${pdfMoneda(resultado.descuentoTotal ?? 0)}`, tam: T });
+  }
+  lineas.push({ texto: "Subtotal", der: pdfMoneda(resultado.subtotal), tam: T });
+  if ((resultado.ieps ?? 0) > 0) {
+    lineas.push({ texto: "IEPS", der: pdfMoneda(resultado.ieps ?? 0), tam: T });
+  }
+  lineas.push({ texto: "IVA", der: pdfMoneda(resultado.iva), tam: T });
+  lineas.push({ espacio: 2 });
+  lineas.push({ texto: "TOTAL", der: pdfMoneda(resultado.totalNeto), negrita: true, tam: T + 3 });
+  lineas.push({ texto: "Pago", der: ETIQUETA_PAGO[resultado.metodoPago] ?? resultado.metodoPago, tam: T });
+  if (resultado.cambio != null && resultado.cambio > 0) {
+    lineas.push({ texto: "Cambio", der: pdfMoneda(resultado.cambio), negrita: true, tam: T + 1 });
+  }
+  lineas.push({ separador: true, tam: T });
+  parrafo(resultado.mensajeTicket?.trim() || "¡Gracias por su compra!", { centro: true });
+
+  return construirPDF(lineas, ancho);
+}
+
 /** Genera y descarga el PDF del comprobante de venta (lado cliente). */
 export function descargarTicketPDF(
   resultado: ResultadoVentaPDF,
   negocio: string,
-  nombreUsuario?: string
+  ancho: AnchoTicketPDF = "80mm"
 ): void {
-  const bytes = construirTicketPDF(resultado, negocio);
+  const bytes = construirTicketPDF(resultado, negocio, ancho);
   const buffer = new ArrayBuffer(bytes.length);
   new Uint8Array(buffer).set(bytes);
   const blob = new Blob([buffer], { type: "application/pdf" });

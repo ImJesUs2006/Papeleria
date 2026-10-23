@@ -27,6 +27,8 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { useColoresTema } from "@/hooks/use-colores-tema";
+import { useAlertas } from "@/store/alertas";
+import { TarjetaAlerta } from "@/components/alertas/centro-alertas";
 
 interface DashboardData {
   resumen: { totalVentas: number; numVentas: number; ticketPromedio: number; agotados: number; alertaBaja: number };
@@ -106,6 +108,9 @@ export default function DashboardPage() {
                 </motion.div>
               ))}
             </div>
+
+            {/* Pendientes: lo más urgente del centro de alertas */}
+            <PendientesDeHoy />
 
             {/* Caja actual */}
             {data.caja && (
@@ -214,5 +219,32 @@ export default function DashboardPage() {
         )}
       </div>
     </>
+  );
+}
+
+function PendientesDeHoy() {
+  const alertas = useAlertas((s) => s.alertas);
+  const cargadoEn = useAlertas((s) => s.cargadoEn);
+  if (!cargadoEn) return null;
+  return (
+    <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5" aria-label="Pendientes de hoy">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-black text-gray-100">Pendientes de hoy</h3>
+        <span className="text-xs text-muted">
+          {alertas.length === 0
+            ? "Todo en orden: sin alertas"
+            : alertas.length > 4
+              ? `Mostrando 4 de ${alertas.length} · el resto en la campana del menú`
+              : `${alertas.length} alerta${alertas.length === 1 ? "" : "s"}`}
+        </span>
+      </div>
+      {alertas.length > 0 && (
+        <ul className="grid gap-2 md:grid-cols-2">
+          {alertas.slice(0, 4).map((a) => (
+            <TarjetaAlerta key={a.clave} alerta={a} />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { validar } from "@/lib/validacion";
+import { PEDIDO_SCHEMA } from "@/lib/esquemas";
 
 const ESTADOS_VALIDOS = ["PENDIENTE", "ENTREGADO", "CANCELADO", "EN_RUTA", "PARCIAL"];
 
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
         fechaEntrega: p.fechaEntrega,
         totalEstimado: Number(p.totalEstimado),
         estado: p.estado,
+        condicionPago: p.condicionPago,
         notas: p.notas,
         items: p.items.map((i) => ({
           idItemPedido: i.idItemPedido,
@@ -74,44 +77,51 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  if (!body.idProveedor) {
-    return NextResponse.json({ error: "Debes seleccionar un proveedor" }, { status: 400 });
+  const v = validar(PEDIDO_SCHEMA, body);
+  if (!v.ok) {
+    return NextResponse.json({ error: v.error, campos: v.campos }, { status: 400 });
   }
-  if (!Array.isArray(body.items) || body.items.length === 0) {
-    return NextResponse.json({ error: "El pedido debe tener al menos un producto" }, { status: 400 });
-  }
-
-  const fechaEntrega = body.fechaEntrega ? new Date(body.fechaEntrega) : null;
-  if (fechaEntrega && isNaN(fechaEntrega.getTime())) {
-    return NextResponse.json({ error: "Fecha de entrega inválida" }, { status: 400 });
-  }
+  const pedidoIn = v.datos;
+  const fechaEntrega = pedidoIn.fechaEntrega ?? null;
+  const items = pedidoIn.items;
 
   try {
     const existeProveedor = await prisma.proveedor.findUnique({
-      where: { idProveedor: body.idProveedor, activo: true },
+      where: { idProveedor: pedidoIn.idProveedor, activo: true },
     });
     if (!existeProveedor) {
       return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 });
     }
+    // Todos los productos deben existir en el catálogo de este negocio.
+    const existentes = await prisma.producto.findMany({
+      where: { codigoItem: { in: items.map((i) => i.codigoItem) } },
+      select: { codigoItem: true },
+    });
+    const faltan = items.filter((i) => !existentes.some((e) => e.codigoItem === i.codigoItem));
+    if (faltan.length > 0) {
+      return NextResponse.json(
+        { error: `No existe en el catálogo: ${faltan.map((f) => f.codigoItem).join(", ")}` },
+        { status: 400 }
+      );
+    }
 
-    const totalEstimado = body.items.reduce((acc: number, it: any) => {
-      return acc + Number(it.precioCotizado ?? 0) * Number(it.cantidad ?? 0);
-    }, 0);
+    const totalEstimado = items.reduce((acc, it) => acc + it.precioCotizado * it.cantidad, 0);
 
     const pedido = await prisma.$transaction(async (tx) => {
       const creado = await tx.pedidoProveedor.create({
         data: {
-          idProveedor: body.idProveedor,
+          idProveedor: pedidoIn.idProveedor,
+          condicionPago: pedidoIn.condicionPago,
           fechaEntrega,
           totalEstimado: Math.round(totalEstimado * 100) / 100,
           estado: body.estado && ESTADOS_VALIDOS.includes(body.estado) ? body.estado : "PENDIENTE",
-          notas: body.notas || null,
+          notas: pedidoIn.notas ?? null,
           createdBy: user.idPersona,
           items: {
-            create: body.items.map((it: any) => ({
+            create: items.map((it) => ({
               codigoItem: it.codigoItem,
-              cantidad: Math.round(Number(it.cantidad)),
-              precioCotizado: Math.round(Number(it.precioCotizado ?? 0) * 100) / 100,
+              cantidad: it.cantidad,
+              precioCotizado: it.precioCotizado,
             })),
           },
         },
@@ -124,7 +134,8 @@ export async function POST(request: Request) {
           moduloSistema: "INVENTARIO",
           jsonPayload: {
             idPedido: creado.idPedido,
-            items: body.items.length,
+            items: items.length,
+            condicionPago: pedidoIn.condicionPago,
             fechaEntrega: fechaEntrega?.toISOString(),
           },
         },

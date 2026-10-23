@@ -108,6 +108,28 @@ También disponible desde la raíz: `npm run db:deploy` y `npm run db:seed`.
 
 > Desde la versión multi-negocio el esquema se gestiona con **migraciones** (`packages/database/prisma/migrations`). Para cambiar el esquema usa `npm run db:migrate` (genera la migración) en lugar de `db push`.
 
+### 5.1. Actualizar una computadora que ya tenía el sistema
+
+```powershell
+git pull
+npm install
+npm run db:baseline
+npm run db:generate
+npm run dev
+```
+
+`npm run db:baseline` revisa la base y hace lo que haga falta **sin borrar datos**:
+
+| Situación de la base | Qué hace |
+|---|---|
+| Ya usa migraciones | Aplica solo las pendientes (igual que `db:deploy`). |
+| Vacía | Crea todas las tablas. |
+| Creada con el método anterior (`db push`), con o sin tablas faltantes | Pide un respaldo; con `npm run db:baseline -- --sin-respaldo` agrega las tablas que falten, marca la migración inicial y aplica el resto. |
+
+Si ves **"The database schema is not empty" (P3005)** o **"relation … does not exist" (P3018)** al hacer `db:deploy`, usa `db:baseline` en su lugar. Si una migración quedó a medias, restaura el respaldo y vuelve a correr `db:baseline`.
+
+No ejecutes `db:seed` en una base que ya tiene datos.
+
 **Usuarios de prueba** creados por el seed:
 
 | Usuario | Contraseña | Rol |
@@ -134,7 +156,7 @@ Abre **http://localhost:3000** y entra con `admin / admin123`.
 
 ```powershell
 cd apps/web
-npm test   # 11 pruebas Vitest (transacciones de venta + arqueo de caja)
+npm test   # pruebas unitarias (Vitest)
 ```
 
 ---
@@ -145,5 +167,8 @@ npm test   # 11 pruebas Vitest (transacciones de venta + arqueo de caja)
 - **`Error: listen EADDRINUSE` en otros puertos** → comprueba que no se superpongan `5433`, `3000`, `5050`.
 - **`DATABASE_URL` apuntando al puerto por defecto** → recuerda: Docker expone `5433`.
 - **`prisma migrate deploy` no conecta** → revisa que Docker esté arriba (`docker ps`) y que el contenedor esté sano.
+- **`P3005: The database schema is not empty`** → la base se creó con `db push`; usa `npm run db:baseline` (sección 5.1).
+- **`Could not find Prisma Schema`** → corre los comandos de Prisma desde la raíz con los alias `npm run db:*`, o desde `packages/database`.
+- **Error de certificado SSL al hacer `git pull`/`git push` en Windows** → `git -c http.sslBackend=schannel pull`.
 - **`Missing script: "dev"` en `packages/database`** → ejecuta siempre `npm run dev` desde la raíz (turbo usa el script `dev` de cada workspace), no desde la carpeta.
 - **CSS sin estilos / página en HTML crudo** → verificó que el pipeline PostCSS esté presente (`apps/web/postcss.config.mjs`); reinstala con `npm install` si falta.

@@ -308,3 +308,16 @@ describe("executeSale · descuentos y pagos mixtos", () => {
     expect(tx.producto.updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe("montosSugeridos (billetes rápidos)", () => {
+  it("ofrece el exacto y los billetes siguientes", async () => {
+    const { montosSugeridos } = await import("@/lib/pagos");
+    expect(montosSugeridos(137.5)).toEqual([137.5, 140, 150, 200]);
+    expect(montosSugeridos(20)).toEqual([20, 50, 100, 200]);
+    expect(montosSugeridos(1250)).toEqual([1250, 1300]);
+  });
+  it("sin total no sugiere nada", async () => {
+    const { montosSugeridos } = await import("@/lib/pagos");
+    expect(montosSugeridos(0)).toEqual([]);
+  });
+});

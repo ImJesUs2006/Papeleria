@@ -232,7 +232,8 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, mensajeT
                     mensajeTicket,
                     items: result.items,
                   },
-                  nombreNegocio
+                  nombreNegocio,
+                  ancho
                 )
               }
               className="flex items-center justify-center gap-2 py-3 rounded-xl bg-neon-blue/10 border border-neon-blue/40 hover:bg-neon-blue/20 text-neon-blue text-sm font-bold transition-colors"

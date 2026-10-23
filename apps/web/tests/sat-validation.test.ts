@@ -30,12 +30,12 @@ describe("validateConfigInput · RFC SAT", () => {
   });
 
   it("acepta RFC de persona física con homoclave", () => {
-    const r = validateConfigInput(baseConfig({ rfc: "GACM8401018P4" }));
+    const r = validateConfigInput(baseConfig({ rfc: "GODE561231GR8" }));
     expect(r.success).toBe(true);
   });
 
   it("acepta RFC de persona moral (12 caracteres)", () => {
-    const r = validateConfigInput(baseConfig({ rfc: "AAA010101AAA" }));
+    const r = validateConfigInput(baseConfig({ rfc: "EKU9003173C9" }));
     expect(r.success).toBe(true);
   });
 
@@ -48,7 +48,7 @@ describe("validateConfigInput · RFC SAT", () => {
 
 describe("validateConfigInput · CURP SAT", () => {
   it("acepta una CURP válida", () => {
-    const r = validateConfigInput(baseConfig({ curp: "GARC001101HDFRRL09" }));
+    const r = validateConfigInput(baseConfig({ curp: "HEGG560427MVZRRL04" }));
     expect(r.success).toBe(true);
   });
 

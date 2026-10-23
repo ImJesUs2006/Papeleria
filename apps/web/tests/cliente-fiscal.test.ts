@@ -12,13 +12,13 @@ import {
  */
 describe("RFC_CLIENTE_SCHEMA", () => {
   it("acepta RFC de persona física (13) y moral (12)", () => {
-    expect(RFC_CLIENTE_SCHEMA.parse("GACM8401018P4")).toBe("GACM8401018P4");
+    expect(RFC_CLIENTE_SCHEMA.parse("GODE561231GR8")).toBe("GODE561231GR8");
     expect(RFC_CLIENTE_SCHEMA.parse("XAXX010101000")).toBe("XAXX010101000");
-    expect(RFC_CLIENTE_SCHEMA.parse("AAA010101AAA")).toBe("AAA010101AAA");
+    expect(RFC_CLIENTE_SCHEMA.parse("EKU9003173C9")).toBe("EKU9003173C9");
   });
 
   it("normaliza a mayúsculas", () => {
-    expect(RFC_CLIENTE_SCHEMA.parse("gacm8401018p4")).toBe("GACM8401018P4");
+    expect(RFC_CLIENTE_SCHEMA.parse("gode561231gr8")).toBe("GODE561231GR8");
   });
 
   it("convierte vacío y null en null", () => {
@@ -29,7 +29,7 @@ describe("RFC_CLIENTE_SCHEMA", () => {
 
   it("rechaza formatos inválidos", () => {
     expect(RFC_CLIENTE_SCHEMA.safeParse("ABCDEF").success).toBe(false);
-    expect(RFC_CLIENTE_SCHEMA.safeParse("GACM8401018P44").success).toBe(false);
+    expect(RFC_CLIENTE_SCHEMA.safeParse("GODE561231GR88").success).toBe(false);
     expect(RFC_CLIENTE_SCHEMA.safeParse("GACM 840101 8P4").success).toBe(false);
   });
 
@@ -52,7 +52,7 @@ describe("RAZON_SOCIAL_SCHEMA", () => {
 
 describe("tieneDatosFiscales (regla de facturación)", () => {
   it("exige RFC o razón social", () => {
-    expect(tieneDatosFiscales({ rfc: "GACM8401018P4" })).toBe(true);
+    expect(tieneDatosFiscales({ rfc: "GODE561231GR8" })).toBe(true);
     expect(tieneDatosFiscales({ razonSocial: "SA de CV" })).toBe(true);
     expect(tieneDatosFiscales({})).toBe(false);
     expect(tieneDatosFiscales({ rfc: null, razonSocial: null })).toBe(false);

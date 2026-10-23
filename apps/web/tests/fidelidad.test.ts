@@ -83,7 +83,7 @@ describe("Fase 12 · PDF sin dependencias", () => {
 
   it("incluye totales, cambio a entregar y cliente en el stream", () => {
     const ascii = new TextDecoder("latin1").decode(construirTicketPDF(resultado, "Tienda"));
-    expect(ascii).toContain("CAMBIO A ENTREGAR");
+    expect(ascii).toContain("(Cambio)");
     expect(ascii).toContain("María López");
     // Busca partes del folio y del total.
     expect(ascii).toContain("F-20261004-ABCD");

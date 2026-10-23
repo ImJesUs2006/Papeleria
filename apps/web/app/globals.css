@@ -523,11 +523,11 @@ button:focus-visible {
     margin: 3mm;
   }
   @page ticket57 {
-    size: 58mm auto;
+    size: 58mm 297mm;
     margin: 2mm;
   }
   @page ticket80 {
-    size: 80mm auto;
+    size: 80mm 297mm;
     margin: 3mm;
   }
 

@@ -253,6 +253,7 @@ function extractConfig(raw: any): BusinessConfig {
     usarCaducidad: raw?.usarCaducidad === true,
     usarUbicaciones: raw?.usarUbicaciones !== false,
     requerirFondoInicial: raw?.requerirFondoInicial !== false,
+    diasApartado: Number(raw?.diasApartado) > 0 ? Number(raw.diasApartado) : 30,
     puntosConfig: normalizePuntos(raw?.puntosConfig),
     configVersion: raw?.configVersion ?? 1,
     setupPendiente: raw?.setupPendiente ?? false,

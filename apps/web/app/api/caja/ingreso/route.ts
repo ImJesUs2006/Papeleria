@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 export async function POST(request: Request) {
   const auth = await requireAuth()();
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   const user = auth.user;
 
   try {
-    const body = await request.json();
+    const body = await request.json().then((b) => (esObjetoJson(b) ? b : {}), () => ({}));
     const { tipo, monto } = body;
 
     if (

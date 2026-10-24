@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { ejecutarTraspaso, TraspasoError } from "@/lib/traspasos";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/traspasos → últimos traspasos del negocio
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

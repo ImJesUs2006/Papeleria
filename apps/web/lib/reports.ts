@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@papeleria/database";
 import type { ExportColumn } from "@/lib/export-exceljs";
+import { fechaParametro } from "./validacion";
 
 // ============================================================
 // Fuente única de datos para reportes.
@@ -36,8 +37,10 @@ function rangoFecha(desde?: string | null, hasta?: string | null) {
   const where: any = {};
   if (desde || hasta) {
     where.fechaHora = {};
-    if (desde) where.fechaHora.gte = new Date(desde);
-    if (hasta) where.fechaHora.lte = new Date(hasta + "T23:59:59");
+    const d = fechaParametro(desde);
+    const h = fechaParametro(hasta ? `${hasta}T23:59:59` : null);
+    if (d) where.fechaHora.gte = d;
+    if (h) where.fechaHora.lte = h;
   }
   return where;
 }

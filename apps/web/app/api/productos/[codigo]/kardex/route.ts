@@ -14,7 +14,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ codigo: string }> }
 ) {
-  const auth = await requireAuth()();
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { PerfilError, validarPerfil, type PerfilInput } from "@/lib/perfiles";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/perfiles → perfiles del negocio con cuántos usuarios tienen
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

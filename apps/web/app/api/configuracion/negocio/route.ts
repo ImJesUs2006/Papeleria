@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@papeleria/database";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // RUTA DE CONFIGURACIÓN DE NEGOCIO (Marca Blanca)
@@ -34,7 +35,8 @@ export async function PUT(request: Request) {
     const { CONFIG_PROPIA } = await import("@/lib/feature-flags");
     const { buildSignedConfig } = await import("@/lib/config-signing");
 
-    const body = await request.json();
+    const body = await request.json().then((b) => (esObjetoJson(b) ? b : null), () => null);
+    if (!body) return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
     const parsed = validateConfigInput(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });

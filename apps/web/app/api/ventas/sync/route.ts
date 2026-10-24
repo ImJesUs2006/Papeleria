@@ -13,6 +13,7 @@ import { aplicarDescuentos } from "@/lib/descuentos";
 import { promocionesVigentes } from "@/lib/promociones";
 import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
+import { esObjetoJson } from "@/lib/validacion";
 
 // Equivalencias entre el método que envía el POS y el catálogo del negocio.
 const MAPA_METODO: Record<string, string> = {
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
@@ -443,7 +445,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ resultados });
   } catch (error: any) {
     // P2034: conflicto de escritura / fallo de serialización (reintentable).
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+    // P2002: el mismo lote llegó dos veces a la vez (reintento de red) y el
+    // otro envío ya guardó el idLocal; al reintentar saldrá como "duplicada".
+    if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2034" || error.code === "P2002")) {
       return NextResponse.json(
         { error: "Conflicto de serialización; reintenta el lote" },
         { status: 409 }

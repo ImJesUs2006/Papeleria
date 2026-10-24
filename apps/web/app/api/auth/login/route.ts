@@ -6,6 +6,7 @@ import { limpiarIntentos, registrarFallo, segundosBloqueado } from "@/lib/rate-l
 import { tenantDb } from "@/lib/tenant";
 import { claveUsuario } from "@/lib/tenant-keys";
 import { CONFIG_PROPIA } from "@/lib/snapshots";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/auth/login   { negocio?, username, password }
@@ -27,7 +28,8 @@ async function resolverNegocio(codigo: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const { username, password, negocio: codigoNegocio } = await request.json();
+    const body = await request.json().then((b) => (esObjetoJson(b) ? b : {}), () => ({}));
+    const { username, password, negocio: codigoNegocio } = body;
 
     if (!username || !password) {
       return NextResponse.json(

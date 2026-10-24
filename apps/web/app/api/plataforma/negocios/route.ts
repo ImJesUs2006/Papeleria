@@ -7,6 +7,7 @@ import { CONFIG_PROPIA } from "@/lib/snapshots";
 import { PRESETS_POR_NEGOCIO, TIPO_NEGOCIO, type TipoNegocio } from "@/lib/business-types";
 import { presetPorGiro } from "@/lib/personalizacion";
 import { cargarCatalogoEjemplo } from "@/lib/cargar-catalogo";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/plataforma/negocios → todos los negocios con su actividad
@@ -59,7 +60,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   if (!(await requirePlataforma())) return NextResponse.json({ error: "Sin sesión de plataforma" }, { status: 401 });
-  const body = await request.json().catch(() => null);
+  const body = await request.json().then((b) => (esObjetoJson(b) ? b : null), () => null);
   if (!body) return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   const tipo: TipoNegocio = body.tipoNegocio in TIPO_NEGOCIO ? body.tipoNegocio : "PAPELERIA_RETAIL";
 

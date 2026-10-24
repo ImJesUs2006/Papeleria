@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // PATCH  /api/categorias/[id] → { nombre?, color?, orden? }
@@ -18,6 +19,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

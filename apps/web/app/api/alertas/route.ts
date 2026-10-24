@@ -4,6 +4,7 @@ import { tenantDb } from "@/lib/tenant";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { construirAlertas, finDelDia, puedeVer, type ContextoAlertas, type DatosAlertas } from "@/lib/alertas";
 import { perfilDeCompra } from "@/lib/clientes";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/alertas            → alertas vigentes para quien consulta
@@ -201,6 +202,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

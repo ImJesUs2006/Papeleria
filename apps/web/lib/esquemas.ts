@@ -29,7 +29,7 @@ export const PROVEEDOR_SCHEMA = z.object({
 /** Edición: todos los campos son opcionales, pero los enviados se validan igual. */
 export const PROVEEDOR_PATCH_SCHEMA = PROVEEDOR_SCHEMA.partial();
 
-const FECHA_DIA = z
+export const FECHA_DIA = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (usa AAAA-MM-DD)")
   .transform((v) => {

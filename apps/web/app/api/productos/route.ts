@@ -13,6 +13,7 @@ import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existenci
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { validarAtributos } from "@/lib/personalizacion";
 import { claveCodigoBarras, claveProducto } from "@/lib/tenant-keys";
+import { esObjetoJson } from "@/lib/validacion";
 
 const ALLOWED_SORT = [
   "descripcion",
@@ -213,6 +214,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
@@ -265,6 +267,16 @@ export async function POST(request: Request) {
       }
     }
 
+    // Categoría: debe ser de este negocio (el cliente con alcance no ve las ajenas).
+    let idCategoria: string | null = null;
+    if (data.idCategoria != null && data.idCategoria !== "") {
+      const categoria = await prisma.categoria.findUnique({ where: { id: String(data.idCategoria) } });
+      if (!categoria) {
+        return NextResponse.json({ error: "La categoría seleccionada no existe" }, { status: 400 });
+      }
+      idCategoria = categoria.id;
+    }
+
     const creado = await prisma.$transaction(async (tx) => {
       const producto = await tx.producto.create({
         data: {
@@ -296,12 +308,7 @@ precioCompra:
           proveedor: data.proveedor || null,
           tipoImpresion: data.tipoImpresion ?? null,
           fechaCaducidad: normalizarFechaCaducidad(data.fechaCaducidad),
-          idCategoria:
-            data.idCategoria != null && data.idCategoria !== ""
-              ? await prisma.categoria
-                  .findUnique({ where: { id: data.idCategoria } })
-                  .then((c) => c?.id ?? null)
-              : null,
+          idCategoria,
         },
       });
 

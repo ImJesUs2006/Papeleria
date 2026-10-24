@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: "Papeleria SaaS - Sistema de Gestión",
   description: "Punto de venta e inventario para papelerías, abarrotes, farmacias, boutiques, ferreterías y servicios",
   manifest: "/manifest.webmanifest",
+  icons: { icon: "/icons/icon-128.png", apple: "/icons/icon-256.png" },
 };
 
 export default function RootLayout({

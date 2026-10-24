@@ -6,6 +6,7 @@ import { validateConfigInput } from "@/lib/validate-config";
 import { normalizarPersonalizacion, validarCamposProducto } from "@/lib/personalizacion";
 import { buildSignedConfig } from "@/lib/config-signing";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET /api/setup                 → estado del wizard
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

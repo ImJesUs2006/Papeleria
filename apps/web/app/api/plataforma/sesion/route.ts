@@ -7,6 +7,7 @@ import {
   requirePlataforma,
 } from "@/lib/plataforma";
 import { limpiarIntentos, registrarFallo, segundosBloqueado } from "@/lib/rate-limit";
+import { esObjetoJson } from "@/lib/validacion";
 
 // GET    → ¿hay sesión de plataforma?
 // POST   { clave } → inicia sesión (limitado contra fuerza bruta)
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   if (espera > 0) {
     return NextResponse.json({ error: `Demasiados intentos. Espera ${Math.ceil(espera / 60)} min.` }, { status: 429 });
   }
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().then((b) => (esObjetoJson(b) ? b : {}), () => ({}));
   if (!claveValida(body?.clave)) {
     registrarFallo(llave);
     return NextResponse.json({ error: "Clave de plataforma incorrecta" }, { status: 401 });

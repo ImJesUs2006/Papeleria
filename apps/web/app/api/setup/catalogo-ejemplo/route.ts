@@ -5,6 +5,7 @@ import { getBusinessConfig } from "@/lib/feature-flags";
 import { cargarCatalogoEjemplo } from "@/lib/cargar-catalogo";
 import { resumenCatalogo } from "@/lib/catalogos-ejemplo";
 import { TIPO_NEGOCIO, type TipoNegocio } from "@/lib/business-types";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/setup/catalogo-ejemplo → qué traería el catálogo del giro
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const prisma = tenantDb(auth.user.idNegocio);
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().then((b) => (esObjetoJson(b) ? b : {}), () => ({}));
   const config = await getBusinessConfig(auth.user.idNegocio);
   const tipo = giroDe(body?.tipoNegocio, config.tipoNegocio);
 

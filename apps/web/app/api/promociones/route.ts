@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { tienePermiso } from "@/lib/permisos";
 import { tenantDb } from "@/lib/tenant";
 import { PromocionError, promocionesVigentes, validarPromocion } from "@/lib/promociones";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/promociones            → admin: todas las promociones
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

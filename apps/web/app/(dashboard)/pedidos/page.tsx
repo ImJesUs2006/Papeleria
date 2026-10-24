@@ -121,8 +121,12 @@ export default function PedidosPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/pedidos");
-      if (!res.ok) throw new Error("error");
-      setPedidos((await res.json()).data ?? []);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "No se pudieron cargar los pedidos");
+      setPedidos(d.data ?? []);
+    } catch (e) {
+      setPedidos([]);
+      notificar.error("Pedidos", e instanceof Error ? e.message : undefined);
     } finally {
       setLoading(false);
     }
@@ -131,7 +135,7 @@ export default function PedidosPage() {
   useEffect(() => {
     cargar();
     fetch("/api/proveedores?activos=true")
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((d) => setProveedores(d.data ?? []))
       .catch(() => {});
   }, [cargar]);

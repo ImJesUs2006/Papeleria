@@ -5,6 +5,7 @@ import { getBusinessConfig } from "@/lib/feature-flags";
 import { ApartadoError } from "@/lib/apartados";
 import { cancelarApartado, liquidarApartado } from "@/lib/apartados-cierre";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // PATCH /api/apartados/[id]
@@ -37,6 +38,7 @@ export async function PATCH(
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

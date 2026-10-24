@@ -7,6 +7,7 @@ import { tenantDb } from "@/lib/tenant";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { faltantesFiscales } from "@/lib/clientes";
 import { faltantesEmisor } from "@/lib/factura-manual";
+import { esObjetoJson } from "@/lib/validacion";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +124,7 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

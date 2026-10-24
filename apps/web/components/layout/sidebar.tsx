@@ -161,6 +161,11 @@ const NAV_ITEMS: Array<{
 
 const GRUPOS = ["Ventas", "Inventario", "Compras", "Administración"] as const;
 
+/** Módulo apagable del que depende una pantalla (para bloquearla si se entra por URL). */
+export function flagDeRuta(pathname: string): keyof FeatureFlags | undefined {
+  return NAV_ITEMS.find((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))?.flag;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { nombre, rol, hasPermission, logout } = useAuthStore();

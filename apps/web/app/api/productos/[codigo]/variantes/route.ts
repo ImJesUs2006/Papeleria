@@ -4,6 +4,7 @@ import { tenantDb } from "@/lib/tenant";
 import { claveProducto } from "@/lib/tenant-keys";
 import { conStockDeSucursal } from "@/lib/existencias";
 import { generarVariantes, VarianteError } from "@/lib/variantes";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/productos/[codigo]/variantes → productos del mismo modelo
@@ -56,6 +57,7 @@ export async function POST(
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

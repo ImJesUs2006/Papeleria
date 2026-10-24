@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { tieneOtroAdminActivo } from "@/lib/usuarios";
 import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // /api/usuarios/[id]  (solo ADMINISTRADORA)
@@ -28,6 +29,7 @@ export async function PATCH(
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

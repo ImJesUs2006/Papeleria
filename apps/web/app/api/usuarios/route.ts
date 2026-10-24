@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { claveUsuario } from "@/lib/tenant-keys";
 import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // /api/usuarios  (solo ADMINISTRADORA)
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

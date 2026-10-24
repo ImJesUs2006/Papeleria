@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { PerfilError, validarPerfil, valoresDePerfil } from "@/lib/perfiles";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // PATCH  /api/perfiles/[id] → edita el perfil y PROPAGA rol y permisos a
@@ -25,6 +26,7 @@ export async function PATCH(
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

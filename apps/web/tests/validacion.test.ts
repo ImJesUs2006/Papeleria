@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  esObjetoJson,
+  fechaParametro,
   validar,
   validarCodigoPostal,
   validarCurp,
@@ -103,5 +105,22 @@ describe("esquemas reutilizables", () => {
   it("no acepta texto en campos numéricos", () => {
     const r = validar(esquema, { nombre: "A", precio: "doce", dias: "x" });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("entradas de las API (QA final)", () => {
+  it("solo un objeto JSON es un cuerpo válido", () => {
+    expect(esObjetoJson({})).toBe(true);
+    for (const v of [null, undefined, [], "hola", 3, true]) expect(esObjetoJson(v)).toBe(false);
+  });
+
+  it("un día solo es la medianoche local, no la UTC", () => {
+    const d = fechaParametro("2026-10-23")!;
+    expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()]).toEqual([2026, 9, 23, 0]);
+    expect(fechaParametro("2026-10-23T23:59:59")!.getHours()).toBe(23);
+  });
+
+  it("fechas imposibles o basura se ignoran", () => {
+    for (const v of ["2026-02-30", "2026-99-99", "no-fecha", "", null, undefined]) expect(fechaParametro(v)).toBeNull();
   });
 });

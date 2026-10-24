@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { COOKIE_SUCURSAL, requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/sucursales/activa { idSucursal }
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

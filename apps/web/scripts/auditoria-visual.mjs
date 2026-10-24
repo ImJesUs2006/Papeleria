@@ -53,6 +53,8 @@ const auditar = () => {
       .join(" ")
       .trim();
     if (texto.length < 2) continue;
+    // Texto solo para lectores de pantalla: va recortado a propósito.
+    if (el.closest(".sr-only")) continue;
     const cs = getComputedStyle(el);
     let op = 1;
     for (let e = el; e; e = e.parentElement) op *= parseFloat(getComputedStyle(e).opacity);

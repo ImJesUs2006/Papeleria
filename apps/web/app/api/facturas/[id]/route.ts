@@ -4,6 +4,7 @@ import { tenantDb } from "@/lib/tenant";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { armarPaquete, validarFolioFiscal } from "@/lib/factura-manual";
 import { PORTAL_FACTURACION_SAT } from "@/lib/sat-catalogos";
+import { esObjetoJson } from "@/lib/validacion";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

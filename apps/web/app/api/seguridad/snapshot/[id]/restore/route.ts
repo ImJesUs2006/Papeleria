@@ -3,6 +3,7 @@ import { compare } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
 import { restoreFromSnapshot } from "@/lib/snapshots";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/seguridad/snapshot/[id]/restore
@@ -25,6 +26,7 @@ export async function POST(
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

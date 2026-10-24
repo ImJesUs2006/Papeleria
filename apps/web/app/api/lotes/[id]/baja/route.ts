@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { moverStock } from "@/lib/existencias";
 import { registrarMovimientosKardex } from "@/lib/kardex";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/lotes/[id]/baja { motivo? } → merma de lo que queda del lote
@@ -20,7 +21,7 @@ export async function POST(
   }
   const prisma = tenantDb(auth.user.idNegocio);
   const { id } = await params;
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().then((b) => (esObjetoJson(b) ? b : {}), () => ({}));
   const motivo = String(body?.motivo ?? "").trim().slice(0, 120) || "caducado";
 
   try {

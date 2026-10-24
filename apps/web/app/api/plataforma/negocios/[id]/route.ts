@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { prisma } from "@papeleria/database";
 import { requirePlataforma } from "@/lib/plataforma";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // PATCH /api/plataforma/negocios/[id]
@@ -13,7 +14,7 @@ import { requirePlataforma } from "@/lib/plataforma";
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requirePlataforma())) return NextResponse.json({ error: "Sin sesión de plataforma" }, { status: 401 });
   const { id } = await params;
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().then((b) => (esObjetoJson(b) ? b : {}), () => ({}));
 
   const negocio = await prisma.negocio.findUnique({ where: { idNegocio: id } });
   if (!negocio) return NextResponse.json({ error: "Negocio no encontrado" }, { status: 404 });

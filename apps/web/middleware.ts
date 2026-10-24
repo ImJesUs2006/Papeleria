@@ -69,12 +69,14 @@ export async function middleware(request: NextRequest) {
         "/api/traspasos",
         "/api/lotes",
         "/inventario",
+        "/proveedores",
+        "/pedidos",
         "/lotes",
         "/promociones",
         "/traspasos",
       ],
     },
-    { permiso: "permisoReportes", prefijos: ["/api/reportes", "/api/dashboard", "/reportes"] },
+    { permiso: "permisoReportes", prefijos: ["/api/reportes", "/api/dashboard", "/reportes", "/dashboard"] },
     {
       prefijos: [
         "/api/configuracion",

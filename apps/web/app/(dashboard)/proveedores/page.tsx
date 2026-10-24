@@ -103,8 +103,12 @@ export default function ProveedoresPage() {
     setLoading(true);
     try {
       const res = await fetch(`/api/proveedores?q=${encodeURIComponent(q)}`);
-      if (!res.ok) throw new Error("error");
-      setProveedores((await res.json()).data ?? []);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "No se pudieron cargar los proveedores");
+      setProveedores(d.data ?? []);
+    } catch (e) {
+      setProveedores([]);
+      notificar.error("Proveedores", e instanceof Error ? e.message : undefined);
     } finally {
       setLoading(false);
     }

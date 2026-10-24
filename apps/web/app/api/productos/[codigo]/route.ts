@@ -9,6 +9,7 @@ import { conStockDeSucursal, moverStock, stockEnSucursal } from "@/lib/existenci
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { validarAtributos } from "@/lib/personalizacion";
 import { claveProducto } from "@/lib/tenant-keys";
+import { esObjetoJson } from "@/lib/validacion";
 
 export async function GET(
   request: Request,
@@ -87,6 +88,7 @@ export async function PATCH(
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

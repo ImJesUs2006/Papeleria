@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
 import { round2 } from "@/lib/sales";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/caja/retiros   (SOLO ADMINISTRADORA)
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

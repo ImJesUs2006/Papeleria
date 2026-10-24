@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@papeleria/database";
 import { crearNegocio, NegocioError } from "@/lib/negocios";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/negocios — alta de un negocio (operación de PLATAFORMA).
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

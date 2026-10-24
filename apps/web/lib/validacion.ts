@@ -15,6 +15,24 @@ export function limpiarTexto(v: unknown): string {
     .trim();
 }
 
+/** El cuerpo de una petición debe ser un objeto JSON (no null, texto ni arreglo). */
+export function esObjetoJson(v: unknown): boolean {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Fecha de un parámetro de consulta; null si viene vacía o no es fecha real.
+ * Un día solo ("2026-10-23") es la medianoche LOCAL de ese día: `new Date`
+ * lo leería como medianoche UTC (en México, las 18:00 del día anterior).
+ */
+export function fechaParametro(v: string | null | undefined): Date | null {
+  if (!v) return null;
+  const dia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  const d = dia ? new Date(Number(dia[1]), Number(dia[2]) - 1, Number(dia[3])) : new Date(v);
+  if (dia && (d.getMonth() !== Number(dia[2]) - 1 || d.getDate() !== Number(dia[3]))) return null;
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // ---------- RFC ----------
 
 const VALOR_RFC = "0123456789ABCDEFGHIJKLMN&OPQRSTUVWXYZ Ñ";

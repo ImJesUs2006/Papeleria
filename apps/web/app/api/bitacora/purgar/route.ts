@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/bitacora/purgar
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { calcularNivel, equivalenciaPuntos } from "@/lib/fidelidad";
 import { tenantDb } from "@/lib/tenant";
 import { CLIENTE_PATCH_SCHEMA, enmascarar, faltantesFiscales, perfilDeCompra } from "@/lib/clientes";
-import { validar } from "@/lib/validacion";
+import { validar, esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET    /api/clientes/[id] → ficha + historial de compras + monedero
@@ -151,6 +151,7 @@ export async function PATCH(
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
@@ -212,7 +213,8 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAuth()();
+  // Borrar clientes es de administración (la pantalla solo se lo ofrece a ella).
+  const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

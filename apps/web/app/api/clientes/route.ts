@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { calcularNivel } from "@/lib/fidelidad";
 import { tenantDb } from "@/lib/tenant";
 import { CLIENTE_SCHEMA, enmascarar, faltantesFiscales } from "@/lib/clientes";
-import { validar } from "@/lib/validacion";
+import { validar, esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET /api/clientes?q=...&limit=...&soloConDeuda=...
@@ -99,6 +99,7 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

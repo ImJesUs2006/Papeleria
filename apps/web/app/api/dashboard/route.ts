@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { fechaParametro } from "@/lib/validacion";
 
 export async function GET(request: Request) {
   const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "reportes", modulo: "dashboard" })();
@@ -11,8 +12,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const hoy = new Date();
-  const desde = searchParams.get("desde") ? new Date(searchParams.get("desde")!) : new Date(hoy.getTime() - 30 * 86400000);
-  const hasta = searchParams.get("hasta") ? new Date(searchParams.get("hasta")!) : hoy;
+  const desde = fechaParametro(searchParams.get("desde")) ?? new Date(hoy.getTime() - 30 * 86400000);
+  const hasta = fechaParametro(searchParams.get("hasta")) ?? hoy;
 
   try {
     // Auditoría de Caja (Fase 10): los ingresos de sesiones ANULADAS se

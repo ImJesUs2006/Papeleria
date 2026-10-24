@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { calcularArqueo, round2 } from "@/lib/cash";
 import { ConteoError, totalConteo, validarConteo } from "@/lib/denominaciones";
 import { tenantDb } from "@/lib/tenant";
+import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // POST /api/caja/cerrar
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

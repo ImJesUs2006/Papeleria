@@ -4,6 +4,7 @@ import { getBusinessConfig } from "@/lib/feature-flags";
 import { executeReturn, ReturnError } from "@/lib/returns";
 import { tenantDb } from "@/lib/tenant";
 import { AutorizacionError, verificarAutorizacion } from "@/lib/autorizacion";
+import { esObjetoJson } from "@/lib/validacion";
 
 /** La devolución pasa el plazo o el monto: falta la clave de la administradora. */
 class RequiereAutorizacion extends Error {}
@@ -105,6 +106,7 @@ export async function POST(request: Request) {
   let body: any;
   try {
     body = await request.json();
+    if (!esObjetoJson(body)) throw new TypeError("Se esperaba un objeto JSON");
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }

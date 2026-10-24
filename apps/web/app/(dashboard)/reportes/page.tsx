@@ -23,6 +23,7 @@ import {
 } from "@/components/reports/preview-table";
 import { BitacoraPreview } from "@/components/reports/bitacora-preview";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth";
 
 interface ReportDef {
   id: string;
@@ -198,9 +199,11 @@ export default function ReportesPage() {
     }
   }, []);
 
+  // La lista de usuarios es de administración; los demás filtran por texto.
+  const esAdmin = useAuthStore((s) => s.rol) === "ADMINISTRADORA";
   useEffect(() => {
-    void cargarUsuarios();
-  }, [cargarUsuarios]);
+    if (esAdmin) void cargarUsuarios();
+  }, [cargarUsuarios, esAdmin]);
 
   const buildParams = (report: ReportDef): URLSearchParams | null => {
     const params = new URLSearchParams({ tipo: report.id });

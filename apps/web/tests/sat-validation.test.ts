@@ -81,7 +81,9 @@ describe("validateConfigInput · catálogos SAT", () => {
 
   it("acepta uso de CFDI G03 (gastos) y P01 (por definir)", () => {
     expect(validateConfigInput(baseConfig({ usoCFDI: "G03" })).success).toBe(true);
-    expect(validateConfigInput(baseConfig({ usoCFDI: "P01" })).success).toBe(true);
+    expect(validateConfigInput(baseConfig({ usoCFDI: "G01" })).success).toBe(true);
+    // P01 se eliminó en CFDI 4.0.
+    expect(validateConfigInput(baseConfig({ usoCFDI: "P01" })).success).toBe(false);
   });
 
   it("rechaza un uso de CFDI inexistente", () => {

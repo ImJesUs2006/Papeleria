@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   try {
     const lote = await prisma.$transaction((tx) =>
       registrarEntradaLote(tx, {
-        codigoItem: String(body?.codigoItem ?? "").trim().toUpperCase(),
+        codigoItem: String(body?.codigoItem ?? "").trim(),
         idSucursal: auth.user.idSucursal!,
         numeroLote: String(body?.numeroLote ?? ""),
         caducidad,

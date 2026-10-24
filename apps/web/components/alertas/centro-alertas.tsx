@@ -14,6 +14,7 @@ import {
   PackageOpen,
   RefreshCw,
   Truck,
+  UserRound,
   Vault,
   Wallet,
   X,
@@ -31,6 +32,7 @@ const ICONO_TIPO: Record<TipoAlerta, typeof Info> = {
   pago: Wallet,
   apartado: PackageOpen,
   caja: Vault,
+  cliente: UserRound,
 };
 
 const ESTILO_NIVEL: Record<NivelAlerta, { etiqueta: string; icono: typeof Info; cls: string; punto: string }> = {

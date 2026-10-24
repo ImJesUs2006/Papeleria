@@ -1,3 +1,4 @@
+import { leerEscalas } from "@/lib/precios";
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
@@ -30,6 +31,7 @@ export async function GET() {
       descripcion: p.descripcion,
       precioUnitario: Number(p.precioUnitario),
       precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+      escalasPrecio: leerEscalas(p.escalasPrecio, Number(p.precioUnitario)),
       stockActual: Number(p.stockActual),
       stockMinimo: Number(p.stockMinimo),
       permiteDecimales: p.permiteDecimales,

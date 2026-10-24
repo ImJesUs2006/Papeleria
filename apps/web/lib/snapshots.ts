@@ -62,6 +62,8 @@ export interface SnapshotJson {
     usarUbicaciones: boolean;
     requerirFondoInicial: boolean;
     diasApartado?: number;
+    corteConReferencia?: boolean;
+    diasDevolucion?: number;
     configVersion: number;
     setupPendiente: boolean;
   };
@@ -115,6 +117,8 @@ export function buildResetJson(
       usarUbicaciones: Boolean(configRow?.usarUbicaciones ?? true),
       requerirFondoInicial: Boolean(configRow?.requerirFondoInicial ?? true),
       diasApartado: Number(configRow?.diasApartado ?? 30),
+      corteConReferencia: Boolean(configRow?.corteConReferencia ?? false),
+      diasDevolucion: Number(configRow?.diasDevolucion ?? 30),
       configVersion: Number(configRow?.configVersion ?? 1),
       setupPendiente: Boolean(configRow?.setupPendiente ?? true),
     },
@@ -305,6 +309,8 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
       requerirFondoInicial:
         typeof cfg.requerirFondoInicial === "boolean" ? cfg.requerirFondoInicial : true,
       diasApartado: Number.isInteger(cfg.diasApartado) && (cfg.diasApartado ?? 0) > 0 ? (cfg.diasApartado as number) : 30,
+      corteConReferencia: cfg.corteConReferencia === true,
+      diasDevolucion: Number.isInteger(cfg.diasDevolucion) && (cfg.diasDevolucion ?? 0) > 0 ? (cfg.diasDevolucion as number) : 30,
       setupPendiente: false,
       configVersion: proximaVersion + 1,
       updatedById: input.idUsuario,

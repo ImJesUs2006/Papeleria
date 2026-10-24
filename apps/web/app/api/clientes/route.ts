@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
-import { round2 } from "@/lib/sales";
 import { calcularNivel } from "@/lib/fidelidad";
-import { RFC_CLIENTE_SCHEMA, RAZON_SOCIAL_SCHEMA } from "@/lib/cliente-fiscal";
 import { tenantDb } from "@/lib/tenant";
+import { CLIENTE_SCHEMA, enmascarar, faltantesFiscales } from "@/lib/clientes";
+import { validar } from "@/lib/validacion";
 
 // ============================================================
 // GET /api/clientes?q=...&limit=...&soloConDeuda=...
@@ -63,19 +62,23 @@ export async function GET(request: Request) {
       grupo.map((g) => [String(g.idCliente), Number(g._sum.totalNeto ?? 0)])
     );
 
+    // Datos sensibles: la cajera los ve enmascarados; la administradora completos.
+    const completo = auth.user.rol === "ADMINISTRADORA";
     return NextResponse.json({
       clientes: clientes.map((c) => {
         const montoHistorico = historicoPorCliente.get(c.idCliente) ?? 0;
         return {
           idCliente: c.idCliente,
           nombre: c.nombre,
-          telefono: c.telefono,
+          telefono: completo ? c.telefono : enmascarar.telefono(c.telefono),
+          email: completo ? c.email : enmascarar.email(c.email),
+          facturable: faltantesFiscales(c).length === 0,
           saldoDeudor: Number(c.saldoDeudor ?? 0),
           puntosFidelidad: Number(c.puntosFidelidad ?? 0),
           nivel: calcularNivel(montoHistorico),
           montoHistorico,
           // Fase 12: datos fiscales para la facturación (pueden venir vacíos).
-          rfc: c.rfc ?? null,
+          rfc: completo ? c.rfc ?? null : enmascarar.rfc(c.rfc),
           razonSocial: c.razonSocial ?? null,
         };
       }),
@@ -85,18 +88,6 @@ export async function GET(request: Request) {
   }
 }
 
-const CREATE_CLIENTE_SCHEMA = z
-  .object({
-    nombre: z.string().trim().min(2, "El nombre es obligatorio (mín 2 caracteres)").max(80),
-    telefono: z
-      .union([z.string().trim().max(20), z.null()])
-      .optional()
-      .transform((v) => (v ? v : null)),
-    // Fase 12: datos fiscales para poder facturar.
-    rfc: RFC_CLIENTE_SCHEMA,
-    razonSocial: RAZON_SOCIAL_SCHEMA,
-  })
-  .strict();
 
 export async function POST(request: Request) {
   const auth = await requireAuth()();
@@ -112,21 +103,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const parsed = CREATE_CLIENTE_SCHEMA.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Datos de cliente inválidos" },
-      { status: 400 }
-    );
+  const parsed = validar(CLIENTE_SCHEMA, body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error, campos: parsed.campos }, { status: 400 });
   }
+  const datos = parsed.datos;
 
   try {
     const cliente = await prisma.cliente.create({
       data: {
-        nombre: parsed.data.nombre,
-        telefono: parsed.data.telefono,
-        rfc: parsed.data.rfc ?? null,
-        razonSocial: parsed.data.razonSocial ?? null,
+        nombre: datos.nombre,
+        telefono: datos.telefono ?? null,
+        email: datos.email ?? null,
+        rfc: datos.rfc ?? null,
+        razonSocial: datos.razonSocial ?? null,
+        regimenFiscal: datos.regimenFiscal ?? null,
+        codigoPostalFiscal: datos.codigoPostalFiscal ?? null,
+        usoCfdi: datos.usoCfdi ?? null,
+        notas: datos.notas ?? null,
       },
     });
 

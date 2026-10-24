@@ -54,18 +54,20 @@ test.describe.serial("POS — flujo crítico", () => {
 
     await page.getByRole("button", { name: /Cerrar Caja|Continuar corte/ }).click();
 
-    const iniciar = page.getByRole("button", { name: /Iniciar corte ciego/ });
+    const iniciar = page.getByRole("button", { name: /^Iniciar corte$/ });
     if (await iniciar.isVisible().catch(() => false)) {
       await iniciar.click();
     }
 
-    // Nunca deben mostrarse los montos esperados durante el conteo.
-    await expect(page.getByText(/Efectivo esperado/)).toHaveCount(0);
+    // Corte ciego: nunca se muestran los montos esperados durante el conteo.
+    await expect(page.getByText(/Efectivo esperado|Lo que espera el sistema/)).toHaveCount(0);
 
-    await page.getByPlaceholder("Ej. 1250.50").fill("0");
-    await page.getByRole("button", { name: "Confirmar conteo" }).click();
+    // Conteo por billetes: el total se suma solo.
+    await page.getByLabel("Billetes de $500").fill("1");
+    await expect(page.getByTestId("efectivo-contado")).toHaveText("$500.00");
+    await page.getByRole("button", { name: "Confirmar conteo y cerrar caja" }).click();
 
-    await expect(page.getByText(/Caja cuadrada|Descuadre detectado/)).toBeVisible();
+    await expect(page.getByText(/Caja cuadrada|La caja no cuadra/)).toBeVisible();
     await page.getByRole("button", { name: "Terminar" }).click();
 
     await expect(page.getByRole("button", { name: "Abrir Caja" })).toBeVisible();

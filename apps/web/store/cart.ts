@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { fiscalCliente } from "@/store/config";
 import { notificar } from "@/store/notificaciones";
+import { precioPorCantidad, type EscalaPrecio } from "@/lib/precios";
 import { calcularImpuestos, tasasProducto, type ResumenFiscal } from "@/lib/impuestos";
 import {
   aplicarDescuentos,
@@ -26,6 +27,8 @@ export interface CartItem {
    * valor; los productos sin mayoreo conservan su precio de menudeo.
    */
   precioMayoreo?: number | null;
+  /** Precios por volumen: el precio baja al llegar a cada escala (lib/precios). */
+  escalasPrecio?: EscalaPrecio[] | null;
   /** Fase 12: imagen del producto (Cloudinary) para el catálogo táctil. */
   imagenUrl?: string | null;
   /** Impuestos del producto: IVA propio (null = el del negocio), exento, IEPS. */
@@ -96,14 +99,12 @@ export type MetodoPagoPOS = "EFECTIVO" | "TARJETA" | "DIGITAL" | "PUNTOS_MONEDER
  * Nunca devuelve NaN/undefined: si no hay precio de mayoreo, cae a menudeo.
  */
 export function precioUnitarioEfectivo(
-  item: Pick<CartItem, "precioUnitario" | "precioMayoreo">,
-  esMayoreo: boolean
+  item: Pick<CartItem, "precioUnitario" | "precioMayoreo" | "escalasPrecio">,
+  esMayoreo: boolean,
+  cantidad = 1
 ): number {
-  const menudeo = Number(item.precioUnitario);
-  if (!esMayoreo) return Number.isFinite(menudeo) ? menudeo : 0;
-  const mayoreo = Number(item.precioMayoreo);
-  if (Number.isFinite(mayoreo) && mayoreo > 0) return mayoreo;
-  return Number.isFinite(menudeo) ? menudeo : 0;
+  // Mismas reglas que el servidor: escala por cantidad y "cliente mayorista".
+  return precioPorCantidad(item, cantidad, esMayoreo);
 }
 
 interface CartState {
@@ -184,7 +185,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         .map((i) => {
           if (i.codigoItem !== codigoItem) return i;
           const series = (i.series ?? []).filter((s) => s !== serie);
-          const precio = precioUnitarioEfectivo(i, state.esMayoreo);
+          const precio = precioUnitarioEfectivo(i, state.esMayoreo, series.length);
           return { ...i, series, cantidad: series.length, subtotalLinea: series.length * precio };
         })
         .filter((i) => !i.usaSeries || i.cantidad > 0),
@@ -200,8 +201,9 @@ export const useCartStore = create<CartState>((set, get) => ({
       const existing = state.items.find(
         (i) => i.codigoItem === item.codigoItem
       );
-      // Si el carrito está en mayoreo, la línea nueva entra a ese precio.
-      const precioUnitario = precioUnitarioEfectivo(item, state.esMayoreo);
+      // `precioUnitario` guarda SIEMPRE el precio de lista; el importe usa el
+      // precio efectivo (escala por cantidad / cliente mayorista).
+      const precioLista = Number(item.precioUnitario) || 0;
 
       if (existing && item.usaSeries) {
         const series = [...new Set([...(existing.series ?? []), ...(item.series ?? [])])];
@@ -209,7 +211,12 @@ export const useCartStore = create<CartState>((set, get) => ({
           pendienteSerie: null,
           items: state.items.map((i) =>
             i.codigoItem === item.codigoItem
-              ? { ...i, series, cantidad: series.length, subtotalLinea: series.length * i.precioUnitario }
+              ? {
+                  ...i,
+                  series,
+                  cantidad: series.length,
+                  subtotalLinea: series.length * precioUnitarioEfectivo(i, state.esMayoreo, series.length),
+                }
               : i
           ),
         };
@@ -222,7 +229,8 @@ export const useCartStore = create<CartState>((set, get) => ({
                   ...i,
                   cantidad: i.cantidad + item.cantidad,
                   subtotalLinea:
-                    (i.cantidad + item.cantidad) * i.precioUnitario,
+                    (i.cantidad + item.cantidad) *
+                    precioUnitarioEfectivo(i, state.esMayoreo, i.cantidad + item.cantidad),
                 }
               : i
           ),
@@ -237,8 +245,8 @@ export const useCartStore = create<CartState>((set, get) => ({
           {
             ...item,
             cantidad,
-            precioUnitario,
-            subtotalLinea: cantidad * precioUnitario,
+            precioUnitario: precioLista,
+            subtotalLinea: cantidad * precioUnitarioEfectivo(item, state.esMayoreo, cantidad),
           },
         ],
       };
@@ -272,7 +280,7 @@ export const useCartStore = create<CartState>((set, get) => ({
                     cantidad,
                     // Respeta el modo mayoreo al cambiar la cantidad.
                     subtotalLinea:
-                      cantidad * precioUnitarioEfectivo(i, state.esMayoreo),
+                      cantidad * precioUnitarioEfectivo(i, state.esMayoreo, cantidad),
                   }
                 : i
             ),
@@ -315,7 +323,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       // siempre guarda el precio de lista y `subtotalLinea` se recalcula con
       // el precio efectivo del modo actual (así volver a menudeo es exacto).
       items: state.items.map((i) => {
-        const precio = precioUnitarioEfectivo(i, esMayoreo);
+        const precio = precioUnitarioEfectivo(i, esMayoreo, i.cantidad);
         return { ...i, subtotalLinea: i.cantidad * precio };
       }),
     })),
@@ -323,7 +331,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   getTieneMayoreo: () =>
     get().items.some((i) => {
       const m = Number(i.precioMayoreo);
-      return Number.isFinite(m) && m > 0;
+      return (Number.isFinite(m) && m > 0) || (i.escalasPrecio?.length ?? 0) > 0;
     }),
 
   getTotales: () =>

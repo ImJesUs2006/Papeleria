@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Barcode, Boxes, Layers, Loader2, PackageX } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
+import { BuscadorProducto, type ProductoEncontrado } from "@/components/ui/buscador-producto";
 import { notificar } from "@/store/notificaciones";
 
 // ============================================================
@@ -60,10 +61,12 @@ export default function LotesPage() {
   }, [seccion, cargarLotes]);
 
   // --- Formularios ---
-  const [lote, setLote] = useState({ codigoItem: "", numeroLote: "", caducidad: "", cantidad: "" });
-  const [series, setSeries] = useState({ codigoItem: "", texto: "" });
+  const [lote, setLote] = useState({ numeroLote: "", caducidad: "", cantidad: "" });
+  const [productoLote, setProductoLote] = useState<ProductoEncontrado | null>(null);
+  const [series, setSeries] = useState({ texto: "" });
+  const [productoSeries, setProductoSeries] = useState<ProductoEncontrado | null>(null);
+  const [productoModelo, setProductoModelo] = useState<ProductoEncontrado | null>(null);
   const [variantes, setVariantes] = useState({
-    codigoItem: "",
     ejes: [
       { nombre: "Talla", valores: "CH, M, G" },
       { nombre: "Color", valores: "" },
@@ -178,12 +181,21 @@ export default function LotesPage() {
 
           {seccion === "lote" && (
             <div className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
-              <input
-                value={lote.codigoItem}
-                onChange={(e) => setLote({ ...lote, codigoItem: e.target.value })}
-                placeholder="Código del producto"
-                className="input-dark"
-              />
+              <Explicacion>
+                Un <b>lote</b> son piezas que llegaron juntas con la misma caducidad (viene impreso en la caja). Al
+                vender se descuenta primero lo que caduca antes. Lo más cómodo es capturarlo al{" "}
+                <b>recibir un pedido</b>; usa esta pantalla para entradas sueltas. El producto debe tener activado
+                “Controla lotes” en su ficha.
+              </Explicacion>
+              <div className="sm:col-span-2">
+                <BuscadorProducto
+                  etiqueta="Producto"
+                  valor={productoLote}
+                  onSeleccion={setProductoLote}
+                  filtro={(p) => p.usaLotes === true}
+                  motivoFiltro="no controla lotes"
+                />
+              </div>
               <input
                 value={lote.numeroLote}
                 onChange={(e) => setLote({ ...lote, numeroLote: e.target.value })}
@@ -212,12 +224,18 @@ export default function LotesPage() {
               </label>
               <button
                 type="button"
-                disabled={ocupado || !lote.codigoItem || !lote.numeroLote || !(Number(lote.cantidad) > 0)}
+                disabled={ocupado || !productoLote || !lote.numeroLote.trim() || !(Number(lote.cantidad) > 0)}
                 onClick={() =>
                   ejecutar(async () => {
-                    await enviar("/api/lotes", { ...lote, cantidad: Number(lote.cantidad), caducidad: lote.caducidad || null });
-                    setLote({ codigoItem: "", numeroLote: "", caducidad: "", cantidad: "" });
-                    return "Entrada de lote registrada";
+                    await enviar("/api/lotes", {
+                      ...lote,
+                      codigoItem: productoLote!.codigoItem,
+                      numeroLote: lote.numeroLote.trim(),
+                      cantidad: Number(lote.cantidad),
+                      caducidad: lote.caducidad || null,
+                    });
+                    setLote({ numeroLote: "", caducidad: "", cantidad: "" });
+                    return `Lote registrado: +${Number(lote.cantidad)} de ${productoLote!.descripcion}`;
                   })
                 }
                 className="rounded-xl bg-acento px-4 py-2.5 text-sm font-bold text-btn-ink disabled:opacity-50 sm:col-span-2"
@@ -229,11 +247,17 @@ export default function LotesPage() {
 
           {seccion === "series" && (
             <div className="max-w-xl space-y-3">
-              <input
-                value={series.codigoItem}
-                onChange={(e) => setSeries({ ...series, codigoItem: e.target.value })}
-                placeholder="Código del producto"
-                className="input-dark"
+              <Explicacion>
+                Para artículos únicos (celulares, herramientas eléctricas, electrónicos): cada <b>número de serie</b> es
+                una pieza. Al vender se pide la serie exacta y al devolver regresa a disponible. Escanéalas una por
+                renglón.
+              </Explicacion>
+              <BuscadorProducto
+                etiqueta="Producto"
+                valor={productoSeries}
+                onSeleccion={setProductoSeries}
+                filtro={(p) => p.usaSeries === true}
+                motivoFiltro="no lleva número de serie"
               />
               <textarea
                 value={series.texto}
@@ -244,14 +268,14 @@ export default function LotesPage() {
               />
               <button
                 type="button"
-                disabled={ocupado || !series.codigoItem || !series.texto.trim()}
+                disabled={ocupado || !productoSeries || !series.texto.trim()}
                 onClick={() =>
                   ejecutar(async () => {
                     const data = await enviar("/api/series", {
-                      codigoItem: series.codigoItem,
+                      codigoItem: productoSeries!.codigoItem,
                       series: series.texto.split(/\r?\n/),
                     });
-                    setSeries({ codigoItem: series.codigoItem, texto: "" });
+                    setSeries({ texto: "" });
                     return `${data.registradas} pieza(s) registradas con su serie`;
                   })
                 }
@@ -264,16 +288,12 @@ export default function LotesPage() {
 
           {seccion === "variantes" && (
             <div className="max-w-xl space-y-3">
-              <p className="text-xs text-muted">
-                Cada combinación se crea como un producto propio (con su existencia y código de barras)
-                que comparte precio, impuestos y categoría con el modelo.
-              </p>
-              <input
-                value={variantes.codigoItem}
-                onChange={(e) => setVariantes({ ...variantes, codigoItem: e.target.value })}
-                placeholder="Código del producto modelo"
-                className="input-dark"
-              />
+              <Explicacion>
+                Para ropa, calzado o pinturas: eliges un producto <b>modelo</b> y los ejes (Talla: CH, M, G · Color:
+                Rojo, Azul). Cada combinación se crea como un producto propio con su existencia y código de barras,
+                y comparte precio, impuestos y categoría con el modelo.
+              </Explicacion>
+              <BuscadorProducto etiqueta="Producto modelo" valor={productoModelo} onSeleccion={setProductoModelo} />
               {variantes.ejes.map((eje, i) => (
                 <div key={i} className="grid grid-cols-3 gap-2">
                   <input
@@ -302,11 +322,11 @@ export default function LotesPage() {
               ))}
               <button
                 type="button"
-                disabled={ocupado || !variantes.codigoItem}
+                disabled={ocupado || !productoModelo}
                 onClick={() =>
                   ejecutar(async () => {
                     const data = await enviar(
-                      `/api/productos/${encodeURIComponent(variantes.codigoItem.trim().toUpperCase())}/variantes`,
+                      `/api/productos/${encodeURIComponent(productoModelo!.codigoItem)}/variantes`,
                       {
                         ejes: variantes.ejes
                           .filter((e) => e.nombre.trim() && e.valores.trim())
@@ -327,5 +347,13 @@ export default function LotesPage() {
         </div>
       </ErrorBoundary>
     </>
+  );
+}
+
+function Explicacion({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-xl border border-surface-600 bg-surface-800 p-3 text-xs leading-relaxed text-muted sm:col-span-2">
+      {children}
+    </p>
   );
 }

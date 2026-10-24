@@ -14,6 +14,13 @@ import {
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { ImagenProductoUpload } from "@/components/inventario/imagen-producto-upload";
+import {
+  EditorEscalas,
+  escalasAFilas,
+  filasAEscalas,
+  type FilaEscala,
+} from "@/components/inventario/editor-escalas";
+import { EscalaError, validarEscalas, type EscalaPrecio } from "@/lib/precios";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
 import { cn } from "@/lib/utils";
 import { usePersonalizacion } from "@/store/config";
@@ -132,6 +139,7 @@ const formSchema = z
     stockMinimo: stockFormSchema("Stock mínimo"),
     codigoBarras: textoOpcional(64),
     ubicacionEstante: textoOpcional(60),
+    idCategoria: z.string().max(40).optional(),
     proveedor: textoOpcional(120),
     tipoImpresion: z.enum(TIPO_IMPRESION_OPCIONES).optional().or(z.literal("")),
     fechaCaducidad: z
@@ -200,6 +208,15 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
   const personalizacion = usePersonalizacion();
   const camposGiro = personalizacion.camposProducto;
   const [atributos, setAtributos] = useState<Record<string, string>>({});
+  const [escalas, setEscalas] = useState<FilaEscala[]>([]);
+  const [categorias, setCategorias] = useState<Array<{ id: string; nombre: string }>>([]);
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/categorias", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { categorias: [] }))
+      .then((d) => setCategorias(d.categorias ?? []))
+      .catch(() => {});
+  }, [open]);
   const [cargando, setCargando] = useState(false);
 
   const {
@@ -250,6 +267,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       fetch(`/api/productos/${encodeURIComponent(producto.codigoItem)}`, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error("No se pudo cargar"))))
         .then((p) => {
+          setEscalas(escalasAFilas(p.escalasPrecio));
           setAtributos(
             Object.fromEntries(
               Object.entries((p.atributos ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
@@ -268,6 +286,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
             stockMinimo: Number(p.stockMinimo),
             codigoBarras: p.codigoBarras ?? "",
             ubicacionEstante: p.ubicacionEstante ?? "",
+            idCategoria: p.idCategoria ?? "",
             proveedor: p.proveedor ?? "",
             tipoImpresion: p.tipoImpresion ?? "",
             fechaCaducidad: p.fechaCaducidad ? p.fechaCaducidad.slice(0, 10) : "",
@@ -281,6 +300,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
         .finally(() => setCargando(false));
     } else {
       setAtributos({});
+      setEscalas([]);
       reset({
         codigoItem: "",
         descripcion: "",
@@ -301,12 +321,24 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
+    // Mismas reglas que el servidor: el error aparece antes de enviar.
+    let escalasPrecio: EscalaPrecio[] = [];
+    try {
+      escalasPrecio = validarEscalas(filasAEscalas(escalas), values.precioUnitario);
+    } catch (e) {
+      if (e instanceof EscalaError) {
+        setServerError(e.message);
+        return;
+      }
+      throw e;
+    }
     const payload = {
       codigoItem: values.codigoItem.trim().toUpperCase(),
       descripcion: values.descripcion,
       precioUnitario: values.precioUnitario,
       precioCompra: values.precioCompra ?? null,
       precioMayoreo: values.precioMayoreo ?? null,
+      escalasPrecio,
       exentoIva: values.impuestoIva === "EXENTO",
       tasaIva:
         !values.impuestoIva || values.impuestoIva === "EXENTO"
@@ -318,6 +350,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       stockMinimo: values.stockMinimo,
       codigoBarras: values.codigoBarras?.trim() || null,
       ubicacionEstante: values.ubicacionEstante?.trim() || null,
+      idCategoria: values.idCategoria || null,
       proveedor: values.proveedor?.trim() || null,
       tipoImpresion: values.tipoImpresion || null,
       fechaCaducidad: values.fechaCaducidad?.trim() || null,
@@ -492,6 +525,9 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   </span>
                 )}
               </label>
+              <div className="col-span-full">
+                <EditorEscalas filas={escalas} onChange={setEscalas} precioMenudeo={precioUnitario} />
+              </div>
               {/* Impuestos por producto (tasa 0%, exento, IEPS). */}
               <label className="block">
                 <span className="text-xs text-muted mb-1 block">IVA del producto</span>
@@ -557,6 +593,20 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   {err("ubicacionEstante")}
                 </label>
               )}
+              <label className="block">
+                <span className="text-xs text-muted mb-1 block">Categoría</span>
+                <select {...register("idCategoria")} className="input-dark">
+                  <option value="">Sin categoría</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}
+                    </option>
+                  ))}
+                </select>
+                {categorias.length === 0 && (
+                  <span className="mt-1 block text-[11px] text-muted">Créalas en Inventario → Categorías.</span>
+                )}
+              </label>
               <label className="block">
                 <span className="text-xs text-muted mb-1 block">Proveedor</span>
                 <input {...register("proveedor")} className="input-dark" placeholder="Nombre" />

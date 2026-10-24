@@ -29,6 +29,7 @@ import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { registrarVentaClient, type ResultadoVenta } from "@/lib/sales-client";
 import { puntosRequeridos } from "@/lib/fidelidad";
 import { montosSugeridos } from "@/lib/pagos";
+import { escalaAplicable, leerEscalas, siguienteEscala } from "@/lib/precios";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { ClientSelectModal } from "@/components/pos/client-select";
 import { VentaExitosaModal } from "@/components/pos/venta-exitosa";
@@ -81,6 +82,7 @@ function CartItemRow({
             <span className="text-neon-purple font-bold"> &middot; Servicio</span>
           )}
         </p>
+        <AvisoEscala item={item} />
         {precio?.promocion && (
           <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-amber-300">
             <Tag className="h-3 w-3" /> {precio.promocion} (−${precio.descuentoPromo.toFixed(2)})
@@ -1280,5 +1282,27 @@ export function CartPanel() {
         }}
       />
     </div>
+  );
+}
+
+/** Precio por volumen: cuál aplica y cuánto falta para el siguiente. */
+function AvisoEscala({ item }: { item: CartItem }) {
+  const escalas = leerEscalas(item.escalasPrecio, Number(item.precioUnitario));
+  if (!escalas.length) return null;
+  const aplica = escalaAplicable(escalas, item.cantidad);
+  const siguiente = siguienteEscala(escalas, item.cantidad);
+  return (
+    <p className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] font-semibold">
+      {aplica && (
+        <span className="text-emerald-300">
+          {aplica.nombre ?? "Mayoreo"}: ${aplica.precio.toFixed(2)} c/u
+        </span>
+      )}
+      {siguiente && (
+        <span className="text-sky-300">
+          Lleva {siguiente.desde} y paga ${siguiente.precio.toFixed(2)} c/u
+        </span>
+      )}
+    </p>
   );
 }

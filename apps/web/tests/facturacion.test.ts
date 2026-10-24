@@ -11,6 +11,13 @@ vi.mock("@/lib/auth", () => ({
   }),
 }));
 
+// Emisor con datos fiscales completos (Configuración → Financiero).
+vi.mock("@/lib/feature-flags", () => ({
+  getBusinessConfig: async () => ({
+    datosFiscales: { rfc: "EKU9003173C9", razonSocial: "PAPELERIA PRUEBA", regimenFiscal: "601", cp: "06600" },
+  }),
+}));
+
 /** Decimal que conserva su valor numérico para los `Number(...)` del route. */
 class DecimalMock {
   constructor(public readonly v: any) {}
@@ -28,8 +35,11 @@ function clienteRegistrado(overrides: Record<string, any> = {}) {
   return {
     idCliente: "CLI-1",
     nombre: "María López",
-    rfc: "GACM8401018P4",
-    razonSocial: null,
+    rfc: "GODE561231GR8",
+    razonSocial: "MARIA LOPEZ",
+    regimenFiscal: "612",
+    codigoPostalFiscal: "06600",
+    usoCfdi: "G03",
     ...overrides,
   };
 }
@@ -256,7 +266,8 @@ describe("POST /api/facturas · reglas estrictas (Fase 12)", () => {
       data: expect.objectContaining({
         folioVenta: "F-000001",
         formaPago: "PUE",
-        estado: "EMITIDA",
+        // Flujo manual: queda pendiente hasta registrar el folio fiscal del SAT.
+        estado: "PENDIENTE",
       }),
     });
   });

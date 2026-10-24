@@ -11,6 +11,8 @@ export interface ProductoCatalogo {
   descripcion: string;
   precioUnitario: number;
   precioMayoreo: number | null;
+  /** Precios por volumen (lib/precios). */
+  escalasPrecio?: Array<{ desde: number; precio: number; nombre?: string | null }> | null;
   stockActual: number;
   stockMinimo: number;
   permiteDecimales: boolean;

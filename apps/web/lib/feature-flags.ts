@@ -164,6 +164,9 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
       usarUbicaciones: DEFAULT_USAR_UBICACIONES,
       requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
       diasApartado: DEFAULT_DIAS_APARTADO,
+      corteConReferencia: false,
+      diasDevolucion: 30,
+      montoAutorizarDevolucion: null,
       puntosConfig: { ...DEFAULT_PUNTOS_CONFIG },
       configVersion: 1,
       setupPendiente: true,
@@ -203,6 +206,12 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
         : DEFAULT_REQUERIR_FONDO_INICIAL,
     diasApartado:
       Number.isInteger(row.diasApartado) && row.diasApartado > 0 ? row.diasApartado : DEFAULT_DIAS_APARTADO,
+    corteConReferencia: row.corteConReferencia === true,
+    diasDevolucion: Number.isInteger(row.diasDevolucion) && row.diasDevolucion > 0 ? row.diasDevolucion : 30,
+    montoAutorizarDevolucion:
+      row.montoAutorizarDevolucion != null && Number(row.montoAutorizarDevolucion) > 0
+        ? Number(row.montoAutorizarDevolucion)
+        : null,
     puntosConfig: normalizePuntosConfig(row.puntosConfig),
     configVersion: row.configVersion,
     setupPendiente: row.setupPendiente,

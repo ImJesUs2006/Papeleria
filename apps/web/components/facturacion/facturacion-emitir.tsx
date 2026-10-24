@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { USOS_CFDI } from "@/lib/sat-catalogos";
+import { PaqueteSat } from "@/components/facturacion/paquete-sat";
 
 /**
  * FASE 12 · Emisión y listado de facturas (CFDI 4.0).
@@ -35,6 +37,7 @@ interface FacturaRow {
   totalNeto: number;
   usoCfdi: string;
   estado: string;
+  folioFiscal?: string | null;
 }
 
 interface VentaRow {
@@ -51,6 +54,7 @@ interface ClienteRow {
   nombre: string;
   rfc: string | null;
   razonSocial: string | null;
+  facturable?: boolean;
 }
 
 const money = (v: unknown): string => `$${(Number(v) || 0).toFixed(2)}`;
@@ -68,7 +72,9 @@ export function FacturacionEmitir() {
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [idCliente, setIdCliente] = useState("");
   const [folioVenta, setFolioVenta] = useState("");
-  const [usoCfdi, setUsoCfdi] = useState("S01");
+  // "" = el uso de CFDI guardado en la ficha del cliente.
+  const [usoCfdi, setUsoCfdi] = useState("");
+  const [abierta, setAbierta] = useState<string | null>(null);
   const [tickets, setTickets] = useState<VentaRow[]>([]);
   const [buscandoTickets, setBuscandoTickets] = useState(false);
   const [emitiendo, setEmitiendo] = useState(false);
@@ -139,7 +145,7 @@ export function FacturacionEmitir() {
   }, [idCliente, facturas]);
 
   const clienteElegido = clientes.find((c) => c.idCliente === idCliente) ?? null;
-  const clienteSinDatos = Boolean(clienteElegido && !clienteElegido.rfc && !clienteElegido.razonSocial);
+  const clienteSinDatos = Boolean(clienteElegido && clienteElegido.facturable === false);
   const ticketElegido = tickets.find((t) => t.folioVenta === folioVenta) ?? null;
 
   const filtrados = clientes.filter((c) => {
@@ -163,7 +169,7 @@ export function FacturacionEmitir() {
       const res = await fetch("/api/facturas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idCliente, folioVenta, usoCfdi }),
+        body: JSON.stringify({ idCliente, folioVenta, ...(usoCfdi ? { usoCfdi } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -171,10 +177,11 @@ export function FacturacionEmitir() {
         return;
       }
       setExito(
-        `Factura ${data.data.folio} emitida por ${money(data.data.totalNeto)}` +
+        `Factura ${data.data.folio} preparada por ${money(data.data.totalNeto)}: falta timbrarla en el portal del SAT` +
           (data.data.ticketReasignado ? " · el ticket se asignó a este cliente" : "")
       );
       setFolioVenta("");
+      setAbierta(data.data.idFactura);
       await cargar();
     } catch {
       setAviso("No se pudo emitir la factura");
@@ -189,7 +196,7 @@ export function FacturacionEmitir() {
       <section className="rounded-2xl border border-surface-600 bg-surface-800/60 p-5">
         <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted mb-4">
           <Receipt className="h-4 w-4 text-neon-cyan" />
-          Emitir comprobante
+          Preparar factura
         </h3>
 
         <label className="block text-xs text-muted mb-1">Cliente registrado</label>
@@ -228,7 +235,8 @@ export function FacturacionEmitir() {
         {clienteSinDatos && (
           <p className="mt-1 text-xs text-neon-yellow flex items-start gap-1">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            Este cliente no tiene RFC ni razón social: actualiza su ficha para poder facturar.
+            A este cliente le faltan datos fiscales (RFC, razón social, régimen, C.P. o uso de CFDI): complétalos
+            en Clientes antes de facturar.
           </p>
         )}
 
@@ -262,13 +270,16 @@ export function FacturacionEmitir() {
           onChange={(e) => setUsoCfdi(e.target.value)}
           className="w-full rounded-lg border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100"
         >
-          <option value="S01">S01 · Ingreso</option>
-          <option value="G03">G03 · Gastos en general</option>
-          <option value="D01">D01 · Honorarios médicos</option>
-          <option value="P01">P01 · Por definir</option>
+          <option value="">El de la ficha del cliente</option>
+          {USOS_CFDI.map((u) => (
+            <option key={u.clave} value={u.clave}>
+              {u.clave} · {u.nombre}
+            </option>
+          ))}
         </select>
         <p className="text-[11px] text-muted mt-1">
-          Forma de pago: PUE (pago en una sola exhibición).
+          Método PUE (una sola exhibición). Sin proveedor de timbrado: el sistema prepara los datos y tú la timbras
+          gratis en el portal del SAT.
         </p>
 
         {aviso && (
@@ -302,7 +313,7 @@ export function FacturacionEmitir() {
           ) : (
             <>
               <FileText className="h-4 w-4" />
-              {ticketElegido ? `Facturar ${money(ticketElegido.totalNeto)}` : "Emitir factura"}
+              {ticketElegido ? `Preparar factura de ${money(ticketElegido.totalNeto)}` : "Preparar factura"}
             </>
           )}
         </button>
@@ -313,7 +324,7 @@ export function FacturacionEmitir() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted">
             <FileText className="h-4 w-4 text-neon-green" />
-            Facturas emitidas
+            Facturas
           </h3>
           <span className="text-xs text-muted">{facturas.length}</span>
         </div>
@@ -338,8 +349,22 @@ export function FacturacionEmitir() {
           <ul className="divide-y divide-surface-600">
             {facturas.map((f) => (
               <li key={f.idFactura} className="py-2.5 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-gray-100">{f.folio}</p>
+                <button type="button" onClick={() => setAbierta(f.idFactura)} className="min-w-0 text-left">
+                  <p className="flex items-center gap-2 text-sm font-bold text-gray-100">
+                    {f.folio}
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-black",
+                        f.estado === "EMITIDA"
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : f.estado === "PENDIENTE"
+                            ? "bg-amber-500/15 text-amber-300"
+                            : "bg-rose-500/15 text-rose-300"
+                      )}
+                    >
+                      {f.estado === "PENDIENTE" ? "POR TIMBRAR" : f.estado}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted truncate">
                     {f.nombreCliente || "Cliente"}
                     {f.rfcCliente ? ` · ${f.rfcCliente}` : ""}
@@ -347,7 +372,10 @@ export function FacturacionEmitir() {
                   <p className="text-[11px] text-muted">
                     Ticket {f.folioVenta} · {fecha(f.fechaEmision)} · Uso {f.usoCfdi}
                   </p>
-                </div>
+                  <p className="text-[11px] font-semibold text-acento">
+                    {f.estado === "PENDIENTE" ? "Ver datos para el SAT y registrar folio fiscal" : "Ver detalle"}
+                  </p>
+                </button>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-black text-neon-green">{money(f.totalNeto)}</p>
                   <p className="text-[11px] text-muted">Subtotal {money(f.subtotal)}</p>
@@ -358,6 +386,7 @@ export function FacturacionEmitir() {
           </ul>
         )}
       </section>
+      <PaqueteSat idFactura={abierta} onClose={() => setAbierta(null)} onCambio={() => void cargar()} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import {
   Lock,
   X,
@@ -12,21 +12,28 @@ import {
   CheckCircle2,
   Loader2,
   EyeOff,
-  ClipboardList,
+  Eye,
+  Coins,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/store/config";
+import { imprimirTicket, type AnchoTicketImpresion } from "@/lib/print-ticket";
 import {
-  imprimirTicket,
-  type AnchoTicketImpresion,
-} from "@/lib/print-ticket";
+  DENOMINACIONES_MXN,
+  explicarDiferencia,
+  totalConteo,
+  type ConteoDenominaciones,
+} from "@/lib/denominaciones";
 
 // ============================================================
-// CORTE CIEGO
+// CORTE DE CAJA
 // 1) Inicia: ABIERTA → EN_CIERRE (el servidor bloquea ventas).
-// 2) Conteo: solo campos físicos; NUNCA se muestran esperados.
-// 3) Conclusión: el servidor calcula descuadre y lo audita.
-// Si recarga la app a mitad, al estado EN_CIERRE se reanuda sola.
+// 2) Conteo: billetes y monedas (el total se suma solo), vouchers y
+//    recargas. En corte ciego NUNCA se muestran los esperados; con
+//    "corte con referencia" (Configuración) se ven mientras se cuenta.
+// 3) Conclusión: el servidor calcula y audita el descuadre.
+// Si se recarga la app a mitad, el corte EN_CIERRE se reanuda solo.
 // ============================================================
 
 interface Props {
@@ -35,6 +42,12 @@ interface Props {
 }
 
 type Fase = "iniciando" | "conteo" | "concluyendo" | "resultado" | "error";
+
+interface Referencia {
+  esperadoEfectivo: number;
+  esperadoDigital: number;
+  esperadoRecargas: number;
+}
 
 interface ArqueoResultado {
   esperadoEfectivo: number;
@@ -52,71 +65,84 @@ interface ArqueoResultado {
   descuadre: boolean;
 }
 
+const dinero = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
+
 export function CorteCiego({ onCerrada, onCancelar }: Props) {
   const configCaja = useConfigStore((s) => ({
     anchoTicket: s.config?.anchoTicket ?? "80mm",
     mensajeTicket: s.config?.mensajeTicket ?? null,
+    recargas: s.config?.featureFlags?.recargas ?? false,
   }));
   const areaImpresion = useRef<HTMLDivElement>(null);
   const [fase, setFase] = useState<Fase>("iniciando");
   const [token, setToken] = useState<string | null>(null);
   const [horaInicio, setHoraInicio] = useState<string | null>(null);
-  const [efectivo, setEfectivo] = useState("");
+  const [referencia, setReferencia] = useState<Referencia | null>(null);
+  const [modoEfectivo, setModoEfectivo] = useState<"piezas" | "total">("piezas");
+  const [piezas, setPiezas] = useState<Record<string, string>>({});
+  const [efectivoTotal, setEfectivoTotal] = useState("");
   const [vouchers, setVouchers] = useState("");
   const [recargas, setRecargas] = useState("");
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ArqueoResultado | null>(null);
 
+  const conteo = useMemo<ConteoDenominaciones>(() => {
+    const c: ConteoDenominaciones = {};
+    for (const [k, v] of Object.entries(piezas)) {
+      const n = Number(v);
+      if (v.trim() !== "" && Number.isInteger(n) && n > 0) c[k] = n;
+    }
+    return c;
+  }, [piezas]);
+  const piezasInvalidas = Object.values(piezas).some(
+    (v) => v.trim() !== "" && !(Number.isInteger(Number(v)) && Number(v) >= 0)
+  );
+  const efectivo = modoEfectivo === "piezas" ? totalConteo(conteo) : num(efectivoTotal);
+  const montosValidos =
+    !piezasInvalidas &&
+    [modoEfectivo === "total" ? efectivoTotal : "0", vouchers, recargas].every(
+      (v) => v.trim() === "" || (Number.isFinite(Number(v)) && Number(v) >= 0)
+    );
+  const algoCapturado =
+    efectivo > 0 || vouchers.trim() !== "" || recargas.trim() !== "" || Object.keys(piezas).length > 0 || efectivoTotal !== "";
+
+  const aplicarEstado = (data: any) => {
+    setToken(data.cierreToken);
+    setHoraInicio(data.horaInicio);
+    setReferencia(data.referencia ?? null);
+    setFase("conteo");
+  };
+
   useEffect(() => {
-    // Reanuda un corte a medias (recarga o mata-app a mitad).
-    let activo = true;
+    // Reanuda un corte a medias (recarga o cierre de la app a mitad).
     (async () => {
       try {
         const res = await fetch("/api/caja/cerrar/iniciar", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          if (data.activo) {
-            setToken(data.cierreToken);
-            setHoraInicio(data.horaInicio);
-            setFase("conteo");
-          } else {
-            setFase("iniciando");
-          }
+          if (data.activo) aplicarEstado(data);
         }
       } catch {
         /* sin red: se mantiene la fase */
       }
     })();
-    return () => {
-      activo = false;
-    };
   }, []);
 
   const iniciarCorte = async () => {
-    setFase("iniciando");
     setError(null);
     try {
       const res = await fetch("/api/caja/cerrar/iniciar", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 409) {
-          // Otro corte quedó EN_CIERRE: intentamos reanudarlo.
-          const estado = await fetch("/api/caja/cerrar/iniciar", { cache: "no-store" }).then((r) =>
-            r.json()
-          );
-          if (estado.activo) {
-            setToken(estado.cierreToken);
-            setHoraInicio(estado.horaInicio);
-            setFase("conteo");
-            return;
-          }
+          const estado = await fetch("/api/caja/cerrar/iniciar", { cache: "no-store" }).then((r) => r.json());
+          if (estado.activo) return aplicarEstado(estado);
         }
         throw new Error(data.error || "No se pudo iniciar el corte");
       }
-      setToken(data.cierreToken);
-      setHoraInicio(data.horaInicio);
-      setFase("conteo");
+      aplicarEstado(data);
     } catch (e: any) {
       setError(e.message);
       setFase("error");
@@ -124,11 +150,8 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
   };
 
   const concluir = async () => {
-    const e = parseFloat(efectivo || "0");
-    const v = parseFloat(vouchers || "0");
-    const r = parseFloat(recargas || "0");
-    if (isNaN(e) || isNaN(v) || isNaN(r)) {
-      setError("Montos inválidos");
+    if (!montosValidos) {
+      setError("Revisa los montos: solo números positivos y piezas enteras");
       return;
     }
     setFase("concluyendo");
@@ -139,9 +162,10 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cierreToken: token,
-          efectivoContado: e,
-          vouchersContado: v,
-          recargasContado: r,
+          efectivoContado: efectivo,
+          ...(modoEfectivo === "piezas" ? { conteoDenominaciones: conteo } : {}),
+          vouchersContado: num(vouchers),
+          recargasContado: num(recargas),
           notas: notas.trim() || undefined,
         }),
       });
@@ -149,15 +173,8 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
       if (!res.ok) throw new Error(data.error || "Error al cerrar");
       setResultado(data.arqueo);
       setFase("resultado");
-      // Tique de corte (área impresa queda en tique): imprimimos el bloque
-      // de resultado ya montado a través de un iframe oculto de 58/80mm.
       requestAnimationFrame(() => {
-        setTimeout(() => {
-          imprimirTicket(
-            areaImpresion.current,
-            configCaja.anchoTicket as AnchoTicketImpresion
-          );
-        }, 80);
+        setTimeout(() => imprimirTicket(areaImpresion.current, configCaja.anchoTicket as AnchoTicketImpresion), 80);
       });
     } catch (err: any) {
       setError(err.message);
@@ -165,268 +182,371 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
     }
   };
 
-  const puedeConcluir = fraseValida(efectivo) || fraseValida(vouchers) || fraseValida(recargas);
+  const ancho = fase === "conteo" || fase === "concluyendo" ? "max-w-5xl" : "max-w-lg";
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
     >
       <motion.div
-        initial={{ scale: 0.92, y: 24 }}
+        initial={{ scale: 0.96, y: 16 }}
         animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.92, y: 24 }}
-        className="bg-surface-800 border border-surface-600 rounded-3xl p-7 max-w-md w-full"
+        exit={{ scale: 0.96, y: 16 }}
+        className={cn("flex max-h-[94vh] w-full flex-col rounded-3xl border border-surface-600 bg-surface-800", ancho)}
       >
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between gap-3 border-b border-surface-600 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-rose-500/10 flex items-center justify-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/10">
               <Lock className="h-5 w-5 text-rose-400" />
             </div>
             <div>
-              <h3 className="font-black text-gray-100">Corte Ciego</h3>
-              <p className="text-xs text-muted">Solo montos físicos · totales ocultos</p>
+              <h3 className="font-black text-gray-100">Corte de caja</h3>
+              <p className="text-xs text-muted">
+                {referencia ? "Con referencia: ves lo esperado mientras cuentas" : "Corte ciego: lo esperado se revela al terminar"}
+              </p>
             </div>
           </div>
-          {fase !== "concluyendo" && (
+          {fase !== "concluyendo" && fase !== "resultado" && (
             <button
               onClick={onCancelar}
-              className="h-9 w-9 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-muted hover:text-gray-100 transition-colors"
+              aria-label="Cerrar"
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-700 text-muted transition-colors hover:bg-surface-600 hover:text-gray-100"
             >
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
 
-        {/* FASE INICIAR */}
-        {fase === "iniciando" && (
-          <div className="space-y-5">
-            <div className="flex items-start gap-3 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
-              <EyeOff className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-              <div className="text-sm text-gray-200">
-                <p className="font-bold mb-1">¿Sabes cómo funciona?</p>
-                <p className="text-muted">
-                  Al confirmar, el sistema{" "}
-                  <span className="text-warning font-bold">bloquea nuevas ventas</span> sin
-                  mostrarte los totales esperados. Debes contar físicamente el efectivo y los
-                  vouchers de terminal/transferencia.
-                </p>
+        <div className="overflow-y-auto p-6">
+          {/* FASE INICIAR */}
+          {fase === "iniciando" && (
+            <div className="space-y-5">
+              <ol className="space-y-2 text-sm text-gray-200">
+                {[
+                  "Al iniciar, la caja deja de vender hasta terminar el corte.",
+                  "Cuenta los billetes y monedas: escribe cuántos hay de cada uno y el total se suma solo.",
+                  "Suma los vouchers de la terminal y las transferencias del día.",
+                  "Al confirmar verás si la caja cuadra y se imprime el ticket del corte.",
+                ].map((t, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-600 text-xs font-black">
+                      {i + 1}
+                    </span>
+                    {t}
+                  </li>
+                ))}
+              </ol>
+              <p className="text-xs leading-relaxed text-muted">
+                Si cierras la aplicación a mitad del conteo, el corte queda en progreso y al volver continúas donde
+                te quedaste.
+              </p>
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={iniciarCorte}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 py-3.5 font-bold text-white hover:bg-rose-500"
+              >
+                <Lock className="h-4 w-4" /> Iniciar corte
+              </motion.button>
+            </div>
+          )}
+
+          {/* FASE CONTEO */}
+          {(fase === "conteo" || fase === "concluyendo") && (
+            <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+              <div className="space-y-5">
+                <section>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="flex items-center gap-2 text-sm font-black text-gray-100">
+                      <Banknote className="h-4 w-4 text-acento" /> Efectivo
+                    </h4>
+                    <div className="flex rounded-lg border border-surface-600 p-0.5 text-xs">
+                      {(["piezas", "total"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setModoEfectivo(m)}
+                          className={cn(
+                            "rounded-md px-2.5 py-1 font-bold",
+                            modoEfectivo === m ? "bg-surface-600 text-gray-100" : "text-muted"
+                          )}
+                        >
+                          {m === "piezas" ? "Billetes y monedas" : "Total directo"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {modoEfectivo === "piezas" ? (
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+                      {DENOMINACIONES_MXN.map((d) => {
+                        const v = piezas[d.clave] ?? "";
+                        const n = Number(v);
+                        const invalido = v.trim() !== "" && !(Number.isInteger(n) && n >= 0);
+                        return (
+                          <label key={d.clave} className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "flex w-16 shrink-0 items-center gap-1 text-xs font-bold",
+                                d.tipo === "billete" ? "text-gray-100" : "text-muted"
+                              )}
+                              title={d.tipo === "billete" ? "Billete" : "Moneda"}
+                            >
+                              {d.tipo === "billete" ? <Banknote className="h-3 w-3" /> : <Coins className="h-3 w-3" />}
+                              {d.etiqueta}
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              inputMode="numeric"
+                              value={v}
+                              onChange={(e) => setPiezas({ ...piezas, [d.clave]: e.target.value })}
+                              placeholder="0"
+                              aria-label={`${d.tipo === "billete" ? "Billetes" : "Monedas"} de ${d.etiqueta}`}
+                              className={cn(
+                                "w-full rounded-lg border bg-surface-700 px-2 py-1.5 text-right text-sm font-bold tabular-nums text-gray-100 focus:outline-none",
+                                invalido ? "border-rose-500" : "border-surface-500 focus:border-acento"
+                              )}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      value={efectivoTotal}
+                      onChange={(e) => setEfectivoTotal(e.target.value)}
+                      placeholder="Ej. 1250.50"
+                      aria-label="Efectivo contado"
+                      className="w-full rounded-xl border border-surface-500 bg-surface-700 px-4 py-3 text-lg font-bold text-gray-100 focus:border-acento focus:outline-none"
+                    />
+                  )}
+                  <div className="mt-2 flex items-baseline justify-between rounded-xl bg-acento/10 px-4 py-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-acento">Efectivo contado</span>
+                    <span className="text-2xl font-black tabular-nums text-acento" data-testid="efectivo-contado">
+                      {dinero(efectivo)}
+                    </span>
+                  </div>
+                </section>
+
+                <section className="grid gap-3 sm:grid-cols-2">
+                  <CampoMonto
+                    icon={<Receipt className="h-4 w-4 text-sky-400" />}
+                    label="Vouchers de terminal y transferencias"
+                    value={vouchers}
+                    onChange={setVouchers}
+                    placeholder="Ej. 340.00"
+                  />
+                  {configCaja.recargas && (
+                    <CampoMonto
+                      icon={<Smartphone className="h-4 w-4 text-indigo-400" />}
+                      label="Recargas vendidas"
+                      value={recargas}
+                      onChange={setRecargas}
+                      placeholder="Ej. 100.00"
+                    />
+                  )}
+                </section>
+
+                <input
+                  value={notas}
+                  maxLength={300}
+                  onChange={(e) => setNotas(e.target.value)}
+                  placeholder="Notas del corte (opcional)"
+                  className="w-full rounded-xl border border-surface-500 bg-surface-700 px-4 py-2.5 text-sm text-gray-100 transition-all focus:border-acento focus:outline-none"
+                />
               </div>
-            </div>
-            <p className="text-xs text-muted leading-relaxed">
-              Si cierras la aplicación o recargas a mitad del conteo, el corte queda marcado como{" "}
-              <span className="text-gray-200">en progreso</span>: al volver, el sistema te obliga a
-              concluirlo. No puede evadirse un descuadre.
-            </p>
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={iniciarCorte}
-              className="w-full py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center justify-center gap-2"
-            >
-              <Loader2 className="h-4 w-4 animate-spin" /> Iniciar corte ciego
-            </motion.button>
-          </div>
-        )}
 
-        {/* FASE CONTEO */}
-        {(fase === "conteo" || fase === "concluyendo") && (
-          <div className="space-y-4">
-            {horaInicio && (
-              <p className="text-xs text-muted">
-                Corte iniciado a las{" "}
-                <span className="text-gray-200 font-medium">
-                  {new Date(horaInicio).toLocaleTimeString("es-MX")}
-                </span>
-              </p>
-            )}
-            <div className="flex flex-col items-center py-3 text-center">
-              <ClipboardList className="h-8 w-8 text-muted mb-2" />
-              <p className="text-sm text-gray-100">
-                Cuenta físicamente tu caja y registra:
-              </p>
-              <p className="text-[11px] text-muted">
-                Los totales del sistema se calculan al concluir.
-              </p>
-            </div>
+              {/* Columna derecha: referencia o explicación del corte ciego */}
+              <aside className="space-y-4">
+                {referencia ? (
+                  <div className="rounded-2xl border border-surface-600 p-4">
+                    <p className="mb-3 flex items-center gap-2 text-sm font-black text-gray-100">
+                      <Eye className="h-4 w-4 text-sky-300" /> Lo que espera el sistema
+                    </p>
+                    {[
+                      { r: "Efectivo", esperado: referencia.esperadoEfectivo, contado: efectivo },
+                      { r: "Vouchers", esperado: referencia.esperadoDigital, contado: num(vouchers) },
+                      ...(configCaja.recargas
+                        ? [{ r: "Recargas", esperado: referencia.esperadoRecargas, contado: num(recargas) }]
+                        : []),
+                    ].map((x) => {
+                      const d = explicarDiferencia(x.esperado - x.contado, x.r);
+                      return (
+                        <div key={x.r} className="mb-2 rounded-xl bg-surface-700/60 px-3 py-2">
+                          <div className="flex justify-between text-xs text-muted">
+                            <span>{x.r} esperado</span>
+                            <span className="font-bold tabular-nums text-gray-100">{dinero(x.esperado)}</span>
+                          </div>
+                          <p
+                            className={cn(
+                              "mt-0.5 text-xs font-bold",
+                              d.tono === "ok" ? "text-emerald-300" : d.tono === "falta" ? "text-rose-300" : "text-amber-300"
+                            )}
+                          >
+                            {d.texto}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <p className="text-[11px] text-muted">El efectivo esperado ya incluye el fondo inicial y descuenta retiros y reembolsos.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-gray-200">
+                    <p className="mb-1 flex items-center gap-2 font-bold">
+                      <EyeOff className="h-4 w-4 text-warning" /> Corte ciego
+                    </p>
+                    <p className="text-xs leading-relaxed text-muted">
+                      No ves lo esperado para que cuentes sin influencias. Cuenta el <b>fondo inicial incluido</b>: el
+                      sistema ya lo considera. Al confirmar te decimos si sobra o falta y en qué rubro.
+                    </p>
+                  </div>
+                )}
 
-            <CampoMonto
-              icon={<Banknote className="h-4 w-4 text-acento" />}
-              label="Efectivo contado ($)"
-              value={efectivo}
-              onChange={setEfectivo}
-              placeholder="Ej. 1250.50"
-              cls="focus:border-acento"
-            />
-            <CampoMonto
-              icon={<Receipt className="h-4 w-4 text-sky-400" />}
-              label="Vouchers terminal / transferencias ($)"
-              value={vouchers}
-              onChange={setVouchers}
-              placeholder="Ej. 340.00"
-              cls="focus:border-sky-500"
-            />
-            <CampoMonto
-              icon={<Smartphone className="h-4 w-4 text-indigo-400" />}
-              label="Recargas contadas ($)"
-              value={recargas}
-              onChange={setRecargas}
-              placeholder="Ej. 100.00"
-              cls="focus:border-indigo-500"
-            />
+                <div className="rounded-2xl border border-surface-600 p-4">
+                  <p className="mb-2 flex items-center gap-2 text-sm font-black text-gray-100">
+                    <Calculator className="h-4 w-4 text-acento" /> Tu conteo
+                  </p>
+                  <Fila etiqueta="Efectivo" valor={dinero(efectivo)} />
+                  <Fila etiqueta="Vouchers" valor={dinero(num(vouchers))} />
+                  {configCaja.recargas && <Fila etiqueta="Recargas" valor={dinero(num(recargas))} />}
+                  <div className="mt-2 flex justify-between border-t border-surface-600 pt-2 text-sm font-black text-gray-100">
+                    <span>Total</span>
+                    <span className="tabular-nums">{dinero(efectivo + num(vouchers) + num(recargas))}</span>
+                  </div>
+                </div>
 
-            <input
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              placeholder="Notas del corte (opcional)"
-              className="w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-2.5 text-sm text-gray-100 focus:border-acento focus:outline-none transition-all"
-            />
+                {horaInicio && (
+                  <p className="text-xs text-muted">
+                    Corte iniciado a las {new Date(horaInicio).toLocaleTimeString("es-MX")}. Las ventas están en pausa.
+                  </p>
+                )}
+                {error && <p className="text-xs font-bold text-rose-300">{error}</p>}
 
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={concluir}
-              disabled={!puedeConcluir || fase === "concluyendo"}
-              className={cn(
-                "w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
-                puedeConcluir
-                  ? "bg-acento text-btn-ink shadow-card"
-                  : "bg-surface-600 text-muted cursor-not-allowed"
-              )}
-            >
-              {fase === "concluyendo" ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Calculando...
-                </>
-              ) : (
-                "Confirmar conteo"
-              )}
-            </motion.button>
-          </div>
-        )}
-
-        {/* FASE RESULTADO */}
-        {fase === "resultado" && resultado && (
-          <div
-            ref={areaImpresion}
-            className={cn(
-              "space-y-4 print-label-area",
-              configCaja.anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80"
-            )}
-          >
-            <div
-              className={cn(
-                "flex items-center gap-3 rounded-2xl p-4 border",
-                resultado.descuadre
-                  ? "bg-rose-500/10 border-rose-500/40"
-                  : "bg-acento/10 border-acento/40"
-              )}
-            >
-              {resultado.descuadre ? (
-                <AlertTriangle className="h-8 w-8 text-rose-400 shrink-0" />
-              ) : (
-                <CheckCircle2 className="h-8 w-8 text-acento shrink-0" />
-              )}
-              <div>
-                <p className="font-black text-gray-100">
-                  {resultado.descuadre ? "Descuadre detectado" : "Caja cuadrada"}
-                </p>
-                <p className="text-xs text-muted">
-                  {resultado.diferenciaTotal > 0
-                    ? `Faltante: $${resultado.diferenciaTotal.toFixed(2)}`
-                    : resultado.diferenciaTotal < 0
-                      ? `Sobrante: $${Math.abs(resultado.diferenciaTotal).toFixed(2)}`
-                      : "Sin diferencia"}
-                </p>
-              </div>
-            </div>
-
-            <div className="print-resumen space-y-1.5 text-sm">
-              <FilaResumen
-                label="Efectivo esperado"
-                valor={`$${resultado.esperadoEfectivo.toFixed(2)}`}
-              />
-              <FilaResumen
-                label="Efectivo contado"
-                valor={`$${resultado.declaradoEfectivo.toFixed(2)}`}
-              />
-              <FilaResumen
-                label="Vouchers esperados"
-                valor={`$${resultado.esperadoDigital.toFixed(2)}`}
-              />
-              <FilaResumen
-                label="Vouchers contados"
-                valor={`$${resultado.declaradoDigital.toFixed(2)}`}
-              />
-              <FilaResumen
-                label="Recargas esperadas"
-                valor={`$${resultado.esperadoRecargas.toFixed(2)}`}
-              />
-              <FilaResumen
-                label="Recargas contadas"
-                valor={`$${resultado.declaradoRecargas.toFixed(2)}`}
-              />
-              <div className="border-t border-surface-500 pt-2 mt-2 flex justify-between items-center">
-                <span className="font-bold text-gray-100">Diferencia total</span>
-                <span
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={concluir}
+                  disabled={!algoCapturado || !montosValidos || fase === "concluyendo"}
                   className={cn(
-                    "font-black text-xl",
-                    resultado.descuadre ? "text-rose-400" : "text-acento"
+                    "flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 font-bold transition-all",
+                    algoCapturado && montosValidos ? "bg-acento text-btn-ink shadow-card" : "cursor-not-allowed bg-surface-600 text-muted"
                   )}
                 >
-                  ${resultado.diferenciaTotal.toFixed(2)}
-                </span>
+                  {fase === "concluyendo" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Calculando…
+                    </>
+                  ) : (
+                    "Confirmar conteo y cerrar caja"
+                  )}
+                </motion.button>
+              </aside>
+            </div>
+          )}
+
+          {/* FASE RESULTADO */}
+          {fase === "resultado" && resultado && (
+            <div
+              ref={areaImpresion}
+              className={cn("print-label-area space-y-4", configCaja.anchoTicket === "58mm" ? "print-ticket-57" : "print-ticket-80")}
+            >
+              <div
+                className={cn(
+                  "flex items-center gap-3 rounded-2xl border p-4",
+                  resultado.descuadre ? "border-rose-500/40 bg-rose-500/10" : "border-acento/40 bg-acento/10"
+                )}
+              >
+                {resultado.descuadre ? (
+                  <AlertTriangle className="h-8 w-8 shrink-0 text-rose-400" />
+                ) : (
+                  <CheckCircle2 className="h-8 w-8 shrink-0 text-acento" />
+                )}
+                <div>
+                  <p className="font-black text-gray-100">{resultado.descuadre ? "La caja no cuadra" : "Caja cuadrada"}</p>
+                  <p className="text-xs text-muted">
+                    {resultado.diferenciaTotal > 0
+                      ? `Faltan ${dinero(resultado.diferenciaTotal)} en total`
+                      : resultado.diferenciaTotal < 0
+                        ? `Sobran ${dinero(Math.abs(resultado.diferenciaTotal))} en total`
+                        : "Sin diferencia"}
+                  </p>
+                </div>
+              </div>
+
+              <ul className="space-y-1.5">
+                {[
+                  explicarDiferencia(resultado.faltanteEfectivo, "Efectivo"),
+                  explicarDiferencia(resultado.faltanteDigital, "Vouchers"),
+                  explicarDiferencia(resultado.faltanteRecargas, "Recargas"),
+                ].map((d) => (
+                  <li
+                    key={d.texto}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-sm font-bold",
+                      d.tono === "ok" ? "bg-emerald-500/10 text-emerald-300" : d.tono === "falta" ? "bg-rose-500/10 text-rose-300" : "bg-amber-500/10 text-amber-300"
+                    )}
+                  >
+                    {d.texto}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="print-resumen space-y-1.5 text-sm">
+                <Fila etiqueta="Efectivo esperado" valor={dinero(resultado.esperadoEfectivo)} />
+                <Fila etiqueta="Efectivo contado" valor={dinero(resultado.declaradoEfectivo)} />
+                <Fila etiqueta="Vouchers esperados" valor={dinero(resultado.esperadoDigital)} />
+                <Fila etiqueta="Vouchers contados" valor={dinero(resultado.declaradoDigital)} />
+                <Fila etiqueta="Recargas esperadas" valor={dinero(resultado.esperadoRecargas)} />
+                <Fila etiqueta="Recargas contadas" valor={dinero(resultado.declaradoRecargas)} />
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={onCerrada}
+                className="w-full rounded-2xl bg-acento py-3.5 font-bold text-btn-ink shadow-card"
+              >
+                Terminar
+              </motion.button>
+              <p className="print-hint text-center text-[10px] text-muted">
+                (El reporte detallado queda en Reportes → Cierre de Caja)
+              </p>
+              {configCaja.mensajeTicket && (
+                <p className="print-label-area text-center font-mono text-[10px]">{configCaja.mensajeTicket}</p>
+              )}
+            </div>
+          )}
+
+          {/* FASE ERROR */}
+          {fase === "error" && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-400" />
+                <p className="text-sm text-gray-100">{error}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setFase(token ? "conteo" : "iniciando")}
+                  className="rounded-xl border border-surface-500 py-3 text-muted transition-colors hover:text-gray-100"
+                >
+                  Reintentar
+                </button>
+                <button onClick={onCancelar} className="rounded-xl bg-surface-600 py-3 font-bold text-gray-200 transition-colors">
+                  Salir
+                </button>
               </div>
             </div>
-
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={onCerrada}
-              className="w-full py-3.5 rounded-2xl bg-acento text-btn-ink font-bold shadow-card"
-            >
-              Terminar
-            </motion.button>
-            <p className="text-center text-[10px] text-muted print-hint">
-              (El reporte detallado queda en Reportes → Cierre de Caja)
-            </p>
-            {configCaja.mensajeTicket && (
-              <p className="text-[10px] font-mono text-center print-label-area">
-                {configCaja.mensajeTicket}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* FASE ERROR */}
-        {fase === "error" && (
-          <div className="space-y-4">
-            <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/40 rounded-2xl p-4">
-              <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-gray-100">{error}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setFase("conteo")}
-                className="py-3 rounded-xl border border-surface-500 text-muted hover:text-gray-100 transition-colors"
-              >
-                Reintentar
-              </button>
-              <button
-                onClick={onCancelar}
-                className="py-3 rounded-xl bg-surface-600 text-gray-200 font-bold transition-colors"
-              >
-                Salir
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </motion.div>
     </motion.div>
   );
-}
-
-function fraseValida(v: string): boolean {
-  return v.trim() !== "" && !isNaN(parseFloat(v)) && parseFloat(v) >= 0;
 }
 
 function CampoMonto({
@@ -435,18 +555,16 @@ function CampoMonto({
   value,
   onChange,
   placeholder,
-  cls,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
-  cls?: string;
 }) {
   return (
     <label className="block">
-      <span className="text-xs text-muted mb-1 flex items-center gap-2">
+      <span className="mb-1 flex items-center gap-2 text-xs text-muted">
         {icon} {label}
       </span>
       <input
@@ -457,20 +575,17 @@ function CampoMonto({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={cn(
-          "w-full bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 text-lg text-gray-100 font-bold focus:outline-none transition-all",
-          cls
-        )}
+        className="w-full rounded-xl border border-surface-500 bg-surface-700 px-4 py-3 text-lg font-bold text-gray-100 transition-all focus:border-acento focus:outline-none"
       />
     </label>
   );
 }
 
-function FilaResumen({ label, valor }: { label: string; valor: string }) {
+function Fila({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
-    <div className="flex justify-between">
-      <span className="text-muted">{label}</span>
-      <span className="font-semibold text-gray-100">{valor}</span>
+    <div className="flex justify-between text-sm">
+      <span className="text-muted">{etiqueta}</span>
+      <span className="font-semibold tabular-nums text-gray-100">{valor}</span>
     </div>
   );
 }

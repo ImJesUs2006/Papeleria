@@ -12,9 +12,21 @@ import {
   UserX,
   Phone,
   ShoppingBag,
+  Eye,
+  EyeOff,
+  CalendarClock,
+  FileCheck2,
+  ShoppingCart,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { VirtualCard } from "@/components/pos/virtual-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuthStore } from "@/store/auth";
+import { useCartStore } from "@/store/cart";
+import { notificar } from "@/store/notificaciones";
+import { CLIENTE_SCHEMA, enmascarar } from "@/lib/clientes";
+import { validar } from "@/lib/validacion";
+import { REGIMENES_FISCALES, USOS_CFDI } from "@/lib/sat-catalogos";
 
 interface ClienteFila {
   idCliente: string;
@@ -27,7 +39,34 @@ interface ClienteFila {
   /** Fase 12: datos fiscales (requeridos para poder facturar). */
   rfc?: string | null;
   razonSocial?: string | null;
+  email?: string | null;
+  facturable?: boolean;
 }
+
+interface Perfil {
+  visitas: number;
+  totalComprado: number;
+  ticketPromedio: number;
+  ultimaVisita: string | null;
+  frecuenciaDias: number | null;
+  proximaVisita: string | null;
+  estado: "NUEVO" | "AL_DIA" | "POR_VOLVER" | "ATRASADO";
+}
+
+interface Favorito {
+  codigoItem: string;
+  descripcion: string;
+  precioUnitario: number | null;
+  cantidad: number;
+  veces: number;
+}
+
+const ESTADO_PERFIL: Record<Perfil["estado"], { texto: string; cls: string }> = {
+  NUEVO: { texto: "Cliente nuevo", cls: "bg-surface-600 text-muted" },
+  AL_DIA: { texto: "Al día", cls: "bg-emerald-500/15 text-emerald-300" },
+  POR_VOLVER: { texto: "Le toca surtirse", cls: "bg-sky-500/15 text-sky-300" },
+  ATRASADO: { texto: "No ha vuelto", cls: "bg-amber-500/15 text-amber-300" },
+};
 
 interface VentaHistorial {
   folioVenta: string;
@@ -41,6 +80,12 @@ interface VentaHistorial {
 interface ClienteDetalle extends ClienteFila {
   equivalenciaPesos: number;
   totalVentas: number;
+  regimenFiscal?: string | null;
+  codigoPostalFiscal?: string | null;
+  usoCfdi?: string | null;
+  notas?: string | null;
+  faltantesFiscales?: string[];
+  datosCompletos?: boolean;
 }
 
 const METODO_LABEL: Record<string, string> = {
@@ -65,6 +110,15 @@ export default function ClientesPage() {
   const [detalle, setDetalle] = useState<ClienteDetalle | null>(null);
   const [historial, setHistorial] = useState<VentaHistorial[]>([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
+  const [favoritos, setFavoritos] = useState<Favorito[]>([]);
+  // La administradora recibe los datos completos, pero se muestran
+  // enmascarados hasta que pulse el ojo (pantalla compartida en mostrador).
+  const [mostrarDatos, setMostrarDatos] = useState(false);
+  const esAdmin = useAuthStore((s) => s.rol) === "ADMINISTRADORA";
+  const router = useRouter();
+  const addItem = useCartStore((s) => s.addItem);
+  const setClienteCarrito = useCartStore((s) => s.setCliente);
 
   // Formulario (alta / edición)
   const [formAbierto, setFormAbierto] = useState(false);
@@ -74,6 +128,12 @@ export default function ClientesPage() {
   // Fase 12: datos fiscales del cliente (necesarios para emitir CFDI).
   const [rfc, setRfc] = useState("");
   const [razonSocial, setRazonSocial] = useState("");
+  const [email, setEmail] = useState("");
+  const [regimenFiscal, setRegimenFiscal] = useState("");
+  const [codigoPostalFiscal, setCodigoPostalFiscal] = useState("");
+  const [usoCfdi, setUsoCfdi] = useState("");
+  const [notas, setNotas] = useState("");
+  const [erroresCampo, setErroresCampo] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -114,6 +174,9 @@ export default function ClientesPage() {
       const data = await res.json();
       setDetalle(data.cliente ?? null);
       setHistorial(Array.isArray(data.ventas) ? data.ventas : []);
+      setPerfil(data.perfil ?? null);
+      setFavoritos(Array.isArray(data.favoritos) ? data.favoritos : []);
+      setMostrarDatos(false);
     } catch (e) {
       setDetalle(null);
       setHistorial([]);
@@ -128,28 +191,107 @@ export default function ClientesPage() {
     void cargarDetalle(id);
   };
 
+  // Enlace desde las alertas: /clientes?id=...
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (id) {
+      setSelId(id);
+      void cargarDetalle(id);
+    }
+  }, [cargarDetalle]);
+
   const abrirAlta = () => {
     setEditandoId(null);
     setNombre("");
     setTelefono("");
     setRfc("");
     setRazonSocial("");
+    setEmail("");
+    setRegimenFiscal("");
+    setCodigoPostalFiscal("");
+    setUsoCfdi("");
+    setNotas("");
+    setErroresCampo({});
     setFormError(null);
     setFormAbierto(true);
   };
 
-  const abrirEdicion = (c: ClienteFila) => {
+  // La edición parte de la ficha completa (solo la administradora edita).
+  const abrirEdicion = async (c: ClienteFila) => {
+    const res = await fetch(`/api/clientes/${encodeURIComponent(c.idCliente)}`, { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    const d: ClienteDetalle | undefined = data.cliente;
+    if (!res.ok || !d) {
+      notificar.error("No se pudo abrir la ficha del cliente");
+      return;
+    }
     setEditandoId(c.idCliente);
-    setNombre(c.nombre);
-    setTelefono(c.telefono ?? "");
-    setRfc(c.rfc ?? "");
-    setRazonSocial(c.razonSocial ?? "");
+    setNombre(d.nombre);
+    setTelefono(d.telefono ?? "");
+    setRfc(d.rfc ?? "");
+    setRazonSocial(d.razonSocial ?? "");
+    setEmail(d.email ?? "");
+    setRegimenFiscal(d.regimenFiscal ?? "");
+    setCodigoPostalFiscal(d.codigoPostalFiscal ?? "");
+    setUsoCfdi(d.usoCfdi ?? "");
+    setNotas(d.notas ?? "");
+    setErroresCampo({});
     setFormError(null);
     setFormAbierto(true);
+  };
+
+  // Favoritos del cliente directo al carrito (con su nombre en la venta).
+  const llevarAlCarrito = async (lista: Favorito[]) => {
+    if (!detalle) return;
+    let agregados = 0;
+    for (const f of lista) {
+      const r = await fetch(`/api/productos/${encodeURIComponent(f.codigoItem)}`, { cache: "no-store" });
+      if (!r.ok) continue;
+      const p = await r.json();
+      if (!p.esServicio && Number(p.stockActual) <= 0) continue;
+      addItem({
+        codigoItem: p.codigoItem,
+        descripcion: p.descripcion,
+        precioUnitario: Number(p.precioUnitario),
+        cantidad: 1,
+        permiteDecimales: p.permiteDecimales,
+        esServicio: p.esServicio,
+        precioMayoreo: p.precioMayoreo ?? null,
+        escalasPrecio: p.escalasPrecio ?? null,
+        tasaIva: p.tasaIva ?? null,
+        exentoIva: p.exentoIva === true,
+        tasaIeps: p.tasaIeps ?? null,
+        idCategoria: p.idCategoria ?? null,
+        usaSeries: p.usaSeries === true,
+      });
+      agregados++;
+    }
+    setClienteCarrito(detalle.idCliente, detalle.nombre, detalle.puntosFidelidad, detalle.nivel, detalle.montoHistorico);
+    if (agregados) router.push("/cobro");
+    else notificar.aviso("Sin existencia de esos productos");
   };
 
   const guardar = async () => {
     if (guardando) return;
+    const cuerpo = {
+      nombre,
+      telefono: telefono || null,
+      email: email || null,
+      rfc: rfc.trim().toUpperCase() || null,
+      razonSocial: razonSocial.trim() || null,
+      regimenFiscal: regimenFiscal || null,
+      codigoPostalFiscal: codigoPostalFiscal || null,
+      usoCfdi: usoCfdi || null,
+      notas: notas.trim() || null,
+    };
+    // Mismas reglas que el servidor: el error aparece junto al campo.
+    const v = validar(CLIENTE_SCHEMA, cuerpo);
+    if (!v.ok) {
+      setErroresCampo(v.campos);
+      setFormError(v.error);
+      return;
+    }
+    setErroresCampo({});
     setGuardando(true);
     setFormError(null);
     try {
@@ -159,19 +301,15 @@ export default function ClientesPage() {
         {
           method: esEdicion ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          // `.strict()` en el servidor: solo estos campos.
-          body: JSON.stringify({
-            nombre,
-            telefono: telefono || null,
-            rfc: rfc.trim().toUpperCase() || null,
-            razonSocial: razonSocial.trim() || null,
-          }),
+          body: JSON.stringify(cuerpo),
         }
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        setErroresCampo(data?.campos ?? {});
         throw new Error(data?.error ?? "No se pudo guardar el cliente");
       }
+      notificar.exito(esEdicion ? "Cliente actualizado" : "Cliente registrado", nombre.trim());
       setFormAbierto(false);
       await cargarLista();
       if (esEdicion && editandoId) void cargarDetalle(editandoId);
@@ -243,7 +381,7 @@ export default function ClientesPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nombre o teléfono..."
+            placeholder="Buscar por nombre, teléfono, RFC o razón social..."
             className="w-full rounded-xl border border-surface-500 bg-surface-700 py-2.5 pl-10 pr-4 text-sm text-gray-100 outline-none focus:border-acento"
           />
         </div>
@@ -279,7 +417,7 @@ export default function ClientesPage() {
                     <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
                       <span className="inline-flex items-center gap-1">
                         <Phone className="h-3 w-3" />
-                        {c.telefono || "Sin teléfono"}
+                        {c.telefono ? enmascarar.telefono(c.telefono) : "Sin teléfono"}
                       </span>
                       <span
                         className={`rounded px-1.5 py-0.5 font-bold ${
@@ -295,6 +433,11 @@ export default function ClientesPage() {
                         {Number(c.puntosFidelidad) || 0} pts
                       </span>
                       <span>Histórico: {money(c.montoHistorico)}</span>
+                      {c.facturable && (
+                        <span className="inline-flex items-center gap-1 text-emerald-300" title="Datos fiscales completos">
+                          <FileCheck2 className="h-3 w-3" /> Facturable
+                        </span>
+                      )}
                       {Number(c.saldoDeudor) > 0 && (
                         <span className="text-rose-300">
                           Saldo a cobrar: {money(c.saldoDeudor)}
@@ -302,22 +445,26 @@ export default function ClientesPage() {
                       )}
                     </p>
                   </button>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      onClick={() => abrirEdicion(c)}
-                      title="Editar"
-                      className="rounded-lg border border-surface-500 p-2 text-slate-300 hover:bg-surface-600 hover:text-gray-100"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => eliminar(c)}
-                      title="Eliminar"
-                      className="rounded-lg border border-rose-500/40 p-2 text-rose-300 hover:bg-rose-500/20"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  {esAdmin && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        onClick={() => abrirEdicion(c)}
+                        title="Editar"
+                        aria-label={`Editar ${c.nombre}`}
+                        className="rounded-lg border border-surface-500 p-2 text-slate-300 hover:bg-surface-600 hover:text-gray-100"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => eliminar(c)}
+                        title="Eliminar"
+                        aria-label={`Eliminar ${c.nombre}`}
+                        className="rounded-lg border border-rose-500/40 p-2 text-rose-300 hover:bg-rose-500/20"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -367,6 +514,133 @@ export default function ClientesPage() {
                       {money(detalle.equivalenciaPesos)}
                     </p>
                   </div>
+                </div>
+
+                {perfil && (
+                  <div className="rounded-xl border border-surface-600 bg-surface-800 p-4">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h4 className="flex items-center gap-2 text-xs font-bold uppercase text-muted">
+                        <CalendarClock className="h-3.5 w-3.5" /> Hábitos de compra
+                      </h4>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${ESTADO_PERFIL[perfil.estado].cls}`}>
+                        {ESTADO_PERFIL[perfil.estado].texto}
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-xs">
+                      <p className="flex justify-between text-muted">
+                        <span>Ticket promedio</span>
+                        <span className="font-bold text-gray-100">{money(perfil.ticketPromedio)}</span>
+                      </p>
+                      <p className="flex justify-between text-muted">
+                        <span>Viene cada</span>
+                        <span className="font-bold text-gray-100">
+                          {perfil.frecuenciaDias ? `~${perfil.frecuenciaDias} días` : "Aún sin patrón (3+ compras)"}
+                        </span>
+                      </p>
+                      <p className="flex justify-between text-muted">
+                        <span>Última visita</span>
+                        <span className="font-bold text-gray-100">
+                          {perfil.ultimaVisita ? new Date(perfil.ultimaVisita).toLocaleDateString("es-MX") : "—"}
+                        </span>
+                      </p>
+                      {perfil.proximaVisita && (
+                        <p className="flex justify-between text-muted">
+                          <span>Debería volver</span>
+                          <span className="font-bold text-sky-300">
+                            {new Date(perfil.proximaVisita).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {favoritos.length > 0 && (
+                  <div className="rounded-xl border border-surface-600 bg-surface-800 p-4">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold uppercase text-muted">Lo que más compra</h4>
+                      <button
+                        type="button"
+                        onClick={() => llevarAlCarrito(favoritos.slice(0, 5))}
+                        className="inline-flex items-center gap-1 rounded-lg bg-acento px-2.5 py-1 text-[11px] font-bold text-btn-ink"
+                      >
+                        <ShoppingCart className="h-3 w-3" /> Surtir sus 5 favoritos
+                      </button>
+                    </div>
+                    <ul className="space-y-1">
+                      {favoritos.map((f) => (
+                        <li key={f.codigoItem} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="min-w-0 truncate text-gray-100" title={f.descripcion}>
+                            {f.descripcion}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2 text-muted">
+                            {f.cantidad} pzs · {f.veces} vez{f.veces === 1 ? "" : "es"}
+                            <button
+                              type="button"
+                              onClick={() => llevarAlCarrito([f])}
+                              aria-label={`Agregar ${f.descripcion} al carrito`}
+                              className="rounded-md border border-surface-500 p-1 hover:text-acento"
+                            >
+                              <ShoppingCart className="h-3 w-3" />
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-surface-600 bg-surface-800 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h4 className="flex items-center gap-2 text-xs font-bold uppercase text-muted">
+                      <FileCheck2 className="h-3.5 w-3.5" /> Contacto y datos fiscales
+                    </h4>
+                    {detalle.datosCompletos && (
+                      <button
+                        type="button"
+                        onClick={() => setMostrarDatos((v) => !v)}
+                        className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-gray-100"
+                      >
+                        {mostrarDatos ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        {mostrarDatos ? "Ocultar" : "Mostrar"}
+                      </button>
+                    )}
+                  </div>
+                  {(() => {
+                    const ver = (valor: string | null | undefined, mascara: (v: string | null) => string | null) =>
+                      detalle.datosCompletos && !mostrarDatos ? mascara(valor ?? null) : valor;
+                    const filas: Array<[string, string | null | undefined]> = [
+                      ["Teléfono", ver(detalle.telefono, enmascarar.telefono)],
+                      ["Correo", ver(detalle.email, enmascarar.email)],
+                      ["RFC", ver(detalle.rfc, enmascarar.rfc)],
+                      ["Razón social", detalle.razonSocial],
+                      ["Régimen", detalle.regimenFiscal ? `${detalle.regimenFiscal} · ${REGIMENES_FISCALES.find((r) => r.clave === detalle.regimenFiscal)?.nombre ?? ""}` : null],
+                      ["C.P. fiscal", detalle.datosCompletos && !mostrarDatos && detalle.codigoPostalFiscal ? "•••••" : detalle.codigoPostalFiscal],
+                      ["Uso de CFDI", detalle.usoCfdi],
+                    ];
+                    return (
+                      <dl className="space-y-1 text-xs">
+                        {filas.map(([k, v]) => (
+                          <div key={k} className="flex justify-between gap-3">
+                            <dt className="shrink-0 text-muted">{k}</dt>
+                            <dd className="min-w-0 truncate text-right text-gray-100" title={v ?? undefined}>
+                              {v || "—"}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    );
+                  })()}
+                  {detalle.faltantesFiscales && detalle.faltantesFiscales.length > 0 ? (
+                    <p className="mt-2 rounded-lg bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
+                      Para facturarle falta: {detalle.faltantesFiscales.join(", ")}.
+                    </p>
+                  ) : (
+                    <p className="mt-2 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-300">
+                      Datos fiscales completos: se le puede facturar.
+                    </p>
+                  )}
+                  {detalle.notas && <p className="mt-2 text-[11px] text-muted">Notas: {detalle.notas}</p>}
                 </div>
 
                 <div className="rounded-xl border border-surface-600 bg-surface-800 p-4">
@@ -422,7 +696,7 @@ export default function ClientesPage() {
               initial={{ opacity: 0, y: 16, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl border border-surface-600 bg-surface-800 p-5 shadow-card"
+              className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-surface-600 bg-surface-800 p-5 shadow-card"
             >
               <div className="mb-4 flex items-center gap-2">
                 {editandoId ? (
@@ -447,24 +721,41 @@ export default function ClientesPage() {
                     placeholder="Ej. María López"
                     className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
                   />
+                  <ErrorCampo msg={erroresCampo.nombre} />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-bold text-muted">
                     Teléfono
                   </span>
                   <input
+                    type="tel"
+                    inputMode="tel"
                     value={telefono}
                     onChange={(e) => setTelefono(e.target.value)}
                     maxLength={20}
                     placeholder="55 1234 5678"
                     className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
                   />
+                  <ErrorCampo msg={erroresCampo.telefono} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-muted">Correo (para enviarle su factura)</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    maxLength={120}
+                    placeholder="cliente@correo.com"
+                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
+                  />
+                  <ErrorCampo msg={erroresCampo.email} />
                 </label>
               </div>
 
               {/* Fase 12: datos fiscales para la facturación (opcionales). */}
               <p className="mt-3 text-xs text-muted">
-                Datos fiscales (opcionales; obligatorios solo para facturar)
+                Datos fiscales del cliente (opcionales; obligatorios solo para facturarle). Cópialos de su
+                Constancia de Situación Fiscal.
               </p>
               <div className="mt-1 grid grid-cols-2 gap-3">
                 <label className="block">
@@ -475,9 +766,10 @@ export default function ClientesPage() {
                     value={rfc}
                     onChange={(e) => setRfc(e.target.value.toUpperCase())}
                     maxLength={13}
-                    placeholder="GACM8401018P4"
+                    placeholder="13 (persona) o 12 (empresa)"
                     className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
                   />
+                  <ErrorCampo msg={erroresCampo.rfc} />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-bold text-muted">
@@ -487,7 +779,63 @@ export default function ClientesPage() {
                     value={razonSocial}
                     onChange={(e) => setRazonSocial(e.target.value)}
                     maxLength={120}
-                    placeholder="Solo persona moral"
+                    placeholder="Como aparece en su constancia"
+                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
+                  />
+                  <ErrorCampo msg={erroresCampo.razonSocial} />
+                </label>
+                <label className="col-span-2 block">
+                  <span className="mb-1 block text-xs font-bold text-muted">Régimen fiscal</span>
+                  <select
+                    value={regimenFiscal}
+                    onChange={(e) => setRegimenFiscal(e.target.value)}
+                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
+                  >
+                    <option value="">Sin capturar</option>
+                    {REGIMENES_FISCALES.filter((r) =>
+                      rfc.trim().length === 12 ? r.moral : rfc.trim().length === 13 ? r.fisica : true
+                    ).map((r) => (
+                      <option key={r.clave} value={r.clave}>
+                        {r.clave} · {r.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <ErrorCampo msg={erroresCampo.regimenFiscal} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-muted">C.P. fiscal</span>
+                  <input
+                    value={codigoPostalFiscal}
+                    onChange={(e) => setCodigoPostalFiscal(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                    inputMode="numeric"
+                    placeholder="5 dígitos"
+                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
+                  />
+                  <ErrorCampo msg={erroresCampo.codigoPostalFiscal} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-muted">Uso de CFDI</span>
+                  <select
+                    value={usoCfdi}
+                    onChange={(e) => setUsoCfdi(e.target.value)}
+                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
+                  >
+                    <option value="">Sin capturar</option>
+                    {USOS_CFDI.map((u) => (
+                      <option key={u.clave} value={u.clave}>
+                        {u.clave} · {u.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <ErrorCampo msg={erroresCampo.usoCfdi} />
+                </label>
+                <label className="col-span-2 block">
+                  <span className="mb-1 block text-xs font-bold text-muted">Notas</span>
+                  <input
+                    value={notas}
+                    onChange={(e) => setNotas(e.target.value)}
+                    maxLength={500}
+                    placeholder="Ej. surte cada lunes para la escuela"
                     className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
                   />
                 </label>
@@ -522,4 +870,9 @@ export default function ClientesPage() {
       </div>
     </>
   );
+}
+
+function ErrorCampo({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <span className="mt-1 block text-[11px] font-semibold text-rose-300">{msg}</span>;
 }

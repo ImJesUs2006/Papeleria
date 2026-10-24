@@ -1,5 +1,6 @@
 "use client";
 
+import type { EscalaPrecio } from "@/lib/precios";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PackagePlus, Star, ShoppingCart, TrendingUp } from "lucide-react";
@@ -23,6 +24,7 @@ interface GridProducto {
   esServicio?: boolean;
   /** Fase 12: precio de mayoreo (null si el producto no lo tiene). */
   precioMayoreo?: number | null;
+  escalasPrecio?: EscalaPrecio[] | null;
   /** Fase 12: imagen del producto en Cloudinary. */
   imagenUrl?: string | null;
 }
@@ -37,22 +39,40 @@ export function ProductGrid() {
   const [productos, setProductos] = useState<GridProducto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Pestañas: "" = Top ventas y favoritos; si no, una categoría del negocio.
+  const [categorias, setCategorias] = useState<Array<{ id: string; nombre: string; color: string }>>([]);
+  const [categoria, setCategoria] = useState("");
+
+  useEffect(() => {
+    fetch("/api/categorias", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { categorias: [] }))
+      .then((d) => setCategorias((d.categorias ?? []).filter((c: any) => (c.productos ?? 1) > 0)))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let viva = true;
+    setLoading(true);
+    setError(null);
     (async () => {
       try {
-        const res = await fetch("/api/productos/top?limit=20", { cache: "no-store" });
+        const url = categoria
+          ? `/api/productos?categoria=${encodeURIComponent(categoria)}&limit=60&sortBy=descripcion`
+          : "/api/productos/top?limit=20";
+        const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error("error");
         const data = await res.json();
         const lista: GridProducto[] = data.data ?? [];
         if (!viva) return;
         setProductos(lista);
       } catch {
-        // Sin red: favoritos de la copia local del catálogo.
-        const locales = destacadosDelCatalogo(await catalogoLocal());
+        // Sin red: la copia local del catálogo.
+        const catalogo = await catalogoLocal();
+        const locales = categoria
+          ? catalogo.filter((p) => p.idCategoria === categoria).slice(0, 60)
+          : destacadosDelCatalogo(catalogo);
         if (!viva) return;
-        if (locales.length) setProductos(locales as unknown as GridProducto[]);
+        if (locales.length || categoria) setProductos(locales as unknown as GridProducto[]);
         else setError("No se pudo cargar el catálogo");
       } finally {
         if (viva) setLoading(false);
@@ -61,7 +81,28 @@ export function ProductGrid() {
     return () => {
       viva = false;
     };
-  }, []);
+  }, [categoria]);
+
+  const pestanas = categorias.length > 0 && (
+    <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Categorías del catálogo">
+      {[{ id: "", nombre: "Top y favoritos", color: "" }, ...categorias].map((c) => (
+        <button
+          key={c.id || "top"}
+          type="button"
+          role="tab"
+          aria-selected={categoria === c.id}
+          onClick={() => setCategoria(c.id)}
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors",
+            categoria === c.id ? "border-acento bg-acento/10 text-acento" : "border-surface-500 text-muted hover:text-gray-100"
+          )}
+        >
+          {c.color && <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />}
+          {c.nombre}
+        </button>
+      ))}
+    </div>
+  );
 
   const agregar = (p: GridProducto) => {
     // Un servicio está siempre disponible (no hay inventario que validar).
@@ -76,6 +117,7 @@ export function ProductGrid() {
       esServicio: p.esServicio,
       // Fase 12: mayoreo e imagen viajan al carrito (el store decide el precio).
       precioMayoreo: p.precioMayoreo ?? null,
+      escalasPrecio: p.escalasPrecio ?? null,
       imagenUrl: p.imagenUrl ?? null,
       tasaIva: (p as any).tasaIva ?? null,
       exentoIva: (p as any).exentoIva === true,
@@ -93,6 +135,7 @@ export function ProductGrid() {
             Catálogo rápido
           </span>
         </div>
+        {pestanas}
         <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3">
           {Array.from({ length: 10 }).map((_, i) => (
             <div
@@ -110,10 +153,13 @@ export function ProductGrid() {
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="min-w-0 truncate text-sm font-bold text-muted uppercase tracking-wider flex items-center gap-2">
           <TrendingUp className="h-4 w-4 shrink-0 text-neon-cyan" />
-          <span className="truncate">Catálogo rápido · Top ventas y favoritos</span>
+          <span className="truncate">
+            Catálogo rápido · {categoria ? categorias.find((c) => c.id === categoria)?.nombre : "Top ventas y favoritos"}
+          </span>
         </h3>
         <span className="shrink-0 text-xs text-muted">{productos.length} productos</span>
       </div>
+      {pestanas}
 
       {error ? (
         <div className="col-span-full flex flex-col items-center justify-center py-10 rounded-2xl border border-dashed border-neon-red/40 text-muted text-sm">
@@ -123,7 +169,7 @@ export function ProductGrid() {
       ) : productos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 rounded-2xl border border-dashed border-surface-500 text-muted text-sm">
           <PackagePlus className="h-8 w-8 mb-2 opacity-40" />
-          Escanea un código para ver el producto aquí
+          {categoria ? "Esta categoría no tiene productos activos" : "Escanea un código para ver el producto aquí"}
         </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3">

@@ -1,3 +1,4 @@
+import { precioPorCantidad, type ProductoConPrecios } from "./precios";
 import type { Prisma } from "@papeleria/database";
 import { registrarMovimientosKardex } from "./kardex";
 import { calcularImpuestos, tasasProducto } from "./impuestos";
@@ -72,20 +73,17 @@ export class SaleError extends Error {
 export const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
- * Fase 12 · Precio de mayoreo.
- * El servidor es la autoridad del precio: si la venta va a mayoreo y el
- * producto tiene `precioMayoreo` válido, se cobra ese precio. Si no lo tiene,
- * se cobra el precio de menudeo (nunca 0 ni NaN).
+ * Precio unitario que se cobra (el servidor es la autoridad del precio):
+ * menudeo, o la escala por volumen que alcanza `cantidad`, o —con venta a
+ * mayoreo— el mejor precio del producto. Nunca 0 ni NaN si hay precio.
+ * Reglas en lib/precios.ts (las mismas que usa el carrito).
  */
 export function elegirPrecioUnitario(
-  producto: { precioUnitario: unknown; precioMayoreo?: unknown },
-  esMayoreo: boolean
+  producto: ProductoConPrecios,
+  esMayoreo: boolean,
+  cantidad = 1
 ): number {
-  const menudeo = Number(producto.precioUnitario);
-  const base = Number.isFinite(menudeo) && menudeo >= 0 ? menudeo : 0;
-  if (!esMayoreo) return base;
-  const mayoreo = Number(producto.precioMayoreo);
-  return Number.isFinite(mayoreo) && mayoreo > 0 ? mayoreo : base;
+  return precioPorCantidad(producto, cantidad, esMayoreo);
 }
 
 const ALFABETO_FOLIO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -341,7 +339,7 @@ export async function executeSale(
       idCategoria: producto.idCategoria ?? null,
       descripcion: producto.descripcion,
       cantidad,
-      precioUnitario: elegirPrecioUnitario(producto, input.esMayoreo === true),
+      precioUnitario: elegirPrecioUnitario(producto, input.esMayoreo === true, cantidad),
       descuento,
       subtotalLinea: 0,
       descuentoLinea: 0,

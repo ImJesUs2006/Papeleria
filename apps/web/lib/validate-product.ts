@@ -66,6 +66,8 @@ const BASE_PRODUCTO = z.object({
   // Fase 12: precio de mayoreo (opcional). Si se captura, debe ser MENOR al
   // de venta (si no, el interruptor de mayoreo no aportaría nada).
   precioMayoreo: precioSchema("Precio de mayoreo").nullable().optional(),
+  // Precios por volumen; las reglas finas (vs. precio de venta) en lib/precios.
+  escalasPrecio: z.array(z.unknown()).max(5, "Máximo 5 escalas de precio").nullable().optional(),
   // Impuestos por producto: IVA propio (null = el del negocio), exento e IEPS.
   tasaIva: z.number().min(0, "IVA inválido").max(100, "IVA inválido").nullable().optional(),
   exentoIva: z.boolean().optional(),

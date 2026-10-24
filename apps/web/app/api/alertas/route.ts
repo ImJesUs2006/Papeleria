@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { getBusinessConfig } from "@/lib/feature-flags";
 import { construirAlertas, finDelDia, puedeVer, type ContextoAlertas, type DatosAlertas } from "@/lib/alertas";
+import { perfilDeCompra } from "@/lib/clientes";
 
 // ============================================================
 // GET  /api/alertas            → alertas vigentes para quien consulta
@@ -108,6 +109,33 @@ export async function GET() {
       }),
     ]);
 
+    // Clientes frecuentes: compras de los últimos 6 meses para estimar cuándo vuelven.
+    const comprasClientes = await prisma.venta.findMany({
+      where: {
+        idCliente: { not: null },
+        estado: { not: "CANCELADA" },
+        fechaHora: { gte: new Date(hoy.getTime() - 180 * 86_400_000) },
+      },
+      select: { idCliente: true, fechaHora: true, totalNeto: true, cliente: { select: { nombre: true } } },
+      orderBy: { fechaHora: "desc" },
+      take: 3000,
+    });
+    const porCliente = new Map<string, { nombre: string; ventas: Array<{ fechaHora: Date; total: number }> }>();
+    for (const v of comprasClientes) {
+      if (!v.idCliente) continue;
+      const g = porCliente.get(v.idCliente) ?? { nombre: v.cliente?.nombre ?? "Cliente", ventas: [] };
+      g.ventas.push({ fechaHora: v.fechaHora, total: Number(v.totalNeto) });
+      porCliente.set(v.idCliente, g);
+    }
+    const clientesFrecuentes: NonNullable<DatosAlertas["clientes"]> = [];
+    for (const [idCliente, g] of porCliente) {
+      if (g.ventas.length < 3) continue;
+      const p = perfilDeCompra(g.ventas, hoy);
+      if (p.proximaVisita && p.frecuenciaDias) {
+        clientesFrecuentes.push({ idCliente, nombre: g.nombre, proximaVisita: p.proximaVisita, frecuenciaDias: p.frecuenciaDias });
+      }
+    }
+
     const datos: DatosAlertas = {
       existencias: existencias.map((e) => ({
         codigoItem: e.codigoItem,
@@ -148,6 +176,7 @@ export async function GET() {
         horaApertura: c.horaApertura,
         propia: c.idUsuario === user.idPersona,
       })),
+      clientes: clientesFrecuentes,
     };
 
     const ocultas = new Set(descartadas.map((d) => d.clave));

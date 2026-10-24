@@ -197,7 +197,8 @@ export async function POST(request: Request) {
             // de referencia es el de mayoreo del producto (si existe).
             const precioServidor = elegirPrecioUnitario(
               producto,
-              v.esMayoreo === true
+              v.esMayoreo === true,
+              cantidad
             );
             const precioCliente = Number(item.precioMomento);
             const devio =

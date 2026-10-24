@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
 import { calcularNivel, equivalenciaPuntos } from "@/lib/fidelidad";
-import { RFC_CLIENTE_SCHEMA, RAZON_SOCIAL_SCHEMA } from "@/lib/cliente-fiscal";
 import { tenantDb } from "@/lib/tenant";
+import { CLIENTE_PATCH_SCHEMA, enmascarar, faltantesFiscales, perfilDeCompra } from "@/lib/clientes";
+import { validar } from "@/lib/validacion";
 
 // ============================================================
 // GET    /api/clientes/[id] → ficha + historial de compras + monedero
-// PATCH  /api/clientes/[id] → edita nombre/teléfono
+// PATCH  /api/clientes/[id] → edita datos de contacto y fiscales (administradora)
 // DELETE /api/clientes/[id] → elimina (con guardas de integridad)
 // ============================================================
 
@@ -55,23 +55,69 @@ export async function GET(
 
     const montoHistorico = Number(agregado._sum.totalNeto ?? 0);
     const puntos = Number(cliente.puntosFidelidad ?? 0);
+    const completo = auth.user.rol === "ADMINISTRADORA";
+
+    // Perfil: cada cuánto compra (todas sus compras, solo fecha y total).
+    const historial = await prisma.venta.findMany({
+      where: { idCliente: id, estado: { not: "CANCELADA" } },
+      select: { fechaHora: true, totalNeto: true },
+      orderBy: { fechaHora: "asc" },
+      take: 500,
+    });
+    const perfil = perfilDeCompra(historial.map((v) => ({ fechaHora: v.fechaHora, total: Number(v.totalNeto) })));
+
+    // Lo que más compra (para "agregar sus favoritos" en el POS).
+    const lineas = await prisma.lineaDetalleVenta.groupBy({
+      by: ["codigoItem"],
+      where: { venta: { idCliente: id, estado: { not: "CANCELADA" } } },
+      _sum: { cantidad: true, subtotalLinea: true },
+      _count: { _all: true },
+      orderBy: { _sum: { cantidad: "desc" } },
+      take: 8,
+    });
+    const productos = lineas.length
+      ? await prisma.producto.findMany({
+          where: { codigoItem: { in: lineas.map((l) => l.codigoItem) } },
+          select: { codigoItem: true, descripcion: true, precioUnitario: true, imagenUrl: true },
+        })
+      : [];
+    const favoritos = lineas.map((l) => {
+      const p = productos.find((x) => x.codigoItem === l.codigoItem);
+      return {
+        codigoItem: l.codigoItem,
+        descripcion: p?.descripcion ?? l.codigoItem,
+        precioUnitario: p ? Number(p.precioUnitario) : null,
+        imagenUrl: p?.imagenUrl ?? null,
+        cantidad: Number(l._sum.cantidad ?? 0),
+        veces: l._count._all,
+      };
+    });
 
     return NextResponse.json({
       cliente: {
         idCliente: cliente.idCliente,
         nombre: cliente.nombre,
-        telefono: cliente.telefono,
+        telefono: completo ? cliente.telefono : enmascarar.telefono(cliente.telefono),
+        email: completo ? cliente.email : enmascarar.email(cliente.email),
         saldoDeudor: Number(cliente.saldoDeudor ?? 0),
         puntosFidelidad: puntos,
-        // Fase 12: datos fiscales (necesarios para facturar).
-        rfc: cliente.rfc ?? null,
+        // Datos fiscales del receptor (CFDI 4.0).
+        rfc: completo ? cliente.rfc ?? null : enmascarar.rfc(cliente.rfc),
         razonSocial: cliente.razonSocial ?? null,
+        regimenFiscal: cliente.regimenFiscal ?? null,
+        codigoPostalFiscal: completo ? cliente.codigoPostalFiscal ?? null : cliente.codigoPostalFiscal ? "•••••" : null,
+        usoCfdi: cliente.usoCfdi ?? null,
+        notas: cliente.notas ?? null,
+        faltantesFiscales: faltantesFiscales(cliente),
+        datosCompletos: completo,
         nivel: calcularNivel(montoHistorico),
         montoHistorico,
         equivalenciaPesos: equivalenciaPuntos(puntos),
         totalVentas: Number(agregado._count._all ?? 0),
         createdAt: cliente.createdAt,
       },
+      perfil,
+      favoritos,
       ventas: cliente.ventas.map((v) => ({
         folioVenta: v.folioVenta,
         fechaHora: v.fechaHora,
@@ -89,24 +135,12 @@ export async function GET(
   }
 }
 
-const PATCH_SCHEMA = z
-  .object({
-    nombre: z.string().trim().min(2, "El nombre es obligatorio (mín 2 caracteres)").max(80),
-    telefono: z
-      .union([z.string().trim().max(20), z.null()])
-      .optional()
-      .transform((v) => (v ? v : null)),
-    // Fase 12: el padrón guarda los datos fiscales para la facturación.
-    rfc: RFC_CLIENTE_SCHEMA,
-    razonSocial: RAZON_SOCIAL_SCHEMA,
-  })
-  .strict();
-
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAuth()();
+  // Contacto y datos fiscales: solo la administradora (la cajera los ve enmascarados).
+  const auth = await requireAuth(["ADMINISTRADORA"])();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -121,10 +155,23 @@ export async function PATCH(
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const parsed = PATCH_SCHEMA.safeParse(body);
-  if (!parsed.success) {
+  const parsed = validar(CLIENTE_PATCH_SCHEMA, body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error, campos: parsed.campos }, { status: 400 });
+  }
+  // Solo los campos enviados; un opcional vacío se borra (null).
+  const data: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parsed.datos)) {
+    if ((body as Record<string, unknown>)[k] !== undefined) data[k] = v ?? null;
+  }
+  const actual = await prisma.cliente.findUnique({ where: { idCliente: id }, select: { rfc: true, regimenFiscal: true } });
+  if (!actual) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
+  const { regimenCompatible } = await import("@/lib/sat-catalogos");
+  const rfc = (data.rfc as string | null | undefined) ?? (data.rfc === null ? null : actual.rfc);
+  const regimen = (data.regimenFiscal as string | null | undefined) ?? (data.regimenFiscal === null ? null : actual.regimenFiscal);
+  if (rfc && regimen && !regimenCompatible(regimen, rfc)) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Datos de cliente inválidos" },
+      { error: "El régimen fiscal no corresponde al tipo de RFC (persona física o moral)", campos: { regimenFiscal: "No corresponde al RFC" } },
       { status: 400 }
     );
   }
@@ -132,12 +179,7 @@ export async function PATCH(
   try {
     const cliente = await prisma.cliente.update({
       where: { idCliente: id },
-      data: {
-        nombre: parsed.data.nombre,
-        telefono: parsed.data.telefono ?? null,
-        rfc: parsed.data.rfc ?? null,
-        razonSocial: parsed.data.razonSocial ?? null,
-      },
+      data,
     });
 
     await prisma.bitacoraLog.create({

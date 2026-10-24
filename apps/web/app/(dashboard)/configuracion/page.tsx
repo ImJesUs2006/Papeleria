@@ -173,6 +173,9 @@ function normalizeConfig(raw: any): BusinessConfig {
     requerirFondoInicial:
       typeof raw?.requerirFondoInicial === "boolean" ? raw.requerirFondoInicial : true,
     diasApartado: Number(raw?.diasApartado) > 0 ? Number(raw.diasApartado) : 30,
+    corteConReferencia: raw?.corteConReferencia === true,
+    diasDevolucion: Number(raw?.diasDevolucion) > 0 ? Number(raw.diasDevolucion) : 30,
+    montoAutorizarDevolucion: Number(raw?.montoAutorizarDevolucion) > 0 ? Number(raw.montoAutorizarDevolucion) : null,
     puntosConfig: normalizePuntosConfigLocal(raw?.puntosConfig),
     configVersion: Number.isFinite(Number(raw?.configVersion)) ? Number(raw.configVersion) : 1,
     setupPendiente: Boolean(raw?.setupPendiente),
@@ -397,6 +400,12 @@ const guardar = async () => {
           usarUbicaciones: config.usarUbicaciones,
           requerirFondoInicial: config.requerirFondoInicial,
           diasApartado: Math.round(Number(config.diasApartado) || 30),
+          corteConReferencia: config.corteConReferencia === true,
+          diasDevolucion: Math.round(Number(config.diasDevolucion) || 30),
+          montoAutorizarDevolucion:
+            config.montoAutorizarDevolucion != null && Number(config.montoAutorizarDevolucion) > 0
+              ? Number(config.montoAutorizarDevolucion)
+              : null,
           puntosConfig: config.puntosConfig,
         }),
       });
@@ -1031,6 +1040,76 @@ const guardar = async () => {
             Pasado ese plazo te avisamos para contactar al cliente o cancelar el apartado.
           </span>
         </label>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => setConfig({ ...config, corteConReferencia: !config.corteConReferencia })}
+            aria-pressed={config.corteConReferencia}
+            className={cn(
+              "flex flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-all",
+              config.corteConReferencia ? "border-neon-cyan/40 bg-neon-cyan/10" : "border-surface-500 bg-surface-700"
+            )}
+          >
+            <span className="flex items-center gap-2 text-sm font-bold text-gray-100">
+              <span
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-md border",
+                  config.corteConReferencia ? "border-neon-cyan bg-neon-cyan" : "border-surface-400"
+                )}
+              >
+                {config.corteConReferencia && <Check className="h-3 w-3 text-btn-ink" />}
+              </span>
+              Corte con referencia
+            </span>
+            <span className="text-[11px] leading-snug text-muted">
+              Apagado = corte ciego (recomendado con cajeras): no ven lo esperado. Encendido: lo ven mientras
+              cuentan (útil si el dueño cobra).
+            </span>
+          </button>
+          <label className="block rounded-xl border border-surface-500 bg-surface-700 px-3 py-2.5">
+            <span className="text-sm font-bold text-gray-100">Plazo para devoluciones</span>
+            <span className="mt-1 flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={365}
+                step={1}
+                inputMode="numeric"
+                value={config.diasDevolucion}
+                onChange={(e) =>
+                  setConfig({ ...config, diasDevolucion: Math.min(365, Math.max(1, Math.round(Number(e.target.value) || 1))) })
+                }
+                className="input-dark w-20 py-1.5"
+              />
+              <span className="text-xs text-muted">días desde la venta</span>
+            </span>
+            <span className="mt-1 block text-[11px] text-muted">Después, solo la administradora puede aceptarla.</span>
+          </label>
+          <label className="block rounded-xl border border-surface-500 bg-surface-700 px-3 py-2.5">
+            <span className="text-sm font-bold text-gray-100">Autorizar devoluciones desde</span>
+            <span className="mt-1 flex items-center gap-2">
+              <span className="text-xs text-muted">$</span>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                value={config.montoAutorizarDevolucion ?? ""}
+                placeholder="Sin límite"
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    montoAutorizarDevolucion: e.target.value === "" ? null : Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="input-dark w-28 py-1.5"
+              />
+            </span>
+            <span className="mt-1 block text-[11px] text-muted">
+              Una cajera necesitará la clave de la administradora a partir de ese monto.
+            </span>
+          </label>
+        </div>
       </div>
 
       <div className="border-t border-surface-600 pt-4">

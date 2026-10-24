@@ -1,3 +1,4 @@
+import { leerEscalas, validarEscalas } from "@/lib/precios";
 import { NextResponse } from "next/server";
 import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
@@ -40,6 +41,7 @@ export async function GET(
       precioUnitario: Number(producto.precioUnitario),
       precioCompra: producto.precioCompra != null ? Number(producto.precioCompra) : null,
       precioMayoreo: producto.precioMayoreo != null ? Number(producto.precioMayoreo) : null,
+      escalasPrecio: leerEscalas(producto.escalasPrecio, Number(producto.precioUnitario)),
       tasaIva: producto.tasaIva != null ? Number(producto.tasaIva) : null,
       exentoIva: producto.exentoIva === true,
       tasaIeps: producto.tasaIeps != null ? Number(producto.tasaIeps) : null,
@@ -186,7 +188,28 @@ export async function PATCH(
           mayoreoFinal = data.precioMayoreo;
         }
       }
-    } else if (
+    }
+
+    // ---- Precios por volumen: se validan contra el precio de venta final ----
+    if (body.escalasPrecio !== undefined || body.precioUnitario !== undefined) {
+      try {
+        const escalas = validarEscalas(
+          body.escalasPrecio !== undefined ? body.escalasPrecio : existente.escalasPrecio,
+          ventaFinal
+        );
+        if (body.escalasPrecio !== undefined) {
+          data.escalasPrecio = escalas.length ? escalas : Prisma.DbNull;
+        }
+      } catch (e: any) {
+        const msg = body.escalasPrecio === undefined
+          ? `Actualiza los precios por volumen: ${e.message}`
+          : e.message;
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+    }
+
+    if (
+      body.precioMayoreo === undefined &&
       body.precioUnitario !== undefined &&
       mayoreoFinal != null &&
       mayoreoFinal >= ventaFinal

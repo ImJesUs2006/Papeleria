@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { calcularArqueo, round2 } from "@/lib/cash";
+import { ConteoError, totalConteo, validarConteo } from "@/lib/denominaciones";
 import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
@@ -35,6 +36,24 @@ export async function POST(request: Request) {
   const cierreToken = typeof body.cierreToken === "string" ? body.cierreToken : "";
   if (!cierreToken) {
     return NextResponse.json({ error: "Falta token de cierre" }, { status: 400 });
+  }
+
+  // Conteo por billete/moneda (opcional): el total se recalcula aquí y debe
+  // coincidir con el efectivo declarado.
+  let conteoDenominaciones: Record<string, number> | null = null;
+  if (body.conteoDenominaciones != null) {
+    try {
+      conteoDenominaciones = validarConteo(body.conteoDenominaciones);
+    } catch (e) {
+      if (e instanceof ConteoError) return NextResponse.json({ error: e.message }, { status: 400 });
+      throw e;
+    }
+    if (Math.abs(totalConteo(conteoDenominaciones) - Number(body.efectivoContado)) > 0.005) {
+      return NextResponse.json(
+        { error: "El efectivo declarado no coincide con el conteo de billetes y monedas" },
+        { status: 400 }
+      );
+    }
   }
 
   const efectivoContado = Number(body.efectivoContado);
@@ -122,6 +141,7 @@ export async function POST(request: Request) {
           horaCierre: new Date(),
           notasCierre: notasCierre || null,
           efectivoContado: round2(efectivoContado),
+          ...(conteoDenominaciones ? { conteoDenominaciones } : {}),
           vouchersContado: round2(vouchersContado),
           recargasContado: round2(recargasContado),
           faltanteTotal: round2(arqueo.diferenciaTotal),

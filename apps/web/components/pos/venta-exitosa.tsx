@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef } from "react";
+import JsBarcode from "jsbarcode";
+import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Printer, FileDown, CheckCircle2, WifiOff, XCircle } from "lucide-react";
 import { numeroSeguro, type ResultadoVenta } from "@/lib/sales-client";
@@ -127,6 +128,8 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, mensajeT
                   <p className="text-center mt-1 whitespace-pre-line break-anywhere">
                     {mensajeTicket?.trim() || "¡Gracias por su compra!"}
                   </p>
+                  {/* Folio escaneable: en Devoluciones basta pasar el lector. */}
+                  {!result.offline && <CodigoFolio folio={result.folioVenta} />}
                 </div>
               </motion.div>
             </div>
@@ -251,4 +254,18 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, mensajeT
       </motion.div>
     </motion.div>
   );
+}
+
+/** Código de barras (Code 128) del folio, para escanearlo en Devoluciones. */
+function CodigoFolio({ folio }: { folio: string }) {
+  const svg = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    if (!svg.current) return;
+    try {
+      JsBarcode(svg.current, folio, { format: "CODE128", height: 34, width: 1.1, displayValue: false, margin: 0 });
+    } catch {
+      /* folio con caracteres no codificables: se omite */
+    }
+  }, [folio]);
+  return <svg ref={svg} className="mx-auto mt-1 block h-9 max-w-full" aria-label={`Código del folio ${folio}`} />;
 }

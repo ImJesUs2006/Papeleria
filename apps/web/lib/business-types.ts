@@ -167,6 +167,12 @@ export interface BusinessConfig {
   requerirFondoInicial: boolean;
   /** Días que se guarda un apartado antes de considerarse vencido. */
   diasApartado: number;
+  /** Corte de caja: true = se muestra lo esperado mientras se cuenta. */
+  corteConReferencia: boolean;
+  /** Días máximos para aceptar una devolución (la administradora puede pasar por alto). */
+  diasDevolucion: number;
+  /** Devoluciones desde este monto requieren autorización (null = nunca). */
+  montoAutorizarDevolucion: number | null;
   configVersion: number;
   setupPendiente: boolean;
 }

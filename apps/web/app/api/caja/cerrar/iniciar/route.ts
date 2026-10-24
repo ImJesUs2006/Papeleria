@@ -2,6 +2,24 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { randomUUID } from "crypto";
 import { tenantDb } from "@/lib/tenant";
+import { getBusinessConfig } from "@/lib/feature-flags";
+import { esperadosDeSesion } from "@/lib/arqueo-sesion";
+
+/**
+ * Con "corte con referencia" el negocio decide mostrar lo esperado mientras
+ * se cuenta; en corte ciego (por defecto) nunca sale del servidor antes de
+ * concluir.
+ */
+async function referencia(
+  prisma: ReturnType<typeof tenantDb>,
+  idNegocio: string,
+  idCaja: string
+) {
+  const config = await getBusinessConfig(idNegocio);
+  if (!config.corteConReferencia) return null;
+  const sesion = await prisma.sesionCaja.findUnique({ where: { idCaja } });
+  return sesion ? esperadosDeSesion(prisma, sesion) : null;
+}
 
 // ============================================================
 // GET  /api/caja/cerrar/iniciar  → estado del corte ciego activo
@@ -32,6 +50,7 @@ export async function GET() {
     idCaja: sesion.idCaja,
     cierreToken: sesion.cierreToken,
     horaInicio: sesion.cierreInicioEn,
+    referencia: await referencia(prisma, auth.user.idNegocio, sesion.idCaja),
   });
 }
 
@@ -87,6 +106,7 @@ export async function POST() {
       cierreToken: token,
       idCaja: sesion.idCaja,
       horaInicio: new Date().toISOString(),
+      referencia: await referencia(prisma, user.idNegocio, sesion.idCaja),
     });
   } catch (error: any) {
     if (error?.status === 409) {

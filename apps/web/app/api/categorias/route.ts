@@ -3,8 +3,9 @@ import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 
 // ============================================================
-// GET  /api/categorias → categorías del negocio (cualquier usuario)
+// GET  /api/categorias → categorías del negocio con su número de productos
 // POST /api/categorias → alta { nombre, color? } (administradora)
+// PATCH/DELETE en /api/categorias/[id]
 // ============================================================
 
 export async function GET() {
@@ -13,8 +14,13 @@ export async function GET() {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const prisma = tenantDb(auth.user.idNegocio);
-  const categorias = await prisma.categoria.findMany({ orderBy: { nombre: "asc" } });
-  return NextResponse.json({ categorias });
+  const categorias = await prisma.categoria.findMany({
+    orderBy: [{ orden: "asc" }, { nombre: "asc" }],
+    include: { _count: { select: { productos: { where: { activo: true } } } } },
+  });
+  return NextResponse.json({
+    categorias: categorias.map(({ _count, ...c }) => ({ ...c, productos: _count.productos })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -42,6 +48,9 @@ export async function POST(request: Request) {
   if (repetida) {
     return NextResponse.json({ error: "Ya existe una categoría con ese nombre" }, { status: 409 });
   }
-  const categoria = await prisma.categoria.create({ data: { nombre, ...(color ? { color } : {}) } });
+  const ultima = await prisma.categoria.findFirst({ orderBy: { orden: "desc" }, select: { orden: true } });
+  const categoria = await prisma.categoria.create({
+    data: { nombre, orden: (ultima?.orden ?? 0) + 1, ...(color ? { color } : {}) },
+  });
   return NextResponse.json({ categoria }, { status: 201 });
 }

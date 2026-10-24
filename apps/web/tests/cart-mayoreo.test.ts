@@ -139,3 +139,37 @@ describe("useCartStore · interruptor de mayoreo", () => {
 function setMayoreoYRecargar() {
   useCartStore.getState().clearCart();
 }
+describe("useCartStore · precios por volumen", () => {
+  beforeEach(() => {
+    useCartStore.getState().clearCart();
+  });
+  const lapiz = {
+    codigoItem: "LAP",
+    descripcion: "Lápiz",
+    precioUnitario: 5,
+    cantidad: 1,
+    escalasPrecio: [{ desde: 12, precio: 4 }],
+  };
+
+  it("al llegar a la escala la línea baja de precio y al bajar la cantidad regresa", () => {
+    const s = useCartStore.getState();
+    s.addItem({ ...lapiz, cantidad: 11 });
+    expect(useCartStore.getState().getSubtotal()).toBe(55);
+    s.addItem(lapiz); // 12 piezas
+    expect(useCartStore.getState().getSubtotal()).toBe(48);
+    s.updateQuantity("LAP", 11);
+    expect(useCartStore.getState().getSubtotal()).toBe(55);
+  });
+
+  it("agregar con mayoreo activo guarda el precio de lista (volver a menudeo es exacto)", () => {
+    const s = useCartStore.getState();
+    s.setEsMayoreo(true);
+    s.addItem({ codigoItem: "T", descripcion: "Tóner", precioUnitario: 900, precioMayoreo: 800, cantidad: 1 });
+    expect(useCartStore.getState().items[0].precioUnitario).toBe(900);
+    expect(useCartStore.getState().getSubtotal()).toBe(800);
+    s.addItem({ codigoItem: "T", descripcion: "Tóner", precioUnitario: 900, precioMayoreo: 800, cantidad: 1 });
+    expect(useCartStore.getState().getSubtotal()).toBe(1600);
+    s.setEsMayoreo(false);
+    expect(useCartStore.getState().getSubtotal()).toBe(1800);
+  });
+});

@@ -277,3 +277,39 @@ describe("executeReturn (devoluciones y notas de crédito)", () => {
     expect(tx.cliente.update).not.toHaveBeenCalled();
   });
 });
+
+describe("executeReturn · destino de la mercancía", () => {
+  it("lo que va a merma o al proveedor NO regresa al inventario, pero sí se reembolsa", async () => {
+    const tx = makeTx();
+    const r = await executeReturn(
+      tx,
+      {
+        folioVenta: "F-TEST-0001",
+        items: [
+          { codigoItem: "P001", cantidad: 1, destino: "MERMA" },
+          { codigoItem: "P002", cantidad: 1, destino: "INVENTARIO" },
+        ],
+        metodoReembolso: "EFECTIVO",
+        motivoCategoria: "DEFECTUOSO",
+      },
+      ctx
+    );
+    expect(r.subtotal).toBe(150);
+    // Solo P002 vuelve a la existencia.
+    const restock = tx.producto.update.mock.calls.map((c: any) => c[0].where.codigoItem);
+    expect(restock).toEqual(["P002"]);
+    const creada = tx.devolucion.create.mock.calls[0][0].data;
+    expect(creada.motivoCategoria).toBe("DEFECTUOSO");
+    expect(creada.lineas.create.map((l: any) => l.destino)).toEqual(["MERMA", "INVENTARIO"]);
+  });
+
+  it("rechaza destinos desconocidos", async () => {
+    await expect(
+      executeReturn(
+        makeTx(),
+        { folioVenta: "F-TEST-0001", items: [{ codigoItem: "P001", cantidad: 1, destino: "BASURA" }], metodoReembolso: "EFECTIVO" },
+        ctx
+      )
+    ).rejects.toThrow(/Destino inválido/);
+  });
+});

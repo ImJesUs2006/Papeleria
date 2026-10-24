@@ -119,3 +119,46 @@ export async function POST(request: Request) {
     );
   }
 }
+// GET /api/ventas?q= → ventas recientes (para elegir el ticket en
+// Devoluciones sin teclear el folio). Sin q: las de los últimos 3 días.
+export async function GET(request: Request) {
+  const auth = await requireAuth()();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const prisma = tenantDb(auth.user.idNegocio);
+  const q = (new URL(request.url).searchParams.get("q") ?? "").trim().slice(0, 60);
+
+  const ventas = await prisma.venta.findMany({
+    where: {
+      estado: { not: "CANCELADA" },
+      ...(q
+        ? {
+            OR: [
+              { folioVenta: { contains: q, mode: "insensitive" } },
+              { cliente: { nombre: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : { fechaHora: { gte: new Date(Date.now() - 3 * 86_400_000) } }),
+    },
+    orderBy: { fechaHora: "desc" },
+    take: 25,
+    include: {
+      cliente: { select: { nombre: true } },
+      usuario: { select: { nombre: true } },
+      _count: { select: { lineasDetalle: true } },
+    },
+  });
+
+  return NextResponse.json({
+    data: ventas.map((v) => ({
+      folioVenta: v.folioVenta,
+      fechaHora: v.fechaHora,
+      totalNeto: Number(v.totalNeto),
+      estado: v.estado,
+      cliente: v.cliente?.nombre ?? null,
+      cajero: v.usuario.nombre,
+      articulos: v._count.lineasDetalle,
+    })),
+  });
+}

@@ -61,6 +61,7 @@ export function ManualSearchModal({ open, onClose }: Props) {
       esServicio: p.esServicio,
       // Fase 12: mayoreo e imagen para que el storeija el precio correcto.
       precioMayoreo: (p as any).precioMayoreo ?? null,
+      escalasPrecio: (p as any).escalasPrecio ?? null,
       imagenUrl: (p as any).imagenUrl ?? null,
       tasaIva: (p as any).tasaIva ?? null,
       exentoIva: (p as any).exentoIva === true,

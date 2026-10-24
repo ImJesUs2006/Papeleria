@@ -3,13 +3,18 @@ import { z } from "zod";
 import { Prisma } from "@papeleria/database";
 import { requireAuth } from "@/lib/auth";
 import { CLAVES_USO_CFDI } from "@/lib/validate-config";
-import { tieneDatosFiscales } from "@/lib/cliente-fiscal";
 import { tenantDb } from "@/lib/tenant";
+import { getBusinessConfig } from "@/lib/feature-flags";
+import { faltantesFiscales } from "@/lib/clientes";
+import { faltantesEmisor } from "@/lib/factura-manual";
 
 export const dynamic = "force-dynamic";
 
 // ============================================================
-// FASE 12 · Facturación estricta
+// Facturación (flujo manual con el portal del SAT)
+// POST prepara la factura (estado PENDIENTE) con datos completos del
+// emisor y del receptor; /api/facturas/[id] entrega el paquete para
+// capturarlo en el portal y registra el folio fiscal (UUID) al timbrar.
 // Reglas de negocio:
 //  1. Solo se factura a clientes REGISTRADOS (con idCliente).
 //  2. Se factura sobre un TICKET (venta) que exista y esté pagada.
@@ -32,7 +37,7 @@ const FACTURA_INPUT_SCHEMA = z
         new RegExp(`^(${CLAVES_USO_CFDI.join("|")})$`, "i"),
         "Uso de CFDI inválido (usa una clave del catálogo SAT: S01, G03, …)"
       )
-      .default("S01"),
+      .optional(),
   })
   .strict();
 
@@ -83,6 +88,8 @@ export async function GET(request: Request) {
         folio: f.folio,
         fechaEmision: f.fechaEmision.toISOString(),
         folioVenta: f.folioVenta,
+        folioFiscal: f.folioFiscal ?? null,
+        fechaTimbrado: f.fechaTimbrado?.toISOString() ?? null,
         idCliente: f.idCliente,
         nombreCliente: f.cliente?.razonSocial || f.cliente?.nombre || "",
         rfcCliente: f.cliente?.rfc ?? null,
@@ -128,14 +135,31 @@ export async function POST(request: Request) {
     );
   }
   const { idCliente, folioVenta, usoCfdi } = parsed.data;
-  const usoCfdiMayus = usoCfdi.toUpperCase();
+
+  // Emisor: tus datos fiscales (Configuración → Financiero).
+  const config = await getBusinessConfig(user.idNegocio);
+  const faltaEmisor = faltantesEmisor(config.datosFiscales as any);
+  if (faltaEmisor.length) {
+    return NextResponse.json(
+      { error: `Completa tus datos fiscales en Configuración → Financiero: ${faltaEmisor.join(", ")}` },
+      { status: 400 }
+    );
+  }
 
   try {
     const resultado = await prisma.$transaction(async (tx) => {
       // Regla 1: el cliente debe estar registrado.
       const cliente = await tx.cliente.findUnique({
         where: { idCliente },
-        select: { idCliente: true, nombre: true, rfc: true, razonSocial: true },
+        select: {
+          idCliente: true,
+          nombre: true,
+          rfc: true,
+          razonSocial: true,
+          regimenFiscal: true,
+          codigoPostalFiscal: true,
+          usoCfdi: true,
+        },
       });
       if (!cliente) {
         throw new FacturaError(
@@ -143,11 +167,12 @@ export async function POST(request: Request) {
           400
         );
       }
-      // Para CFDI el receptor necesita RFC o razón social; si falta, se
-      // avisa antes de emitir (misma regla que el padrón de clientes).
-      if (!tieneDatosFiscales(cliente)) {
+      // CFDI 4.0: el receptor necesita RFC, nombre, régimen, CP y uso.
+      const usoFinal = (usoCfdi ?? cliente.usoCfdi ?? "").toUpperCase();
+      const faltan = faltantesFiscales({ ...cliente, usoCfdi: usoFinal || null });
+      if (faltan.length) {
         throw new FacturaError(
-          "El cliente no tiene RFC ni razón social: actualiza su ficha antes de facturar",
+          `Completa la ficha del cliente antes de facturar. Falta: ${faltan.join(", ")}`,
           400
         );
       }
@@ -203,9 +228,10 @@ export async function POST(request: Request) {
           iva: new Prisma.Decimal(iva),
           totalNeto: new Prisma.Decimal(totalNeto),
           metodoPago: venta.metodoPago,
-          usoCfdi: usoCfdiMayus,
+          usoCfdi: usoFinal,
           formaPago: "PUE",
-          estado: "EMITIDA",
+          // Se emite al registrar el folio fiscal del SAT.
+          estado: "PENDIENTE",
           idUsuario: user.idPersona,
         },
       });
@@ -221,13 +247,13 @@ export async function POST(request: Request) {
       await tx.bitacoraLog.create({
         data: {
           idUsuario: user.idPersona,
-          accion: `FACTURA_EMITIDA:${folio}`,
+          accion: `FACTURA_PREPARADA:${folio}`,
           moduloSistema: "PUNTO_VENTA",
           jsonPayload: {
             folio,
             folioVenta,
             idCliente,
-            usoCfdi: usoCfdiMayus,
+            usoCfdi: usoFinal,
             totalNeto,
           },
         },

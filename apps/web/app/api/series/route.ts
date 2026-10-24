@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   }
   const prisma = tenantDb(auth.user.idNegocio);
   const { searchParams } = new URL(request.url);
-  const codigoItem = String(searchParams.get("codigoItem") ?? "").trim().toUpperCase();
+  const codigoItem = String(searchParams.get("codigoItem") ?? "").trim();
   const estado = searchParams.get("estado");
   const q = String(searchParams.get("q") ?? "").trim().toUpperCase();
   if (!codigoItem && !q) {
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   try {
     const series = await prisma.$transaction((tx) =>
       registrarSeries(tx, {
-        codigoItem: String(body?.codigoItem ?? "").trim().toUpperCase(),
+        codigoItem: String(body?.codigoItem ?? "").trim(),
         idSucursal: auth.user.idSucursal!,
         series: body?.series,
         idUsuario: auth.user.idPersona,

@@ -1,3 +1,4 @@
+import { leerEscalas, validarEscalas, type EscalaPrecio } from "@/lib/precios";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireAuth } from "@/lib/auth";
@@ -96,6 +97,11 @@ export async function GET(request: Request) {
       if (!isNaN(val)) AND.push({ stockActual: { lte: val } });
     }
 
+    // Categoría ("sin" = productos sin categoría)
+    const categoria = searchParams.get("categoria");
+    if (categoria === "sin") AND.push({ idCategoria: null });
+    else if (categoria) AND.push({ idCategoria: categoria });
+
     // Provider
     if (proveedor && proveedor.length >= 1) {
       AND.push({ proveedor: { contains: proveedor, mode: "insensitive" } });
@@ -158,6 +164,7 @@ export async function GET(request: Request) {
         precioCompra: p.precioCompra != null ? Number(p.precioCompra) : null,
         stockTotal: (p as any).stockTotal ?? Number(p.stockActual),
 precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : null,
+escalasPrecio: leerEscalas(p.escalasPrecio, Number(p.precioUnitario)),
         tasaIva: p.tasaIva != null ? Number(p.tasaIva) : null,
         exentoIva: p.exentoIva === true,
         tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : null,
@@ -228,6 +235,13 @@ export async function POST(request: Request) {
     }
   }
 
+  let escalas: EscalaPrecio[] = [];
+  try {
+    escalas = validarEscalas(data.escalasPrecio, data.precioUnitario);
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 400 });
+  }
+
   try {
     const existente = await prisma.producto.findUnique({
       where: claveProducto(data.codigoItem),
@@ -265,6 +279,7 @@ precioCompra:
               ? new Prisma.Decimal(data.precioMayoreo)
               : null,
           imagenUrl: data.imagenUrl || null,
+          escalasPrecio: escalas.length ? (escalas as any) : Prisma.DbNull,
           tasaIva: data.exentoIva ? null : data.tasaIva ?? null,
           exentoIva: data.exentoIva === true,
           tasaIeps: data.tasaIeps != null && data.tasaIeps > 0 ? data.tasaIeps : null,
@@ -338,6 +353,7 @@ precioCompra:
           precioUnitario: Number(creado.precioUnitario),
           precioCompra: creado.precioCompra != null ? Number(creado.precioCompra) : null,
         precioMayoreo: creado.precioMayoreo != null ? Number(creado.precioMayoreo) : null,
+        escalasPrecio: escalas,
         tasaIva: creado.tasaIva != null ? Number(creado.tasaIva) : null,
         exentoIva: creado.exentoIva === true,
         tasaIeps: creado.tasaIeps != null ? Number(creado.tasaIeps) : null,
@@ -364,6 +380,7 @@ precioCompra:
         { status: 409 }
       );
     }
+    console.error("[productos:crear]", error);
     return NextResponse.json(
       { error: "Error al crear producto" },
       { status: 500 }

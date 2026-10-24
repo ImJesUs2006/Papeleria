@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validarCurp, validarRfc } from "./validacion";
+import { CLAVES_REGIMEN, CLAVES_USO } from "./sat-catalogos";
 import {
   TIPO_NEGOCIO,
   METODOS_PAGO_DISPONIBLES,
@@ -57,23 +58,14 @@ const DATOS_BANCARIOS_SCHEMA = z
 // RFC y CURP: estructura, fecha real y dígito verificador en lib/validacion.
 
 // Catálogo del SAT de Clave de Régimen Fiscal (sat.gob.mx).
-const CLAVES_REGIMEN_FISCAL = [
-  "601", "603", "606", "607", "608", "610", "611", "612", "614", "615",
-  "616", "621", "625", "626", "628", "629", "630", "632", "634", "635",
-  "636", "637", "638", "651", "652", "653", "654", "655", "656", "657",
-] as const;
+export const CLAVES_REGIMEN_FISCAL = CLAVES_REGIMEN as readonly string[];
 
 /**
  * Catálogo del SAT de Uso de CFDI (códigos de 3 caracteres).
  * Exportado para que la emisión de facturas (Fase 12) reutilice EXACTAMENTE
  * la misma lista que valida la configuración: una sola fuente de verdad.
  */
-export const CLAVES_USO_CFDI = [
-  "G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10",
-  "I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08",
-  "P01", "P04", "P05", "S01", "CP01",
-  "D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10",
-] as const;
+export const CLAVES_USO_CFDI = CLAVES_USO as readonly string[];
 
 /** Extrae el código SAT (ej. "601" de "601 - General de Ley Personas Morales"). */
 function codigoSat(valor: string): string {
@@ -231,6 +223,19 @@ export const CONFIG_INPUT_SCHEMA = z
       .min(1, "Un apartado se guarda al menos 1 día")
       .max(365, "Máximo 365 días de apartado")
       .default(30),
+    corteConReferencia: z.boolean().default(false),
+    diasDevolucion: z
+      .number({ invalid_type_error: "Los días para devoluciones deben ser un número" })
+      .int("Los días para devoluciones deben ser un número entero")
+      .min(1, "El plazo de devolución es de al menos 1 día")
+      .max(365, "Máximo 365 días para devoluciones")
+      .default(30),
+    montoAutorizarDevolucion: z
+      .number({ invalid_type_error: "El monto de autorización debe ser un número" })
+      .min(0, "El monto de autorización no puede ser negativo")
+      .max(9_999_999, "Monto de autorización demasiado grande")
+      .nullable()
+      .default(null),
   })
   .strict();
 

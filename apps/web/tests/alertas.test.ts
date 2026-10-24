@@ -132,6 +132,21 @@ describe("apartados y caja", () => {
   });
 });
 
+it("avisa de los clientes a los que les toca surtirse (±1 día)", () => {
+  const a = construirAlertas(
+    {
+      ...vacio,
+      clientes: [
+        { idCliente: "c1", nombre: "Escuela Norte", proximaVisita: dia(24), frecuenciaDias: 7 },
+        { idCliente: "c2", nombre: "Lejano", proximaVisita: dia(30), frecuenciaDias: 7 },
+      ],
+    },
+    cajera
+  );
+  expect(a.map((x) => x.titulo)).toEqual(["A Escuela Norte le toca surtirse"]);
+  expect(a[0].nivel).toBe("info");
+});
+
 it("'Entendido' oculta hasta el final del día", () => {
   const f = finDelDia(hoy);
   expect([f.getDate(), f.getHours(), f.getMinutes()]).toEqual([23, 23, 59]);

@@ -14,7 +14,7 @@ import { tienePermiso, type SesionPermisos } from "./permisos";
 // ============================================================
 
 export type NivelAlerta = "critica" | "aviso" | "info";
-export type TipoAlerta = "stock" | "caducidad" | "pedido" | "pago" | "apartado" | "caja";
+export type TipoAlerta = "stock" | "caducidad" | "pedido" | "pago" | "apartado" | "caja" | "cliente";
 
 export interface Alerta {
   /** Identifica la situación (no cambia mientras siga igual). */
@@ -33,6 +33,8 @@ export interface DatosAlertas {
   cuentas: Array<{ idCuenta: string; idProveedor: string; proveedor: string; saldo: number; fechaVencimiento: Date }>;
   apartados: Array<{ folio: string; cliente: string; fechaCreado: Date; saldo: number }>;
   cajas: Array<{ idCaja: string; nombre: string; usuario: string; horaApertura: Date; propia: boolean }>;
+  /** Clientes frecuentes con su próxima visita estimada (lib/clientes). */
+  clientes?: Array<{ idCliente: string; nombre: string; proximaVisita: Date; frecuenciaDias: number }>;
 }
 
 export interface ContextoAlertas {
@@ -67,6 +69,7 @@ export function puedeVer(tipo: TipoAlerta, ctx: ContextoAlertas): boolean {
       return ctx.flags.proveedores === true && admin;
     case "apartado":
     case "caja":
+    case "cliente":
       return true;
   }
 }
@@ -256,6 +259,24 @@ export function construirAlertas(d: DatosAlertas, ctx: ContextoAlertas): Alerta[
         titulo: c.propia ? "Tu caja lleva abierta más de 12 horas" : `Caja de ${c.usuario} abierta más de 12 horas`,
         detalle: `${c.nombre} se abrió el ${c.horaApertura.toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}. Haz el corte para cuadrar el día.`,
         accion: { etiqueta: "Ir a caja", href: "/caja" },
+      });
+    }
+  }
+
+  // ---------- Clientes a los que les toca surtirse ----------
+  if (puedeVer("cliente", ctx) && d.clientes?.length) {
+    const tocan = d.clientes.filter((c) => {
+      const dias = diasParaVencer(c.proximaVisita, hoy);
+      return dias >= -1 && dias <= 1;
+    });
+    for (const c of tocan.slice(0, MAX_INDIVIDUALES)) {
+      out.push({
+        clave: `cliente-surtido:${c.idCliente}:${inicioDelDia(c.proximaVisita).getTime()}`,
+        tipo: "cliente",
+        nivel: "info",
+        titulo: `A ${c.nombre} le toca surtirse`,
+        detalle: `Suele comprar cada ~${c.frecuenciaDias} días. Buen momento para tener listo lo que más se lleva.`,
+        accion: { etiqueta: "Ver sus favoritos", href: `/clientes?id=${encodeURIComponent(c.idCliente)}` },
       });
     }
   }

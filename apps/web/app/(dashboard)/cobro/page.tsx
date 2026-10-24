@@ -1,5 +1,6 @@
 "use client";
 
+import type { EscalaPrecio } from "@/lib/precios";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -21,6 +22,7 @@ interface ProductoRapido {
   permiteDecimales?: boolean;
   esServicio?: boolean;
   precioMayoreo?: number | null;
+  escalasPrecio?: EscalaPrecio[] | null;
   tasaIva?: number | null;
   exentoIva?: boolean;
   tasaIeps?: number | null;
@@ -134,6 +136,7 @@ export default function CobroPage() {
         permiteDecimales: p.permiteDecimales,
         esServicio: p.esServicio,
         precioMayoreo: p.precioMayoreo ?? null,
+        escalasPrecio: p.escalasPrecio ?? null,
         tasaIva: p.tasaIva ?? null,
         exentoIva: p.exentoIva === true,
         tasaIeps: p.tasaIeps ?? null,

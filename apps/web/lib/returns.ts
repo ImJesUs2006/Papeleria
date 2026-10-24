@@ -16,6 +16,14 @@ export const METODOS_REEMBOLSO = [
 ] as const;
 
 export type TipoDevolucion = (typeof TIPOS_DEVOLUCION)[number];
+
+/** Qué pasa con la mercancía devuelta. */
+export const DESTINOS_DEVOLUCION = ["INVENTARIO", "MERMA", "PROVEEDOR"] as const;
+export type DestinoDevolucion = (typeof DESTINOS_DEVOLUCION)[number];
+
+/** Motivos catalogados (para estadísticas); el detalle va en `motivo`. */
+export const MOTIVOS_DEVOLUCION = ["DEFECTUOSO", "EQUIVOCADO", "NO_LE_GUSTO", "CADUCADO", "CAMBIO", "OTRO"] as const;
+export type MotivoDevolucion = (typeof MOTIVOS_DEVOLUCION)[number];
 export type MetodoReembolso = (typeof METODOS_REEMBOLSO)[number];
 
 export class ReturnError extends Error {
@@ -35,6 +43,8 @@ export interface ReturnLineInput {
   cantidad: number;
   /** Series que regresan (productos con número de serie); si faltan, las últimas vendidas. */
   series?: string[];
+  /** INVENTARIO (vuelve a venderse, por defecto) | MERMA (dañado) | PROVEEDOR. */
+  destino?: string;
 }
 
 export interface ReturnInput {
@@ -43,6 +53,9 @@ export interface ReturnInput {
   tipo?: string;
   metodoReembolso?: string;
   motivo?: string;
+  motivoCategoria?: string;
+  /** Administradora que autorizó (plazo vencido o monto alto). */
+  autorizadoPor?: string | null;
 }
 
 export interface ReturnContext {
@@ -231,6 +244,20 @@ export async function executeReturn(
 
   const yaDevuelto = calcularDevuelto(venta.devoluciones);
 
+  // Destino de cada artículo: solo lo que vuelve a INVENTARIO reingresa stock.
+  const destinos = new Map<string, DestinoDevolucion>();
+  for (const item of input.items) {
+    const destino = (item.destino ?? "INVENTARIO") as DestinoDevolucion;
+    if (!DESTINOS_DEVOLUCION.includes(destino)) {
+      throw new ReturnError(`Destino inválido para ${item.codigoItem}`);
+    }
+    destinos.set(item.codigoItem, destino);
+  }
+  const motivoCategoria =
+    input.motivoCategoria && MOTIVOS_DEVOLUCION.includes(input.motivoCategoria as MotivoDevolucion)
+      ? input.motivoCategoria
+      : null;
+
   let subtotal = 0;
   // Impuestos devueltos: lo que se cobró por línea, en proporción a lo
   // devuelto. Las líneas sin desglose usan la tasa efectiva de la venta.
@@ -288,9 +315,10 @@ export async function executeReturn(
   const totalNeto = round2(subtotal + iva + ieps);
   const folioDevolucion = generarFolioDevolucion();
 
-  // Reingreso de stock (nunca para servicios).
+  // Reingreso de stock (nunca para servicios ni para lo que va a merma o
+  // de regreso al proveedor).
   const cantidadesReales = cantidades.filter(
-    (c) => originales.get(c.codigoItem)?.esServicio !== true
+    (c) => originales.get(c.codigoItem)?.esServicio !== true && destinos.get(c.codigoItem) === "INVENTARIO"
   );
   // La mercancía devuelta regresa a la existencia de la sucursal (sin
   // lote: la trazabilidad del lote vendido queda en la línea de venta).
@@ -415,7 +443,9 @@ export async function executeReturn(
       folioDevolucion,
       folioVenta: input.folioVenta,
       tipo,
-      motivo: input.motivo || null,
+      motivo: input.motivo ? String(input.motivo).slice(0, 300) : null,
+      motivoCategoria,
+      autorizadoPor: input.autorizadoPor ?? null,
       subtotal,
       iva,
       ieps,
@@ -429,6 +459,7 @@ export async function executeReturn(
           cantidad: l.cantidad,
           precioMomento: l.precioUnitario,
           subtotalLinea: l.subtotalLinea,
+          destino: destinos.get(l.codigoItem) ?? "INVENTARIO",
         })),
       },
     },
@@ -458,6 +489,9 @@ export async function executeReturn(
         metodoReembolso,
         totalNeto,
         ventaCompleta,
+        motivoCategoria,
+        autorizadoPor: input.autorizadoPor ?? undefined,
+        destinos: Object.fromEntries(destinos),
         puntosRestituidos: ventaMonedero ? venta.idCliente : undefined,
         puntosRevertidos: puntosRevertidos || undefined,
         items: cantidades,

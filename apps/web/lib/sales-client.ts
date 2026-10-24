@@ -118,8 +118,8 @@ export async function registrarVentaClient(items: CartItem[], extra: {
             codigoItem: i.codigoItem,
             descripcion: i.descripcion,
             cantidad: numeroSeguro(i.cantidad),
-            precioUnitario: numeroSeguro(i.precioUnitario),
-            importe: numeroSeguro(i.cantidad * i.precioUnitario),
+            precioUnitario: precioEfectivo(i),
+            importe: numeroSeguro(i.subtotalLinea),
           })),
       subtotal: numeroSeguro(data.subtotal),
       iva: numeroSeguro(data.iva),
@@ -160,11 +160,10 @@ export async function registrarVentaClient(items: CartItem[], extra: {
     // Mismo motor fiscal que el servidor (que de todos modos recalcula al
     // sincronizar): IVA por producto, IEPS y precios con impuestos incluidos.
     // Las promociones vigentes sí aplican offline (el servidor las reaplica).
+    // El importe de cada línea ya trae el precio efectivo (escala por
+    // cantidad o cliente mayorista); `precioUnitario` es el de lista.
     const fiscal = totalesCarrito(
-      items.map((i) => ({
-        ...i,
-        subtotalLinea: numeroSeguro(i.cantidad) * numeroSeguro(i.precioUnitario),
-      })),
+      items.map((i) => ({ ...i, subtotalLinea: numeroSeguro(i.subtotalLinea) })),
       { promociones: useCartStore.getState().promociones }
     );
     const subtotal = fiscal.subtotal;
@@ -185,7 +184,7 @@ export async function registrarVentaClient(items: CartItem[], extra: {
       items: items.map((i) => ({
         codigoItem: i.codigoItem,
         cantidad: i.cantidad,
-        precioMomento: i.precioUnitario,
+        precioMomento: precioEfectivo(i),
       })),
       metodoPago: extra.metodoPago as any,
       tipoVenta: extra.tipoVenta,
@@ -215,8 +214,8 @@ referenciaTransferencia: extra.referenciaTransferencia ?? null,
         codigoItem: i.codigoItem,
         descripcion: i.descripcion,
         cantidad: numeroSeguro(i.cantidad),
-        precioUnitario: numeroSeguro(i.precioUnitario),
-        importe: numeroSeguro(i.cantidad * i.precioUnitario),
+        precioUnitario: precioEfectivo(i),
+        importe: numeroSeguro(i.subtotalLinea),
       })),
       subtotal: Math.round(subtotal * 100) / 100,
       iva: Math.round(iva * 100) / 100,
@@ -226,4 +225,12 @@ referenciaTransferencia: extra.referenciaTransferencia ?? null,
       fechaHora: new Date().toISOString(),
     };
   }
+}
+
+/** Precio unitario que realmente se cobra en la línea (importe ÷ cantidad). */
+function precioEfectivo(i: Pick<CartItem, "cantidad" | "subtotalLinea" | "precioUnitario">): number {
+  const cantidad = numeroSeguro(i.cantidad);
+  return cantidad > 0
+    ? Math.round((numeroSeguro(i.subtotalLinea) / cantidad) * 100) / 100
+    : numeroSeguro(i.precioUnitario);
 }

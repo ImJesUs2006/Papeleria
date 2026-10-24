@@ -22,7 +22,14 @@ import {
   Star,
   Plus,
   History,
+  LayoutGrid,
+  List,
+  Tags,
+  Info,
 } from "lucide-react";
+import { FichaProducto } from "@/components/inventario/ficha-producto";
+import { GestorCategorias, type Categoria } from "@/components/inventario/gestor-categorias";
+import { describirEscalas, leerEscalas } from "@/lib/precios";
 import { QuickEdit } from "@/components/inventario/quick-edit";
 import { KardexHistorial } from "@/components/inventario/kardex-historial";
 import {
@@ -49,7 +56,14 @@ interface Product {
   permiteDecimales?: boolean;
   esServicio?: boolean;
   fechaCaducidad?: string | null;
+  imagenUrl?: string | null;
+  idCategoria?: string | null;
+  escalasPrecio?: unknown;
+  usaLotes?: boolean;
+  usaSeries?: boolean;
 }
+
+const CLAVE_VISTA = "papeleria-inventario-vista";
 
 interface UploadResult {
   totalRows: number;
@@ -93,6 +107,34 @@ export default function InventarioPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  // Vista (tabla o tarjetas con imagen), categoría activa, ficha y categorías.
+  const [vista, setVista] = useState<"tabla" | "tarjetas">("tabla");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(CLAVE_VISTA) === "tarjetas") setVista("tarjetas");
+    } catch {
+      /* sin almacenamiento */
+    }
+  }, []);
+  const cambiarVista = (v: "tabla" | "tarjetas") => {
+    setVista(v);
+    try {
+      localStorage.setItem(CLAVE_VISTA, v);
+    } catch {
+      /* sin almacenamiento */
+    }
+  };
+  const [filterCategoria, setFilterCategoria] = useState("");
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [gestorCategorias, setGestorCategorias] = useState(false);
+  const [fichaCodigo, setFichaCodigo] = useState<string | null>(null);
+  const cargarCategorias = useCallback(() => {
+    fetch("/api/categorias", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { categorias: [] }))
+      .then((d) => setCategorias(d.categorias ?? []))
+      .catch(() => {});
+  }, []);
+  useEffect(() => cargarCategorias(), [cargarCategorias]);
   // Enlaces desde las alertas: /inventario?buscar=CODIGO
   useEffect(() => {
     const buscar = new URLSearchParams(window.location.search).get("buscar");
@@ -228,6 +270,7 @@ export default function InventarioPage() {
       if (filterStockMax) params.set("stockMax", filterStockMax);
       if (filterBajoStock) params.set("bajoStock", "true");
       if (filterSinStock) params.set("sinStock", "true");
+      if (filterCategoria) params.set("categoria", filterCategoria);
 
       const res = await fetch(`/api/productos?${params.toString()}`);
       if (!res.ok) throw new Error("Error fetching");
@@ -240,7 +283,7 @@ export default function InventarioPage() {
     } finally {
       setIsLoadingProducts(false);
     }
-  }, [searchQuery, sortBy, sortDir, page, filterProveedor, filterUbicacion, filterPrecioMin, filterPrecioMax, filterStockMin, filterStockMax, filterBajoStock, filterSinStock]);
+  }, [searchQuery, sortBy, sortDir, page, filterProveedor, filterUbicacion, filterPrecioMin, filterPrecioMax, filterStockMin, filterStockMax, filterBajoStock, filterSinStock, filterCategoria]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchProducts(), 300);
@@ -439,6 +482,63 @@ export default function InventarioPage() {
             >
               {sortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
             </button>
+            <div className="flex rounded-xl border border-surface-600 bg-surface-800 p-0.5" role="group" aria-label="Vista">
+              <button
+                type="button"
+                onClick={() => cambiarVista("tabla")}
+                aria-pressed={vista === "tabla"}
+                title="Vista de tabla"
+                className={cn("rounded-lg px-2.5 py-2", vista === "tabla" ? "bg-surface-600 text-gray-100" : "text-muted hover:text-gray-100")}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => cambiarVista("tarjetas")}
+                aria-pressed={vista === "tarjetas"}
+                title="Vista de tarjetas con imagen"
+                className={cn("rounded-lg px-2.5 py-2", vista === "tarjetas" ? "bg-surface-600 text-gray-100" : "text-muted hover:text-gray-100")}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGestorCategorias(true)}
+              className="flex items-center gap-2 rounded-xl border border-surface-600 bg-surface-800 px-3 py-2.5 text-sm text-muted hover:text-gray-100"
+            >
+              <Tags className="h-4 w-4" /> Categorías
+            </button>
+          </div>
+
+          {/* Categorías como pestañas */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Filtrar por categoría">
+            {[
+              { id: "", nombre: "Todas", color: "", productos: undefined as number | undefined },
+              ...categorias.map((c) => ({ id: c.id, nombre: c.nombre, color: c.color, productos: c.productos })),
+              ...(categorias.length ? [{ id: "sin", nombre: "Sin categoría", color: "", productos: undefined }] : []),
+            ].map((c) => (
+              <button
+                key={c.id || "todas"}
+                type="button"
+                role="tab"
+                aria-selected={filterCategoria === c.id}
+                onClick={() => {
+                  setFilterCategoria(c.id);
+                  setPage(1);
+                }}
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  filterCategoria === c.id
+                    ? "border-acento bg-acento/10 text-acento"
+                    : "border-surface-600 text-muted hover:text-gray-100"
+                )}
+              >
+                {c.color && <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />}
+                {c.nombre}
+                {c.productos != null && <span className="opacity-70">{c.productos}</span>}
+              </button>
+            ))}
           </div>
 
           {/* Filter panel */}
@@ -560,6 +660,90 @@ export default function InventarioPage() {
                 <Package className="h-10 w-10 mb-3 opacity-30" />
                 <p className="text-sm">No se encontraron productos</p>
               </div>
+            ) : vista === "tarjetas" ? (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-3 p-3">
+                {products.map((p) => {
+                  const escalas = leerEscalas(p.escalasPrecio, p.precioUnitario);
+                  const cat = categorias.find((c) => c.id === p.idCategoria);
+                  const agotado = !p.esServicio && p.stockActual <= 0;
+                  const bajo = !p.esServicio && !agotado && p.stockActual <= p.stockMinimo;
+                  return (
+                    <div key={p.codigoItem} className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-surface-600 bg-surface-700/40">
+                      <button
+                        type="button"
+                        onClick={() => setFichaCodigo(p.codigoItem)}
+                        className="relative flex aspect-[4/3] items-center justify-center bg-surface-700"
+                        aria-label={`Ficha de ${p.descripcion}`}
+                      >
+                        {p.imagenUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p.imagenUrl} alt={p.descripcion} loading="lazy" className="h-full w-full object-cover" />
+                        ) : (
+                          <Package className="h-10 w-10 text-muted/50" />
+                        )}
+                        {!p.esServicio && (
+                          <span
+                            className={cn(
+                              "absolute right-2 top-2 rounded-md border px-1.5 py-0.5 text-[11px] font-black tabular-nums",
+                              agotado
+                                ? "border-rose-500/50 bg-rose-500/15 text-rose-300"
+                                : bajo
+                                  ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                                  : "border-surface-500 bg-surface-800/90 text-gray-100"
+                            )}
+                          >
+                            {agotado ? "Agotado" : `${p.stockActual} pzs`}
+                          </span>
+                        )}
+                        {p.favorito && <Star className="absolute left-2 top-2 h-4 w-4 fill-neon-yellow text-warning" />}
+                      </button>
+                      <div className="flex flex-1 flex-col gap-1 p-3">
+                        {cat && (
+                          <span className="flex items-center gap-1 text-[10px] font-semibold text-muted">
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: cat.color }} />
+                            {cat.nombre}
+                          </span>
+                        )}
+                        <p className="line-clamp-2 break-anywhere text-sm font-semibold leading-snug text-gray-100" title={p.descripcion}>
+                          {p.descripcion}
+                        </p>
+                        <p className="text-[11px] text-muted">{p.codigoItem}</p>
+                        <p className="text-lg font-black text-neon-green tabular-nums">${p.precioUnitario.toFixed(2)}</p>
+                        {escalas.length > 0 && (
+                          <p className="line-clamp-2 text-[11px] font-semibold text-emerald-300" title={describirEscalas(escalas)}>
+                            {describirEscalas(escalas)}
+                          </p>
+                        )}
+                        <div className="mt-auto flex gap-1.5 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setFichaCodigo(p.codigoItem)}
+                            className="flex-1 rounded-lg border border-surface-500 py-1.5 text-xs font-bold text-gray-200 hover:border-acento/60"
+                          >
+                            Ficha
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setEditing(p); setFormOpen(true); }}
+                            aria-label={`Editar ${p.descripcion}`}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-500 text-muted hover:text-neon-green"
+                          >
+                            <PencilLine className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorito(p)}
+                            aria-label={p.favorito ? "Quitar de favoritos" : "Marcar como favorito"}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-500 text-muted hover:text-warning"
+                          >
+                            <Star className={cn("h-4 w-4", p.favorito && "fill-neon-yellow text-warning")} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <table className="w-full">
                 <thead>
@@ -622,7 +806,14 @@ export default function InventarioPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <span className="text-sm font-medium text-gray-100">{p.descripcion}</span>
+                          <button
+                            type="button"
+                            onClick={() => setFichaCodigo(p.codigoItem)}
+                            className="text-left text-sm font-medium text-gray-100 hover:text-acento hover:underline"
+                            title="Ver ficha del producto"
+                          >
+                            {p.descripcion}
+                          </button>
                           <span className="text-xs text-muted ml-2">{p.codigoItem}</span>
                           {(p.esServicio || p.permiteDecimales) && (
                             <div className="mt-1 flex items-center gap-1.5">
@@ -689,6 +880,14 @@ export default function InventarioPage() {
                       <td className="px-4 py-3 text-sm text-muted">{p.proveedor || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setFichaCodigo(p.codigoItem)}
+                            title="Ficha: existencias, lotes, series e historial"
+                            aria-label={`Ficha de ${p.descripcion}`}
+                            className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-acento/10 flex items-center justify-center text-muted hover:text-acento transition-colors"
+                          >
+                            <Info className="h-4 w-4" />
+                          </button>
                           <button
                             onClick={() => toggleFavorito(p)}
                             aria-label={p.favorito ? "Quitar de favoritos" : "Marcar como favorito"}
@@ -992,6 +1191,24 @@ export default function InventarioPage() {
           )}
         </AnimatePresence>
 
+        <FichaProducto
+          codigo={fichaCodigo}
+          onClose={() => setFichaCodigo(null)}
+          onEditar={(codigo) => {
+            setFichaCodigo(null);
+            setEditing({ codigoItem: codigo } as ProductFormData);
+            setFormOpen(true);
+          }}
+          onCambio={fetchProducts}
+        />
+        <GestorCategorias
+          abierto={gestorCategorias}
+          onClose={() => setGestorCategorias(false)}
+          onCambio={() => {
+            cargarCategorias();
+            fetchProducts();
+          }}
+        />
         <ProductFormModal
           open={formOpen}
           onClose={() => setFormOpen(false)}

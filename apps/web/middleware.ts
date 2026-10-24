@@ -6,7 +6,9 @@ const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/negocios",
   // Alta de negocios: se autoriza con el token de plataforma, no con sesión.
-  "/plataforma/",
+  "/plataforma",
+  // Consola de plataforma: se autoriza con su propia cookie, no con la de un negocio.
+  "/api/plataforma",
   // Service worker, manifiesto e íconos de la app instalable (Paso 8).
   "/sw.js",
   "/manifest.webmanifest",

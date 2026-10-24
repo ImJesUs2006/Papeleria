@@ -113,6 +113,10 @@ export type FeatureFlags = {
   recargas: boolean;
   /** Imágenes de producto en la nube (Cloudinary) */
   imagenesCloudinary: boolean;
+  /** Lotes con caducidad, números de serie y variantes (talla/color) */
+  lotesSeries: boolean;
+  /** Apartados: el cliente deja anticipo y se lleva la mercancía al liquidar */
+  apartados: boolean;
 };
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -123,6 +127,9 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   bitacora: true,
   recargas: false,
   imagenesCloudinary: false,
+  // Activos por defecto: un negocio existente no pierde pantallas que ya usaba.
+  lotesSeries: true,
+  apartados: true,
 };
 
 export interface BusinessConfig {
@@ -207,7 +214,31 @@ export const MODULOS_INFO: Record<keyof FeatureFlags, { label: string; desc: str
     label: "Imágenes en la nube",
     desc: "Fotos de producto en Cloudinary (requiere credenciales del servidor).",
   },
+  lotesSeries: {
+    label: "Lotes, series y variantes",
+    desc: "Caducidad por lote (alimentos, medicinas), número de serie por pieza (electrónica) y tallas/colores.",
+  },
+  apartados: {
+    label: "Apartados",
+    desc: "El cliente deja un anticipo y liquida después; la mercancía queda reservada.",
+  },
 };
+
+export type NivelModulo = "recomendado" | "opcional" | "no_aplica";
+
+/** Módulos que no tienen sentido en un giro (se ocultan y no se sugieren). */
+const NO_APLICA: Partial<Record<TipoNegocio, Array<keyof FeatureFlags>>> = {
+  SERVICIOS: ["lotesSeries", "recargas"],
+  FARMACIA: ["recargas"],
+  FERRETERIA: ["recargas"],
+  BOUTIQUE: ["recargas"],
+};
+
+/** Qué tan útil es cada módulo para el giro: recomendado, opcional o no aplica. */
+export function nivelModulo(tipo: TipoNegocio, flag: keyof FeatureFlags): NivelModulo {
+  if (NO_APLICA[tipo]?.includes(flag)) return "no_aplica";
+  return PRESETS_POR_NEGOCIO[tipo]?.featureFlags[flag] ? "recomendado" : "opcional";
+}
 
 /**
  * Plantilla por giro (Marca Blanca): módulos, pagos y preferencias con las
@@ -227,7 +258,7 @@ export const PRESETS_POR_NEGOCIO: Record<
 > = {
   // Papelería: resurte con proveedores y es común que venda recargas.
   PAPELERIA_RETAIL: {
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS, proveedores: true, recargas: true },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, proveedores: true, recargas: true, lotesSeries: false },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
@@ -235,7 +266,7 @@ export const PRESETS_POR_NEGOCIO: Record<
   },
   // Abarrotes: la vigencia de comestibles es crítica; recargas muy comunes.
   ABARROTES: {
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true, recargas: true },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true, recargas: true, apartados: false },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: true,
@@ -244,7 +275,7 @@ export const PRESETS_POR_NEGOCIO: Record<
   // Servicios: el catálogo sigue disponible (los servicios no llevan
   // existencias), sin proveedores ni ubicaciones.
   SERVICIOS: {
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, lotesSeries: false, apartados: false },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "PERMITIR_NEGATIVO",
     usarCaducidad: false,
@@ -266,7 +297,7 @@ export const PRESETS_POR_NEGOCIO: Record<
   },
   // Farmacia: lote/caducidad visibles y nunca vender sin existencia.
   FARMACIA: {
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true },
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, facturacion: true, proveedores: true, apartados: false },
     metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"],
     politicaStockOffline: "RECHAZAR",
     usarCaducidad: true,

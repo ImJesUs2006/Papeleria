@@ -11,7 +11,7 @@ import { tenantDb } from "@/lib/tenant";
 // ============================================================
 
 export async function POST(request: Request) {
-  const auth = await requireAuth()();
+  const auth = await requireAuth(undefined, { modulo: "apartados" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  const auth = await requireAuth()();
+  const auth = await requireAuth(undefined, { modulo: "apartados" })();
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

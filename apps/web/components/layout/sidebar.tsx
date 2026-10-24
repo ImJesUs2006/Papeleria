@@ -24,6 +24,7 @@ import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { ShortcutsHelp } from "./shortcuts-help";
 import { SucursalSelector } from "./sucursal-selector";
 import { CentroAlertas } from "@/components/alertas/centro-alertas";
+import { Ayudante } from "@/components/ayudante/ayudante";
 import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +34,12 @@ const NAV_ITEMS: Array<{
   icon: typeof BarChart3;
   permission: string;
   flag?: keyof FeatureFlags;
+  grupo: "Ventas" | "Inventario" | "Compras" | "Administración";
 }> = [
   {
     label: "Dashboard",
     href: "/dashboard",
+    grupo: "Ventas",
     icon: BarChart3,
     permission: "dashboard.ver",
     flag: "dashboard",
@@ -44,30 +47,36 @@ const NAV_ITEMS: Array<{
   {
     label: "Cobro",
     href: "/cobro",
+    grupo: "Ventas",
     icon: ShoppingCart,
     permission: "cobro.realizar",
   },
   {
     label: "Caja",
     href: "/caja",
+    grupo: "Ventas",
     icon: LayoutDashboard,
     permission: "caja.abrir",
   },
   {
     label: "Apartados",
     href: "/apartados",
+    grupo: "Ventas",
     icon: PackageOpen,
     permission: "cobro.realizar",
+    flag: "apartados",
   },
   {
     label: "Devoluciones",
     href: "/devoluciones",
+    grupo: "Ventas",
     icon: RotateCcw,
     permission: "devoluciones.ver",
   },
   {
     label: "Inventario",
     href: "/inventario",
+    grupo: "Inventario",
     icon: Package,
     permission: "inventario.ver",
     flag: "inventario",
@@ -75,6 +84,7 @@ const NAV_ITEMS: Array<{
   {
     label: "Proveedores",
     href: "/proveedores",
+    grupo: "Compras",
     icon: Users,
     permission: "proveedores.ver",
     flag: "proveedores",
@@ -82,6 +92,7 @@ const NAV_ITEMS: Array<{
   {
     label: "Pedidos",
     href: "/pedidos",
+    grupo: "Compras",
     icon: Truck,
     permission: "pedidos.ver",
     flag: "proveedores",
@@ -89,30 +100,36 @@ const NAV_ITEMS: Array<{
   {
     label: "Lotes y series",
     href: "/lotes",
+    grupo: "Inventario",
     icon: Boxes,
     permission: "inventario.editar",
+    flag: "lotesSeries",
   },
   {
     label: "Traspasos",
     href: "/traspasos",
+    grupo: "Inventario",
     icon: Truck,
     permission: "inventario.editar",
   },
   {
     label: "Promociones",
     href: "/promociones",
+    grupo: "Ventas",
     icon: Tag,
     permission: "inventario.editar",
   },
   {
     label: "Clientes",
     href: "/clientes",
+    grupo: "Ventas",
     icon: Users,
     permission: "clientes.ver",
   },
   {
     label: "Reportes",
     href: "/reportes",
+    grupo: "Administración",
     icon: BarChart3,
     permission: "reportes.ver",
     flag: "dashboard",
@@ -120,6 +137,7 @@ const NAV_ITEMS: Array<{
   {
     label: "Bitácora",
     href: "/bitacora",
+    grupo: "Administración",
     icon: ScrollText,
     permission: "bitacora.ver",
     flag: "bitacora",
@@ -127,6 +145,7 @@ const NAV_ITEMS: Array<{
   {
     label: "Facturación",
     href: "/facturacion",
+    grupo: "Administración",
     icon: FileText,
     permission: "facturacion.ver",
     flag: "facturacion",
@@ -134,10 +153,13 @@ const NAV_ITEMS: Array<{
   {
     label: "Configuración",
     href: "/configuracion",
+    grupo: "Administración",
     icon: Settings,
     permission: "configuracion.usuarios",
   },
 ];
+
+const GRUPOS = ["Ventas", "Inventario", "Compras", "Administración"] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -192,8 +214,15 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {visibleItems.map((item) => {
+      <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Menú principal">
+        {GRUPOS.map((grupo) => {
+          const items = visibleItems.filter((i) => i.grupo === grupo);
+          if (items.length === 0) return null;
+          return (
+            <div key={grupo} className="mb-2">
+              <p className="px-4 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-muted/70">{grupo}</p>
+              <div className="space-y-0.5">
+        {items.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
 
@@ -203,7 +232,7 @@ export function Sidebar() {
                 href={item.href}
                 prefetch
                 className={cn(
-                  "group flex items-center gap-3 px-4 py-2 rounded-xl transition-all",
+                  "group flex items-center gap-3 px-4 py-1.5 rounded-xl text-sm transition-all",
                   isActive
                     ? "bg-acento/20 text-acento shadow-neon"
                     : "text-muted hover:bg-surface-700 hover:text-gray-100"
@@ -219,6 +248,10 @@ export function Sidebar() {
               <Icon className="h-5 w-5" />
               <span>{item.href === "/clientes" ? vocabulario.clientes : item.label}</span>
             </Link>
+          );
+        })}
+              </div>
+            </div>
           );
         })}
       </nav>
@@ -238,6 +271,7 @@ export function Sidebar() {
             </p>
           </div>
         </div>
+        <Ayudante />
         <ShortcutsHelp />
         <button
           onClick={logout}

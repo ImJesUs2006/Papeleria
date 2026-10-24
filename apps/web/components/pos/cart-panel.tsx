@@ -1081,6 +1081,7 @@ export function CartPanel() {
           Dividir pago
         </button>
 
+        {config?.featureFlags?.apartados !== false && (
         <button
           onClick={abrirApartado}
           disabled={items.length === 0}
@@ -1089,6 +1090,7 @@ export function CartPanel() {
           <PackagePlus className="h-4 w-4" />
           Crear apartado
         </button>
+        )}
 
         <button
           onClick={clearCart}

@@ -81,8 +81,9 @@ export async function crearNegocio(prisma: PrismaClient, raw: unknown) {
       },
       select: { idPersona: true, username: true },
     });
-    await tx.sucursal.create({
+    const matriz = await tx.sucursal.create({
       data: { idNegocio: negocio.idNegocio, nombre: "Matriz", esMatriz: true },
+      select: { idSucursal: true },
     });
     await tx.configuracionNegocio.create({
       data: {
@@ -104,6 +105,8 @@ export async function crearNegocio(prisma: PrismaClient, raw: unknown) {
       codigo: negocio.codigo,
       nombre: negocio.nombre,
       admin: admin.username,
+      idAdmin: admin.idPersona,
+      idSucursal: matriz.idSucursal,
     };
   });
 }

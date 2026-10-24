@@ -147,6 +147,13 @@ npm run dev
 
 Abre **http://localhost:3000** y entra con `admin / admin123`.
 
+> **Consola de plataforma (solo el dueño del sistema):** define `PLATAFORMA_TOKEN`
+> (24+ caracteres) en `apps/web/.env`, reinicia y entra a **http://localhost:3000/plataforma**
+> con esa clave. Ahí das de alta negocios con su giro (y catálogo de ejemplo),
+> los suspendes/reactivas y restableces la contraseña de su administradora.
+> Cuando hay más de un negocio, en `/login` hay que escribir el **código del negocio**
+> (el de la semilla es `default`).
+
 > Si el puerto `3000` está ocupado, ciérralo primero:
 > ```powershell
 > Get-NetTCPConnection -LocalPort 3000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }

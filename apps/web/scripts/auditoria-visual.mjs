@@ -8,7 +8,7 @@
 // la base de pruebas (usuario admin del seed). Sale con código 1 si hay
 // hallazgos, para usarla en CI.
 //
-// Variables: BASE, PAGINAS (coma), TEMAS (coma), ANCHOS (coma),
+// Variables: BASE, NEGOCIO (código), PAGINAS (coma), TEMAS (coma), ANCHOS (coma),
 //            USUARIO, CLAVE, PLAYWRIGHT_CHANNEL (msedge en Windows).
 // ============================================================
 import { chromium } from "@playwright/test";
@@ -78,7 +78,7 @@ const browser = await chromium.launch(channel ? { channel } : {});
 const page = await (await browser.newContext()).newPage();
 await page.goto(`${base}/login`);
 const login = await page.request.post(`${base}/api/auth/login`, {
-  data: { username: process.env.USUARIO ?? "admin", password: process.env.CLAVE ?? "admin123" },
+  data: { negocio: process.env.NEGOCIO, username: process.env.USUARIO ?? "admin", password: process.env.CLAVE ?? "admin123" },
 });
 if (!login.ok()) {
   console.error(`No se pudo iniciar sesión (${login.status()})`);

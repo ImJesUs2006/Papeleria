@@ -39,7 +39,8 @@ export interface DatosAlertas {
 
 export interface ContextoAlertas {
   sesion: SesionPermisos;
-  flags: Pick<BusinessConfig["featureFlags"], "inventario" | "proveedores">;
+  flags: Pick<BusinessConfig["featureFlags"], "inventario" | "proveedores"> &
+    Partial<Pick<BusinessConfig["featureFlags"], "apartados" | "lotesSeries">>;
   usarCaducidad: boolean;
   diasApartado: number;
   hoy: Date;
@@ -62,12 +63,13 @@ export function puedeVer(tipo: TipoAlerta, ctx: ContextoAlertas): boolean {
     case "stock":
       return ctx.flags.inventario !== false && inventario;
     case "caducidad":
-      return ctx.usarCaducidad && inventario;
+      return ctx.usarCaducidad && ctx.flags.lotesSeries !== false && inventario;
     case "pedido":
       return ctx.flags.proveedores === true && inventario;
     case "pago":
       return ctx.flags.proveedores === true && admin;
     case "apartado":
+      return ctx.flags.apartados !== false;
     case "caja":
     case "cliente":
       return true;

@@ -33,8 +33,10 @@ import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/store/config";
 import { RecoveryHistory } from "@/components/setup/recovery-history";
 import { presetPorGiro } from "@/lib/personalizacion";
+import { resumenCatalogo } from "@/lib/catalogos-ejemplo";
 import {
   PRESETS_POR_NEGOCIO,
+  nivelModulo,
   DEFAULT_USAR_CADUCIDAD,
   DEFAULT_USAR_UBICACIONES,
   DEFAULT_REQUERIR_FONDO_INICIAL,
@@ -117,6 +119,8 @@ const FLAG_UI: Record<keyof FeatureFlags, { label: string; desc: string; icon: R
     desc: "Fotos de producto en la nube",
     icon: ImagePlus,
   },
+  lotesSeries: { label: "Lotes, series y variantes", desc: "Caducidad, número de serie, tallas y colores", icon: Boxes },
+  apartados: { label: "Apartados", desc: "Anticipo y liquidación posterior", icon: ShieldCheck },
 };
 
 const PASOS = ["tipo", "pagos", "modulos", "resumen"] as const;
@@ -142,6 +146,8 @@ export function SetupWizard() {
   // capturado al volver a correr el asistente).
   const [nombre, setNombre] = useState(configActual?.nombreNegocio ?? "");
   const [preciosConIva, setPreciosConIva] = useState(configActual?.preciosIncluyenIva ?? true);
+  // Productos de ejemplo del giro (opcional): para probar sin capturar nada.
+  const [conEjemplos, setConEjemplos] = useState(false);
   useEffect(() => {
     if (!configActual) return;
     setNombre((n) => n || configActual.nombreNegocio || "");
@@ -155,6 +161,7 @@ export function SetupWizard() {
     const p = PRESETS_POR_NEGOCIO[t];
     setMetodos([...p.metodosPago]);
     setFlags({ ...p.featureFlags });
+    setConEjemplos(false);
     setError(null);
   };
 
@@ -217,6 +224,14 @@ export function SetupWizard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar");
+      if (conEjemplos) {
+        const ej = await fetch("/api/setup/catalogo-ejemplo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tipoNegocio: tipo }),
+        });
+        if (!ej.ok) throw new Error("Se guardó la configuración, pero no se pudo cargar el catálogo de ejemplo");
+      }
       await refreshConfig();
       router.replace("/cobro");
       router.refresh();
@@ -365,7 +380,7 @@ export function SetupWizard() {
                 subtitulo="Precargados según tu tipo de negocio; puedes ajustarlos."
               >
                 <div className="space-y-2">
-                  {FLAG_KEYS.map((k) => {
+                  {FLAG_KEYS.filter((k) => nivelModulo(tipo!, k) !== "no_aplica").map((k) => {
                     const meta = FLAG_UI[k];
                     const Icon = meta.icon;
                     const activo = flags[k];
@@ -419,6 +434,36 @@ export function SetupWizard() {
                     label="Módulos activos"
                     value={FLAG_KEYS.filter((k) => flags[k]).length + " de " + FLAG_KEYS.length}
                   />
+                  {(() => {
+                    const r = resumenCatalogo(tipo);
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setConEjemplos((v) => !v)}
+                        aria-pressed={conEjemplos}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-xl border bg-surface-700 p-3 text-left transition-all",
+                          conEjemplos ? "border-neon-green/50" : "border-surface-500"
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-gray-100">Cargar productos de ejemplo de {TIPO_UI[tipo].label}</p>
+                          <p className="text-[11px] text-muted">
+                            {r.productos} productos en {r.categorias} categorías (p. ej. {r.ejemplos.slice(0, 2).join(", ")}).
+                            Sus códigos empiezan con EJ- para borrarlos cuando captures los tuyos.
+                          </p>
+                        </div>
+                        <div
+                          className={cn(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
+                            conEjemplos ? "border-neon-green bg-neon-green" : "border-surface-400"
+                          )}
+                        >
+                          {conEjemplos && <Check className="h-3 w-3 text-btn-ink" />}
+                        </div>
+                      </button>
+                    );
+                  })()}
                   <div className="flex flex-wrap gap-2">
                     {metodos.map((m) => {
                       const Icon = METODO_UI[m].icon;

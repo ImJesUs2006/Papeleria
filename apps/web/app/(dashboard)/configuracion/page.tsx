@@ -36,6 +36,7 @@ import {
   METODOS_PAGO_DISPONIBLES,
   VALID_FLAG_KEYS,
   MODULOS_INFO,
+  nivelModulo,
   PRESETS_POR_NEGOCIO,
   DEFAULT_FEATURE_FLAGS,
   TEMAS_BASE,
@@ -854,13 +855,32 @@ const guardar = async () => {
               recomendado para el giro. Cambia el giro en &quot;Identidad y Tema&quot;.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={aplicarPlantilla}
-            className="shrink-0 rounded-xl border border-acento/50 px-4 py-2 text-sm font-bold text-acento hover:bg-acento/10"
-          >
-            Aplicar plantilla
-          </button>
+          <div className="flex shrink-0 flex-col gap-2">
+            <button
+              type="button"
+              onClick={aplicarPlantilla}
+              className="rounded-xl border border-acento/50 px-4 py-2 text-sm font-bold text-acento hover:bg-acento/10"
+            >
+              Aplicar plantilla
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!window.confirm(`¿Cargar los productos de ejemplo de ${TIPO_NEGOCIO[config.tipoNegocio]}? Sus códigos empiezan con EJ- y no se duplican.`)) return;
+                const r = await fetch("/api/setup/catalogo-ejemplo", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ tipoNegocio: config.tipoNegocio }),
+                });
+                const d = await r.json().catch(() => ({}));
+                if (r.ok) notificar.exito("Catálogo de ejemplo cargado", `${d.productos} productos y ${d.categorias} categorías nuevas`);
+                else notificar.error("No se cargó el catálogo de ejemplo", d.error);
+              }}
+              className="rounded-xl border border-surface-500 px-4 py-2 text-xs font-semibold text-muted hover:text-gray-100"
+            >
+              Cargar productos de ejemplo
+            </button>
+          </div>
         </div>
       <div>
         <span className="text-xs text-muted mb-2 block">Módulos activos</span>
@@ -889,7 +909,26 @@ const guardar = async () => {
                 {config.featureFlags[flag] && <Check className="h-3 w-3 text-btn-ink" />}
               </span>
               <span className="min-w-0">
-                <span className="block font-semibold">{MODULOS_INFO[flag].label}</span>
+                <span className="flex flex-wrap items-center gap-1.5 font-semibold">
+                  {MODULOS_INFO[flag].label}
+                  {(() => {
+                    const nivel = nivelModulo(config.tipoNegocio, flag);
+                    return (
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider",
+                          nivel === "recomendado"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : nivel === "opcional"
+                              ? "bg-surface-600 text-muted"
+                              : "bg-rose-500/10 text-rose-300"
+                        )}
+                      >
+                        {nivel === "recomendado" ? "Recomendado" : nivel === "opcional" ? "Opcional" : "No aplica"}
+                      </span>
+                    );
+                  })()}
+                </span>
                 <span className="block text-[11px] leading-snug text-muted">{MODULOS_INFO[flag].desc}</span>
               </span>
             </button>

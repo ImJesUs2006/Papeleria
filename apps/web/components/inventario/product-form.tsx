@@ -23,7 +23,7 @@ import {
 import { EscalaError, validarEscalas, type EscalaPrecio } from "@/lib/precios";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
 import { cn } from "@/lib/utils";
-import { usePersonalizacion } from "@/store/config";
+import { useConfigStore, usePersonalizacion } from "@/store/config";
 
 const TIPO_IMPRESION_LABELS: Record<(typeof TIPO_IMPRESION_OPCIONES)[number], string> = {
   BLANCO_NEGRO: "Blanco y negro",
@@ -206,6 +206,8 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
   const [serverError, setServerError] = useState<string | null>(null);
   // Personalización del giro: vocabulario y campos propios del producto.
   const personalizacion = usePersonalizacion();
+  // Módulo "Lotes, series y variantes" apagado: no se ofrecen esas opciones.
+  const usaLotesSeries = useConfigStore((s) => s.config?.featureFlags?.lotesSeries !== false);
   const camposGiro = personalizacion.camposProducto;
   const [atributos, setAtributos] = useState<Record<string, string>>({});
   const [escalas, setEscalas] = useState<FilaEscala[]>([]);
@@ -701,6 +703,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   </span>
                 </span>
               </label>
+              {usaLotesSeries && (<>
               <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-amber-400/40 transition-colors">
                 <input type="checkbox" {...register("usaLotes")} className="mt-0.5 rounded accent-amber-400" />
                 <span>
@@ -719,6 +722,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   </span>
                 </span>
               </label>
+              </>)}
             </div>
           </div>
         </div>

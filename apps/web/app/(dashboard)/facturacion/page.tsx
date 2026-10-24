@@ -236,6 +236,8 @@ function extractConfig(raw: any): BusinessConfig {
       bitacora: flags.bitacora === true,
       recargas: flags.recargas === true,
       imagenesCloudinary: flags.imagenesCloudinary === true,
+      lotesSeries: flags.lotesSeries !== false,
+      apartados: flags.apartados !== false,
     },
     metodosPago: Array.isArray(raw?.metodosPago) ? raw.metodosPago : ["EFECTIVO", "TRANSFERENCIA"],
     politicaStockOffline:

@@ -242,6 +242,8 @@ const FLAG_TO_MODULO: Record<keyof FeatureFlags, string> = {
   bitacora: "Bitácora",
   recargas: "Recargas",
   imagenesCloudinary: "Imágenes en la nube",
+  lotesSeries: "Lotes, series y variantes",
+  apartados: "Apartados",
 };
 
 /** Middleware de flag: deniega si el módulo no está habilitado en el negocio. */

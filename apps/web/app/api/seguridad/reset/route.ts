@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { compare } from "bcryptjs";
-import { requireAuth } from "@/lib/auth";
+import { MENSAJE_SOLO_DUENO_REAL, requireAuth } from "@/lib/auth";
 import { actuaComoDueno } from "@/lib/usuarios";
 import { resetNegocio, MOTIVO_REINICIO } from "@/lib/snapshots";
 import { tenantDb } from "@/lib/tenant";
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  if (auth.user.soporte) return NextResponse.json({ error: MENSAJE_SOLO_DUENO_REAL }, { status: 403 });
   const prisma = tenantDb(auth.user.idNegocio);
   const session = auth.user;
 

@@ -136,11 +136,16 @@ describe("tenant · ninguna ruta usa el cliente global", () => {
       "app/api/plataforma/negocios/route.ts",
       "app/api/plataforma/negocios/[id]/route.ts",
       "app/api/plataforma/negocios/[id]/setup/route.ts",
+      "app/api/plataforma/negocios/[id]/soporte/route.ts",
       "app/api/plataforma/tablero/route.ts",
       "app/api/plataforma/exportar/route.ts",
       "app/api/plataforma/bitacora/route.ts",
       "app/api/plataforma/bitacora/purgar/route.ts",
       "lib/plataforma.ts",
+      // Cuenta del negocio (tabla negocios) y recuperación de contraseña (sin sesión).
+      "lib/negocio-cuenta.ts",
+      "lib/recuperacion.ts",
+      "app/api/auth/recuperar/route.ts",
       "lib/auth.ts",
       "lib/tenant.ts",
     ].map((p) => p.split("/").join(sep))

@@ -8,6 +8,7 @@ import { ArrowRight, CheckCircle2, Circle, ListChecks, MessageCircleQuestion, Ro
 import { useAuthStore } from "@/store/auth";
 import { pasosDe, TEMA_GENERAL, temaPara, type Pregunta, type Progreso } from "@/lib/ayudante";
 import { cn } from "@/lib/utils";
+import { ContactoSoporteAyudante } from "@/components/ayudante/contacto-soporte";
 
 // ============================================================
 // Ayudante (mascota) con guiones: se abre desde el pie del menú, habla
@@ -296,6 +297,7 @@ export function Ayudante() {
                 </ol>
               </div>
             )}
+            <ContactoSoporteAyudante />
           </motion.section>
         )}
       </AnimatePresence>

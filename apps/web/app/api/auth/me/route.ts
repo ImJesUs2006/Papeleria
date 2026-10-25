@@ -40,6 +40,9 @@ export async function GET() {
       permisoReportes: session.permisoReportes ?? true,
       isRoot,
       canPurge,
+      // Sesión abierta por el soporte de la plataforma (y cuándo vence).
+      soporte: session.soporte === true,
+      soporteHasta: session.soporte && session.exp ? new Date(session.exp * 1000).toISOString() : null,
     });
   } catch {
     return NextResponse.json(

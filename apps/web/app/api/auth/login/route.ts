@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
 import { compare } from "bcryptjs";
-import { signToken } from "@/lib/auth";
+import { getSession, signToken } from "@/lib/auth";
 import { limpiarIntentos, registrarFallo, segundosBloqueado } from "@/lib/rate-limit";
 import { tenantDb } from "@/lib/tenant";
 import { claveUsuario } from "@/lib/tenant-keys";
@@ -163,6 +163,13 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
+  // El soporte de la plataforma deja constancia de que salió.
+  const sesion = await getSession().catch(() => null);
+  if (sesion?.soporte) {
+    await tenantDb(sesion.idNegocio)
+      .bitacoraLog.create({ data: { accion: "Soporte técnico salió del negocio", moduloSistema: "SEGURIDAD" } })
+      .catch(() => {});
+  }
   const response = NextResponse.json({ ok: true });
   response.cookies.delete("papeleria_token");
   return response;

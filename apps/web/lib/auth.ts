@@ -37,10 +37,14 @@ export async function getSession(): Promise<AuthPayload | null> {
       permisoInventario: true,
       permisoReportes: true,
       isRoot: true,
+      passwordCambiadaEn: true,
     },
   });
   // Negocio suspendido ⇒ nadie de ese negocio opera.
   if (!user || !user.activa || !user.negocio?.activo) return null;
+  // Un cambio de contraseña cierra las sesiones abiertas con la anterior
+  // (recuperación de cuenta, restablecimiento por la administradora).
+  if (sesionAnteriorAlCambio(payload.iat, user.passwordCambiadaEn)) return null;
 
   return {
     ...payload,
@@ -66,6 +70,12 @@ export async function getSession(): Promise<AuthPayload | null> {
  * también pasa quien tenga ese permiso de módulo (perfiles / permisos
  * granulares): p. ej. un encargado de almacén con permiso de inventario.
  */
+/** ¿El token se emitió antes del último cambio de contraseña? (1 s de tolerancia) */
+export function sesionAnteriorAlCambio(iat: number | undefined, cambio: Date | null | undefined): boolean {
+  if (!iat || !cambio) return false;
+  return iat * 1000 < cambio.getTime() - 1000;
+}
+
 /** Cookie con la sucursal que eligió la administradora para operar. */
 export const COOKIE_SUCURSAL = "papeleria_sucursal";
 
@@ -148,3 +158,5 @@ export function hasPermission(rol: string, permission: string): boolean {
   if (rol === "ADMINISTRADORA") return true;
   return PERMISSIONS[rol]?.includes(permission) ?? false;
 }
+/** Respuesta para acciones que el soporte de la plataforma no puede hacer. */
+export const MENSAJE_SOLO_DUENO_REAL = "No disponible en modo soporte: solo el dueño(a) puede hacerlo desde su propia cuenta";

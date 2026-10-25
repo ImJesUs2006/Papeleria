@@ -7,6 +7,7 @@ import { RolError, validarGestion } from "@/lib/roles";
 import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { tenantDb } from "@/lib/tenant";
 import { esObjetoJson } from "@/lib/validacion";
+import { correoValido } from "@/lib/correo";
 
 // ============================================================
 // /api/usuarios/[id]  (solo ADMINISTRADORA)
@@ -49,6 +50,15 @@ export async function PATCH(
     const nombre = String(body.nombre).trim();
     if (!nombre) return NextResponse.json({ error: "Nombre inválido" }, { status: 400 });
     data.nombre = nombre;
+  }
+
+  // Correo para recuperar la contraseña ("" o null lo quita).
+  if (body.email !== undefined) {
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (email && !correoValido(email)) {
+      return NextResponse.json({ error: "Correo inválido" }, { status: 400 });
+    }
+    data.email = email || null;
   }
 
   if (body.rol !== undefined) {
@@ -169,6 +179,7 @@ export async function PATCH(
           permisoReportes: true,
           idPerfil: true,
           perfil: { select: { nombre: true } },
+          email: true,
           idSucursal: true,
           ultimoLoginAt: true,
         },

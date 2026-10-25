@@ -7,6 +7,7 @@ import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { esObjetoJson } from "@/lib/validacion";
 import { actuaComoDueno } from "@/lib/usuarios";
 import { RolError, validarGestion } from "@/lib/roles";
+import { correoValido } from "@/lib/correo";
 
 // ============================================================
 // /api/usuarios  (solo ADMINISTRADORA)
@@ -38,6 +39,7 @@ export async function GET() {
       idPerfil: true,
       perfil: { select: { nombre: true } },
       idSucursal: true,
+      email: true,
       isRoot: true,
       ultimoLoginAt: true,
       passwordCambiadaEn: true,
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
   const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
   const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   let rol = typeof body.rol === "string" ? body.rol : "";
   // Con perfil, el rol base y los permisos salen del perfil.
   let desdePerfil: Awaited<ReturnType<typeof datosPorPerfil>> | null = null;
@@ -97,6 +100,9 @@ export async function POST(request: Request) {
   }
   if (password.length < 8) {
     return NextResponse.json({ error: "La contraseña debe tener al menos 8 caracteres" }, { status: 400 });
+  }
+  if (email && !correoValido(email)) {
+    return NextResponse.json({ error: "Correo inválido" }, { status: 400 });
   }
   if (!ROLES.includes(rol)) {
     return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
@@ -152,6 +158,7 @@ export async function POST(request: Request) {
           permisoReportes,
           idPerfil: desdePerfil?.idPerfil ?? null,
           idSucursal: idSucursal ?? null,
+          email: email || null,
           passwordCambiadaEn: new Date(),
         },
         select: {

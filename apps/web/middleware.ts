@@ -4,6 +4,14 @@ import { verifyToken } from "@/lib/jwt";
 
 const PUBLIC_PATHS = [
   "/api/auth/login",
+  // Recuperar la contraseña (Fase H): sin sesión, con enlace de un solo uso.
+  "/api/auth/recuperar",
+  "/api/auth/restablecer",
+  "/recuperar",
+  // Avisos legales y contacto de soporte: se leen antes de entrar.
+  "/privacidad",
+  "/terminos",
+  "/api/soporte",
   "/api/negocios",
   // Alta de negocios: se autoriza con el token de plataforma, no con sesión.
   "/plataforma",
@@ -83,6 +91,7 @@ export async function middleware(request: NextRequest) {
         "/api/configuracion",
         "/api/bitacora",
         "/api/seguridad",
+        "/api/respaldo",
         "/api/facturas",
         "/setup",
         "/configuracion",

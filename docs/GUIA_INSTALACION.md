@@ -186,6 +186,46 @@ negocio, igual que en esta guía: Docker con la base de datos + `npm run build` 
 Las cajas de la tienda entran por la red local a `http://<ip-de-esa-pc>:3000`. Esa instalación
 es independiente: no se sincroniza con un servidor en la nube (sería un proyecto aparte).
 
+### 6.3. Correo, soporte y avisos legales (antes de vender)
+
+Todo es opcional y se configura en `apps/web/.env` (ver ejemplos en `apps/web/.env.example`):
+
+| Para qué | Variables | Si no se definen |
+|---|---|---|
+| «¿Olvidaste tu contraseña?» por correo | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `CORREO_REMITENTE`, `URL_PUBLICA` | La pantalla de recuperación pide acudir a la administradora. En desarrollo el enlace aparece en la consola del servidor. |
+| Contacto de soporte en el login y el Ayudante | `SOPORTE_WHATSAPP`, `SOPORTE_CORREO`, `SOPORTE_HORARIO` | No se muestra. |
+| Datos del responsable en `/privacidad` y `/terminos` | `LEGAL_RESPONSABLE`, `LEGAL_DOMICILIO`, `LEGAL_CORREO` | Texto genérico. |
+
+> El aviso de privacidad y los términos son **una plantilla**: revísalos con un abogado
+> antes de vender. Están en `apps/web/lib/legal.ts`; si cambias el fondo, sube
+> `VERSION_LEGAL` y cada dueño(a) los volverá a aceptar al entrar.
+
+Cada usuario puede tener un **correo** (Configuración → Usuarios, icono de sobre) para
+recuperar su contraseña sola. El enlace vale 1 hora, sirve una vez y cierra las sesiones
+abiertas con la contraseña anterior.
+
+**Entrar como soporte:** en la consola, ficha del negocio → *Entrar como soporte* abre una
+sesión de 1 hora como su dueño(a), con un aviso visible y registrada en su bitácora. El dueño(a)
+puede bloquearlo en Configuración → Seguridad y datos.
+
+### 6.4. Respaldos
+
+- **Del servidor (todos los negocios):** `npm run db:respaldo` guarda un `.dump` comprimido en
+  `backups/` (o en `RESPALDOS_DIR`) y conserva los 14 más recientes. Usa `pg_dump` si está
+  instalado o, si no, el del contenedor de Docker. Para hacerlo diario en Windows, una sola vez:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File packages\database\scripts\programar-respaldo.ps1 -Hora "23:30"
+  ```
+  Conviene que `RESPALDOS_DIR` sea una carpeta sincronizada (OneDrive, Google Drive) para tener
+  una copia fuera de la computadora. En un hosting con base de datos administrada (Neon,
+  Supabase, Railway…) activa además sus respaldos automáticos.
+- **Restaurar** (borra lo actual y deja la base como en el respaldo):
+  ```powershell
+  cmd /c "docker exec -i papeleria-db pg_restore --clean --if-exists -U papeleria -d papeleria_db < backups\respaldo-papeleria_db-AAAAMMDD-HHMM.dump"
+  ```
+- **De cada negocio:** el dueño(a) descarga un Excel con productos, clientes, proveedores,
+  ventas y usuarios en Configuración → Seguridad y datos → *Descargar respaldo*.
+
 ## 7. Correr las pruebas (opcional)
 
 ```powershell

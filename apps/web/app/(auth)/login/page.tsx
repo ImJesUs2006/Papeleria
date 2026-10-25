@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { PieLegal } from "@/components/pie-legal";
 
 export default function LoginScreen() {
   // Código del negocio (multi-tenant). Opcional si la instalación tiene uno solo;
@@ -196,11 +198,14 @@ export default function LoginScreen() {
               </motion.button>
             </motion.div>
           </form>
+          <p className="mt-4 text-center text-sm">
+            <Link href="/recuperar" className="font-semibold text-acento hover:underline" data-testid="olvide-clave">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </p>
         </motion.div>
 
-        <p className="text-center text-xs text-muted mt-4">
-          Contacta al administrador para obtener credenciales
-        </p>
+        <PieLegal />
       </motion.div>
     </div>
   );

@@ -12,6 +12,17 @@ export async function login(page: Page, username = "admin", password = "admin123
   await page.getByRole("button", { name: "Ingresar" }).click();
   await page.waitForURL(/\/(cobro|setup)/);
   await completarSetupSiEsNecesario(page);
+  await aceptarTerminosSiSePiden(page);
+}
+
+// El dueño(a) acepta términos y aviso de privacidad la primera vez (Fase H).
+export async function aceptarTerminosSiSePiden(page: Page) {
+  const aviso = page.getByTestId("aceptar-legal");
+  if (await aviso.waitFor({ timeout: 3000 }).then(() => true, () => false)) {
+    await page.getByTestId("leido-legal").check();
+    await page.getByTestId("aceptar-legal-boton").click();
+    await aviso.waitFor({ state: "hidden" });
+  }
 }
 
 // Primer arranque: la administradora define tipo de negocio, pagos y módulos.

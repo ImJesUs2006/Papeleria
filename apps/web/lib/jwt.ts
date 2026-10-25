@@ -14,6 +14,9 @@ export interface AuthPayload extends JWTPayload {
   permisoReportes?: boolean;
   /** Dueño(a) del negocio (Fase F). Lo resuelve getSession desde la BD. */
   isRoot?: boolean;
+  /** Sesión abierta por el soporte de la plataforma (Fase H): dura 1 h y no
+   *  puede hacer acciones irreversibles del dueño(a). */
+  soporte?: boolean;
 }
 
 const DEV_SECRET = "dev-only-insecure-secret";
@@ -38,11 +41,11 @@ function getSecret(): Uint8Array {
 
 const EXPIRES_IN = process.env.JWT_EXPIRES_IN || "8h";
 
-export async function signToken(payload: Omit<AuthPayload, "iat" | "exp">) {
+export async function signToken(payload: Omit<AuthPayload, "iat" | "exp">, duracion: string = EXPIRES_IN) {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(EXPIRES_IN)
+    .setExpirationTime(duracion)
     .sign(getSecret());
 }
 

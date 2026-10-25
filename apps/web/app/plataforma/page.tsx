@@ -18,6 +18,7 @@ import {
   Crown,
   Download,
   KeyRound,
+  LifeBuoy,
   Loader2,
   LogOut,
   PauseCircle,
@@ -480,6 +481,8 @@ interface Ficha {
     nombre: string;
     activo: boolean;
     creado: string;
+    permitirSoporte: boolean;
+    terminosAceptadosEn: string | null;
     giro: TipoNegocio | null;
     setupPendiente: boolean;
     modulos: string[];
@@ -582,7 +585,36 @@ function FichaNegocio({ idNegocio, onClose, onCambio }: { idNegocio: string; onC
                 {n.activo ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
                 {n.activo ? "Suspender negocio" : "Reactivar negocio"}
               </button>
+              <button
+                type="button"
+                data-testid="entrar-soporte"
+                disabled={!n.activo || !n.permitirSoporte}
+                title={n.permitirSoporte ? "Abre el negocio como su dueño(a) durante 1 hora" : "El negocio no permite el acceso de soporte"}
+                onClick={async () => {
+                  const ok = await confirmar({
+                    titulo: `¿Entrar a ${n.nombre} como soporte?`,
+                    mensaje:
+                      "Se abre una sesión de 1 hora como su dueño(a), con un aviso visible. No podrás transferir la propiedad, reiniciar el sistema ni purgar la bitácora. La entrada queda registrada en la bitácora del negocio.",
+                    aceptar: "Entrar",
+                  });
+                  if (!ok) return;
+                  const r = await fetch(`/api/plataforma/negocios/${idNegocio}/soporte`, { method: "POST" });
+                  const d = await r.json().catch(() => ({}));
+                  if (!r.ok) return setError(d.error || "No se pudo entrar");
+                  window.open(d.destino || "/dashboard", "_blank");
+                  cargar();
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-500/40 px-3 py-2 text-sm font-bold text-amber-300 hover:bg-amber-500/10 disabled:opacity-40"
+              >
+                <LifeBuoy className="h-4 w-4" /> Entrar como soporte
+              </button>
             </div>
+            <p className="text-xs text-muted">
+              {n.permitirSoporte ? "El negocio permite el acceso de soporte." : "El dueño(a) bloqueó el acceso de soporte."}{" "}
+              {n.terminosAceptadosEn
+                ? `Términos aceptados el ${new Date(n.terminosAceptadosEn).toLocaleDateString("es-MX")}.`
+                : "Aún no acepta los términos vigentes."}
+            </p>
 
             <section>
               <h3 className="mb-2 text-sm font-bold text-gray-100">Módulos encendidos</h3>

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Crown,
   Check,
+  Mail,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { SkeletonTable } from "@/components/ui/skeleton";
@@ -36,6 +37,7 @@ interface Usuario {
   idSucursal?: string | null;
   ultimoLoginAt: string | null;
   isRoot?: boolean;
+  email?: string | null;
 }
 
 // Errores y confirmaciones salen como notificaciones deslizantes.
@@ -130,6 +132,21 @@ export function UserManagement() {
     } finally {
       setAccionando(null);
     }
+  };
+
+  // Correo para que la persona recupere su contraseña sola.
+  const editarCorreo = async (u: Usuario) => {
+    const email = await pedirTexto({
+      titulo: `Correo de ${u.nombre}`,
+      mensaje: "Sirve para que recupere su contraseña con «¿Olvidaste tu contraseña?». Déjalo vacío para quitarlo.",
+      etiqueta: "Correo electrónico",
+      valorInicial: u.email ?? "",
+      placeholder: "nombre@correo.com",
+      aceptar: "Guardar",
+      validar: (v) => (v && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? "Correo inválido" : null),
+    });
+    if (email === null) return;
+    await cambiar(u, { email: email || null });
   };
 
   // Transferir la propiedad: confirma con la contraseña del dueño(a) actual.
@@ -394,6 +411,19 @@ export function UserManagement() {
                       )}
                       {!bloqueado(u) && (
                       <button
+                        onClick={() => editarCorreo(u)}
+                        className={cn(
+                          "h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-cyan/10 flex items-center justify-center hover:text-neon-cyan transition-colors",
+                          u.email ? "text-neon-cyan" : "text-muted"
+                        )}
+                        title={u.email ? `Correo: ${u.email}` : "Agregar correo para recuperar la contraseña"}
+                        aria-label={`Correo de ${u.nombre}`}
+                      >
+                        <Mail className="h-4 w-4" />
+                      </button>
+                      )}
+                      {!bloqueado(u) && (
+                      <button
                         onClick={() => setModalPass(u)}
                         className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-cyan/10 flex items-center justify-center text-muted hover:text-neon-cyan transition-colors"
                         title="Cambiar contraseña"
@@ -502,6 +532,7 @@ function NuevoUsuarioModal({
   const [nombre, setNombre] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [rol, setRol] = useState<"ADMINISTRADORA" | "CAJERA">("CAJERA");
   const [permisoCobrar, setPermisoCobrar] = useState(true);
   // Una cajera nueva cobra, pero no entra a inventario ni reportes.
@@ -516,6 +547,7 @@ function NuevoUsuarioModal({
       setNombre("");
       setUsername("");
       setPassword("");
+      setEmail("");
       setRol("CAJERA");
       setPermisoCobrar(true);
       setPermisoInventario(false);
@@ -534,6 +566,7 @@ function NuevoUsuarioModal({
           nombre,
           username,
           password,
+          email: email.trim() || null,
           rol,
           permisoCobrar,
           permisoInventario,
@@ -574,6 +607,16 @@ function NuevoUsuarioModal({
             className="input-dark"
             placeholder="••••••••"
             autoComplete="new-password"
+          />
+        </Campo>
+        <Campo label="Correo (opcional, para recuperar la contraseña)">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="input-dark"
+            placeholder="ana@correo.com"
+            autoComplete="off"
           />
         </Campo>
         {perfiles.length > 0 && (

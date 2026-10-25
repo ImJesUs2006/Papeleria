@@ -13,6 +13,8 @@ import { useAuthStore } from "@/store/auth";
 import { MODULOS_INFO, type FeatureFlags } from "@/lib/business-types";
 import { NotificacionesHost } from "@/components/notificaciones";
 import { DialogoHost } from "@/components/dialogo-host";
+import { AceptarLegal } from "@/components/aceptar-legal";
+import { BannerSoporte } from "@/components/layout/banner-soporte";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const hydrateConfig = useConfigStore((s) => s.hydrate);
@@ -35,6 +37,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto bg-app">
+          <BannerSoporte />
           <OfflineIndicator />
           {/* Solo entrada (sin esperar la salida de la página anterior): el
               módulo nuevo aparece en cuanto está listo. */}
@@ -58,6 +61,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </div>
       <NotificacionesHost />
       <DialogoHost />
+      <AceptarLegal />
     </AuthGuard>
   );
 }

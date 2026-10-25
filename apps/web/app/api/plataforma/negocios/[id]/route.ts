@@ -136,6 +136,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       nombre: negocio.configuracion?.nombreNegocio || negocio.nombre,
       activo: negocio.activo,
       creado: negocio.createdAt,
+      permitirSoporte: negocio.permitirSoporte,
+      terminosAceptadosEn: negocio.terminosAceptadosEn,
       giro: negocio.configuracion?.tipoNegocio ?? null,
       setupPendiente: negocio.configuracion?.setupPendiente ?? true,
       modulos: Object.entries((negocio.configuracion?.featureFlags as Record<string, boolean> | null) ?? {})

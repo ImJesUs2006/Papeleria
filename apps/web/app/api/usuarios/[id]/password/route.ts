@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { hash, compare } from "bcryptjs";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, signToken } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { esObjetoJson } from "@/lib/validacion";
 import { actuaComoDueno } from "@/lib/usuarios";
@@ -95,7 +95,28 @@ export async function POST(
       });
     });
 
-    return NextResponse.json({ ok: true });
+    const res = NextResponse.json({ ok: true });
+    // Las sesiones previas al cambio dejan de valer; quien cambió la suya
+    // sigue trabajando con una sesión nueva.
+    if (esPropia) {
+      const token = await signToken({
+        idPersona: user.idPersona,
+        idNegocio: user.idNegocio,
+        nombre: user.nombre,
+        rol: user.rol,
+        permisoCobrar: user.permisoCobrar ?? true,
+        permisoInventario: user.permisoInventario ?? true,
+        permisoReportes: user.permisoReportes ?? true,
+      });
+      res.cookies.set("papeleria_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 8 * 60 * 60,
+      });
+    }
+    return res;
   } catch {
     return NextResponse.json({ error: "Error al cambiar contraseña" }, { status: 500 });
   }

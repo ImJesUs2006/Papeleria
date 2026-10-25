@@ -15,6 +15,7 @@ import {
   Landmark,
   Store,
   Printer,
+  ShieldCheck,
   Boxes,
   FileText,
   Coins,
@@ -63,6 +64,7 @@ import { notificar } from "@/store/notificaciones";
 import { aDataUrlReducida, leerConfigCloudinary, subirACloudinary } from "@/lib/imagenes-cliente";
 import { confirmar } from "@/store/dialogo";
 import { ImpuestosPanel } from "@/components/configuracion/impuestos-panel";
+import { SeguridadDatos } from "@/components/configuracion/seguridad-datos";
 
 
 /** Tamaño máximo del logo en bytes (base64 ≈ 1 MB). */
@@ -213,11 +215,11 @@ function normalizePuntosConfigLocal(raw: any): PuntosConfig {
 
 export default function ConfiguracionPage() {
   const { nombre, rol } = useAuthStore();
-  const [tab, setTab] = useState<"usuarios" | "negocio" | "equipo">("usuarios");
+  const [tab, setTab] = useState<"usuarios" | "negocio" | "equipo" | "seguridad">("usuarios");
   // Enlaces directos: /configuracion?tab=negocio&seccion=financiero
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "negocio" || t === "equipo" || t === "usuarios") setTab(t);
+    if (t === "negocio" || t === "equipo" || t === "usuarios" || t === "seguridad") setTab(t);
   }, []);
 
   return (
@@ -243,6 +245,7 @@ export default function ConfiguracionPage() {
               { id: "usuarios", label: "Usuarios", icon: Users },
               { id: "negocio", label: "Negocio", icon: Settings2 },
               { id: "equipo", label: "Este equipo", icon: Printer },
+              { id: "seguridad", label: "Seguridad y datos", icon: ShieldCheck },
             ] as const
           ).map(({ id, label, icon: Icon }) => (
             <button
@@ -276,6 +279,17 @@ export default function ConfiguracionPage() {
               <MiCuentaPanel />
               <ErrorBoundary label="la gestión de usuarios">
                 <UserManagement />
+              </ErrorBoundary>
+            </motion.div>
+          ) : tab === "seguridad" ? (
+            <motion.div
+              key="seguridad"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <ErrorBoundary label="seguridad y datos">
+                <SeguridadDatos />
               </ErrorBoundary>
             </motion.div>
           ) : tab === "equipo" ? (

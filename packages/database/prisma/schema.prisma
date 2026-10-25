@@ -95,13 +95,20 @@ enum TipoMovimientoKardex {
 // ============================================================
 
 model Negocio {
-  idNegocio String   @id @default(uuid())
+  idNegocio            String    @id @default(uuid())
   // Código corto con el que el personal inicia sesión (ej. "papeleria-centro").
-  codigo    String   @unique
-  nombre    String
+  codigo               String    @unique
+  nombre               String
   // false = negocio suspendido: nadie de ese negocio puede iniciar sesión.
-  activo    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  activo               Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  // ---- Fase H: términos aceptados y acceso de soporte ----
+  // Versión de términos y aviso de privacidad que aceptó el dueño(a).
+  terminosVersion      String?
+  terminosAceptadosEn  DateTime?
+  terminosAceptadosPor String?
+  // El dueño(a) decide si el soporte de la plataforma puede entrar a su negocio.
+  permitirSoporte      Boolean   @default(true)
 
   configuracion      ConfiguracionNegocio?
   usuarios           Usuario[]
@@ -160,6 +167,8 @@ model Usuario {
   passwordCambiadaEn DateTime?
   // Eliminado con historial: datos personales anonimizados (Fase G).
   eliminadoEn        DateTime?
+  // Correo para recuperar la contraseña (Fase H). Opcional.
+  email              String?
 
   ventas             Venta[]
   sesionesCaja       SesionCaja[]
@@ -1143,6 +1152,22 @@ model AlertaDescartada {
 // Global a propósito: registra acciones sobre los negocios (altas,
 // suspensiones, claves restablecidas) y no pertenece a ninguno.
 // ============================================================
+// Enlaces para restablecer la contraseña (Fase H). El enlace llega sin
+// sesión: se busca por el hash del token (nunca se guarda el token).
+model RecuperacionClave {
+  // Llave de arrendatario (multi-tenant): toda fila pertenece a un negocio.
+  idNegocio String
+  id        String    @id @default(uuid())
+  idPersona String
+  tokenHash String    @unique
+  expiraEn  DateTime
+  usadoEn   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([idPersona])
+  @@map("recuperaciones_clave")
+}
+
 model PlataformaLog {
   id        String   @id @default(uuid())
   fecha     DateTime @default(now())

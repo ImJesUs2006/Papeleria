@@ -2,8 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  BarChart3,
   Building2,
-  CheckCircle2,
+  Crown,
+  Download,
   KeyRound,
   Loader2,
   LogOut,
@@ -11,18 +24,23 @@ import {
   PlayCircle,
   Plus,
   RefreshCw,
+  ScrollText,
   Search,
   ShieldCheck,
+  UserCheck,
+  UserX,
   X,
 } from "lucide-react";
-import { TIPO_NEGOCIO, type TipoNegocio } from "@/lib/business-types";
-import { resumenCatalogo } from "@/lib/catalogos-ejemplo";
+import { MODULOS_INFO, TIPO_NEGOCIO, type FeatureFlags, type TipoNegocio } from "@/lib/business-types";
+import { SetupWizard } from "@/components/setup/setup-wizard";
+import { useColoresTema } from "@/hooks/use-colores-tema";
 import { cn } from "@/lib/utils";
 
 // ============================================================
-// Consola de PLATAFORMA: solo para el dueño del SaaS. Lista todos los
-// negocios con su actividad, da de alta negocios con su giro (y catálogo
-// de ejemplo), suspende/reactiva y restablece la clave de la administradora.
+// Consola de PLATAFORMA: solo para el dueño del SaaS. Tablero con gráficas,
+// lista de negocios con su ficha (usuarios, módulos, bitácora), alta de
+// negocios con el mismo asistente de configuración inicial, exportación a
+// Excel y bitácora de todo lo que se hace desde aquí.
 // ============================================================
 
 interface NegocioFila {
@@ -42,19 +60,24 @@ interface NegocioFila {
 }
 
 const dinero = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const sugerirCodigo = (nombre: string) =>
-  nombre
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40);
+const dineroCorto = (n: number) => (n >= 1000 ? `$${(n / 1000).toLocaleString("es-MX", { maximumFractionDigits: 1 })}k` : `$${Math.round(n)}`);
+const fechaHora = (f: string | null) => (f ? new Date(f).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) : "Nunca");
 
 function hace(fecha: string | null): string {
   if (!fecha) return "Sin ventas";
   const dias = Math.floor((Date.now() - new Date(fecha).getTime()) / 86_400_000);
   return dias === 0 ? "Hoy" : dias === 1 ? "Ayer" : `Hace ${dias} días`;
+}
+
+async function patch(idNegocio: string, cuerpo: object) {
+  const r = await fetch(`/api/plataforma/negocios/${idNegocio}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cuerpo),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "No se pudo completar");
+  return d;
 }
 
 export default function ConsolaPlataforma() {
@@ -63,9 +86,11 @@ export default function ConsolaPlataforma() {
   const [clave, setClave] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [negocios, setNegocios] = useState<NegocioFila[]>([]);
-  const [q, setQ] = useState("");
+  const [pestana, setPestana] = useState<"tablero" | "negocios" | "bitacora">("tablero");
   const [alta, setAlta] = useState(false);
+  const [ficha, setFicha] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
 
   const cargar = useCallback(async () => {
     const r = await fetch("/api/plataforma/negocios", { cache: "no-store" });
@@ -73,6 +98,7 @@ export default function ConsolaPlataforma() {
     const d = await r.json();
     setNegocios(d.negocios ?? []);
     setEstado("dentro");
+    setVersion((v) => v + 1);
   }, []);
 
   useEffect(() => {
@@ -104,31 +130,6 @@ export default function ConsolaPlataforma() {
     setNegocios([]);
     setEstado("login");
   };
-
-  const accion = async (n: NegocioFila, cuerpo: object, exito: string) => {
-    const r = await fetch(`/api/plataforma/negocios/${n.idNegocio}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cuerpo),
-    });
-    const d = await r.json().catch(() => ({}));
-    setAviso(r.ok ? exito : d.error || "No se pudo completar");
-    cargar();
-  };
-
-  const visibles = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    return t ? negocios.filter((n) => `${n.nombre} ${n.codigo}`.toLowerCase().includes(t)) : negocios;
-  }, [negocios, q]);
-  const totales = useMemo(
-    () => ({
-      activos: negocios.filter((n) => n.activo).length,
-      suspendidos: negocios.filter((n) => !n.activo).length,
-      pendientes: negocios.filter((n) => n.setupPendiente).length,
-      importe: negocios.reduce((s, n) => s + n.importe30, 0),
-    }),
-    [negocios]
-  );
 
   if (estado === "cargando") {
     return (
@@ -191,14 +192,20 @@ export default function ConsolaPlataforma() {
               <Building2 className="h-5 w-5 text-indigo-300" />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-gray-100">Negocios en la plataforma</h1>
-              <p className="text-sm text-muted">Alta, suspensión y soporte de cada negocio.</p>
+              <h1 className="text-2xl font-black text-gray-100">Consola de plataforma</h1>
+              <p className="text-sm text-muted">Tus negocios, su actividad y el soporte, en un solo lugar.</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setAlta(true)} className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm">
               <Plus className="h-4 w-4" /> Nuevo negocio
             </button>
+            <a
+              href="/api/plataforma/exportar"
+              className="flex items-center gap-2 rounded-xl border border-surface-600 px-3 text-sm text-muted hover:text-gray-100"
+            >
+              <Download className="h-4 w-4" /> Excel
+            </a>
             <button type="button" onClick={cargar} aria-label="Actualizar" className="rounded-xl border border-surface-600 px-3 text-muted hover:text-gray-100">
               <RefreshCw className="h-4 w-4" />
             </button>
@@ -208,22 +215,8 @@ export default function ConsolaPlataforma() {
           </div>
         </header>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Negocios activos", String(totales.activos)],
-            ["Suspendidos", String(totales.suspendidos)],
-            ["Sin terminar su configuración", String(totales.pendientes)],
-            ["Ventas de todos (30 días)", dinero(totales.importe)],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-2xl border border-surface-600 bg-surface-800 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{k}</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-gray-100">{v}</p>
-            </div>
-          ))}
-        </div>
-
         {aviso && (
-          <p className="flex items-center justify-between gap-2 rounded-xl border border-surface-600 bg-surface-800 px-4 py-2 text-sm text-gray-100">
+          <p className="flex items-center justify-between gap-2 rounded-xl border border-surface-600 bg-surface-800 px-4 py-2 text-sm text-gray-100" data-testid="aviso-plataforma">
             {aviso}
             <button type="button" onClick={() => setAviso(null)} aria-label="Cerrar aviso" className="text-muted">
               <X className="h-4 w-4" />
@@ -231,96 +224,53 @@ export default function ConsolaPlataforma() {
           </p>
         )}
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre o código" className="input-dark pl-9" />
+        <div className="flex gap-2" role="tablist">
+          {(
+            [
+              ["tablero", "Tablero", BarChart3],
+              ["negocios", `Negocios (${negocios.length})`, Building2],
+              ["bitacora", "Bitácora", ScrollText],
+            ] as const
+          ).map(([id, etiqueta, Icono]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={pestana === id}
+              onClick={() => setPestana(id)}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold",
+                pestana === id ? "border-acento bg-acento/10 text-acento" : "border-surface-500 text-slate-300 hover:bg-surface-700"
+              )}
+            >
+              <Icono className="h-4 w-4" /> {etiqueta}
+            </button>
+          ))}
         </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-surface-600 bg-surface-800">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-600 text-left text-[11px] uppercase tracking-wider text-muted">
-                <th className="px-4 py-3">Negocio</th>
-                <th className="px-4 py-3">Giro</th>
-                <th className="px-4 py-3 text-right">Ventas 30 días</th>
-                <th className="px-4 py-3">Última venta</th>
-                <th className="px-4 py-3 text-right">Usuarios · Productos · Sucursales</th>
-                <th className="px-4 py-3 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibles.map((n) => (
-                <tr key={n.idNegocio} className={cn("border-b border-surface-700 last:border-0", !n.activo && "opacity-60")}>
-                  <td className="px-4 py-3">
-                    <p className="font-bold text-gray-100">{n.nombre}</p>
-                    <p className="text-[11px] text-muted">
-                      código <span className="font-mono">{n.codigo}</span>
-                      {n.setupPendiente && <span className="ml-1 text-amber-300">· configuración pendiente</span>}
-                      {!n.activo && <span className="ml-1 font-bold text-rose-300">· SUSPENDIDO</span>}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-muted">{n.giro ? TIPO_NEGOCIO[n.giro] : "—"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="font-bold tabular-nums text-gray-100">{dinero(n.importe30)}</p>
-                    <p className="text-[11px] text-muted">{n.ventas30} tickets</p>
-                  </td>
-                  <td className="px-4 py-3 text-muted">{hace(n.ultimaVenta)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted">
-                    {n.usuarios} · {n.productos} · {n.sucursales}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nueva = window.prompt(`Nueva contraseña para la administradora de ${n.nombre} (mínimo 8 caracteres):`);
-                          if (nueva) accion(n, { nuevaClaveAdmin: nueva }, `Contraseña restablecida en ${n.nombre}`);
-                        }}
-                        title="Restablecer contraseña de la administradora"
-                        aria-label={`Restablecer contraseña de ${n.nombre}`}
-                        className="rounded-lg border border-surface-500 p-2 text-muted hover:text-gray-100"
-                      >
-                        <KeyRound className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const msg = n.activo
-                            ? `¿Suspender ${n.nombre}? Nadie de ese negocio podrá entrar hasta reactivarlo.`
-                            : `¿Reactivar ${n.nombre}?`;
-                          if (window.confirm(msg)) accion(n, { activo: !n.activo }, n.activo ? `${n.nombre} suspendido` : `${n.nombre} reactivado`);
-                        }}
-                        title={n.activo ? "Suspender" : "Reactivar"}
-                        aria-label={`${n.activo ? "Suspender" : "Reactivar"} ${n.nombre}`}
-                        className={cn(
-                          "rounded-lg border p-2",
-                          n.activo ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                        )}
-                      >
-                        {n.activo ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {visibles.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
-                    Sin negocios que coincidan.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {pestana === "tablero" && <Tablero negocios={negocios} version={version} onAbrir={setFicha} />}
+        {pestana === "negocios" && <ListaNegocios negocios={negocios} onAbrir={setFicha} />}
+        {pestana === "bitacora" && <Bitacora version={version} />}
       </div>
 
       {alta && (
-        <AltaNegocio
-          onClose={() => setAlta(false)}
-          onCreado={(texto) => {
-            setAlta(false);
-            setAviso(texto);
+        <SetupWizard
+          plataforma={{
+            onCancelar: () => setAlta(false),
+            onTerminado: (mensaje) => {
+              setAlta(false);
+              setAviso(mensaje);
+              cargar();
+            },
+          }}
+        />
+      )}
+      {ficha && (
+        <FichaNegocio
+          idNegocio={ficha}
+          onClose={() => setFicha(null)}
+          onCambio={(msg) => {
+            setAviso(msg);
             cargar();
           }}
         />
@@ -329,136 +279,409 @@ export default function ConsolaPlataforma() {
   );
 }
 
-function AltaNegocio({ onClose, onCreado }: { onClose: () => void; onCreado: (aviso: string) => void }) {
-  const [nombre, setNombre] = useState("");
-  const [codigo, setCodigo] = useState("");
-  const [codigoTocado, setCodigoTocado] = useState(false);
-  const [giro, setGiro] = useState<TipoNegocio>("PAPELERIA_RETAIL");
-  const [admin, setAdmin] = useState({ nombre: "", username: "admin", password: "" });
-  const [ejemplos, setEjemplos] = useState(true);
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const r = resumenCatalogo(giro);
+// ---------------------------------------------------------------- Tablero
 
-  const crear = async () => {
-    setEnviando(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/plataforma/negocios", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codigo, nombre, tipoNegocio: giro, catalogoEjemplo: ejemplos, admin }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || "No se pudo crear");
-      onCreado(
-        `Negocio "${d.nombre}" creado. Entra en /login con el código ${d.codigo} y el usuario ${d.admin}` +
-          (d.catalogo ? ` · ${d.catalogo.productos} productos de ejemplo` : "")
-      );
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setEnviando(false);
-    }
+function Tablero({ negocios, version, onAbrir }: { negocios: NegocioFila[]; version: number; onAbrir: (id: string) => void }) {
+  const colores = useColoresTema();
+  const [datos, setDatos] = useState<{
+    ventasPorDia: Array<{ dia: string; total: number }>;
+    porGiro: Array<{ giro: string; negocios: number }>;
+    altasPorMes: Array<{ mes: string; altas: number }>;
+    inactivos: Array<{ idNegocio: string; nombre: string; codigo: string; ultimaVenta: string | null }>;
+  } | null>(null);
+  useEffect(() => {
+    fetch("/api/plataforma/tablero", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setDatos)
+      .catch(() => setDatos(null));
+  }, [version]);
+  const totales = useMemo(
+    () => ({
+      activos: negocios.filter((n) => n.activo).length,
+      suspendidos: negocios.filter((n) => !n.activo).length,
+      pendientes: negocios.filter((n) => n.setupPendiente).length,
+      importe: negocios.reduce((s, n) => s + n.importe30, 0),
+    }),
+    [negocios]
+  );
+  const tooltip = {
+    contentStyle: { background: colores.tooltipFondo, border: `1px solid ${colores.tooltipBorde}`, borderRadius: 12, color: colores.texto },
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div
+    <div className="space-y-4" data-testid="tablero-plataforma">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ["Negocios activos", String(totales.activos)],
+          ["Suspendidos", String(totales.suspendidos)],
+          ["Sin terminar su configuración", String(totales.pendientes)],
+          ["Ventas de todos (30 días)", dinero(totales.importe)],
+        ].map(([k, v]) => (
+          <div key={k} className="rounded-2xl border border-surface-600 bg-surface-800 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{k}</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-gray-100">{v}</p>
+          </div>
+        ))}
+      </div>
+      {!datos ? (
+        <p className="flex items-center gap-2 py-8 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Cargando gráficas…
+        </p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5 lg:col-span-2">
+            <h3 className="mb-3 font-bold text-gray-100">Ventas de todos los negocios (30 días)</h3>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={datos.ventasPorDia} margin={{ top: 5, right: 8, left: -12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={colores.rejilla} />
+                  <XAxis dataKey="dia" tickFormatter={(d) => d.slice(8) + "/" + d.slice(5, 7)} tick={{ fill: colores.textoSuave, fontSize: 10 }} minTickGap={16} />
+                  <YAxis tickFormatter={dineroCorto} tick={{ fill: colores.textoSuave, fontSize: 10 }} />
+                  <Tooltip {...tooltip} formatter={(v: any) => [dinero(Number(v)), "Vendido"]} />
+                  <Area type="monotone" dataKey="total" stroke={colores.serie[1]} fill={colores.serie[1]} fillOpacity={0.2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+          <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5">
+            <h3 className="mb-3 font-bold text-gray-100">Negocios por giro</h3>
+            <div className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={datos.porGiro} layout="vertical" margin={{ top: 0, right: 16, left: 8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={colores.rejilla} horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fill: colores.textoSuave, fontSize: 10 }} />
+                  <YAxis type="category" dataKey="giro" width={110} tick={{ fill: colores.textoSuave, fontSize: 10 }} />
+                  <Tooltip {...tooltip} formatter={(v: any) => [v, "Negocios"]} />
+                  <Bar dataKey="negocios" fill={colores.serie[0]} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+          <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5">
+            <h3 className="mb-3 font-bold text-gray-100">Altas de negocios por mes</h3>
+            <div className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={datos.altasPorMes} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={colores.rejilla} />
+                  <XAxis dataKey="mes" tick={{ fill: colores.textoSuave, fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fill: colores.textoSuave, fontSize: 10 }} />
+                  <Tooltip {...tooltip} formatter={(v: any) => [v, "Altas"]} />
+                  <Bar dataKey="altas" fill={colores.serie[2]} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+          <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5 lg:col-span-2">
+            <h3 className="mb-1 font-bold text-gray-100">Negocios activos sin ventas en 7 días</h3>
+            <p className="mb-3 text-xs text-muted">Puede ser que no estén usando el sistema: buen momento para contactarlos.</p>
+            {datos.inactivos.length === 0 ? (
+              <p className="text-sm text-emerald-300">Todos los negocios activos vendieron esta semana.</p>
+            ) : (
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {datos.inactivos.map((n) => (
+                  <li key={n.idNegocio}>
+                    <button
+                      type="button"
+                      onClick={() => onAbrir(n.idNegocio)}
+                      className="flex w-full items-center justify-between rounded-xl border border-surface-600 px-3 py-2 text-left text-sm hover:border-acento/50"
+                    >
+                      <span className="truncate text-gray-100">{n.nombre}</span>
+                      <span className="shrink-0 text-xs text-muted">{hace(n.ultimaVenta)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Negocios
+
+function ListaNegocios({ negocios, onAbrir }: { negocios: NegocioFila[]; onAbrir: (id: string) => void }) {
+  const [q, setQ] = useState("");
+  const visibles = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return t ? negocios.filter((n) => `${n.nombre} ${n.codigo}`.toLowerCase().includes(t)) : negocios;
+  }, [negocios, q]);
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre o código" className="input-dark pl-9" />
+      </div>
+      <div className="overflow-x-auto rounded-2xl border border-surface-600 bg-surface-800">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-surface-600 text-left text-[11px] uppercase tracking-wider text-muted">
+              <th className="px-4 py-3">Negocio</th>
+              <th className="px-4 py-3">Giro</th>
+              <th className="px-4 py-3 text-right">Ventas 30 días</th>
+              <th className="px-4 py-3">Última venta</th>
+              <th className="px-4 py-3 text-right">Usuarios · Productos · Sucursales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map((n) => (
+              <tr
+                key={n.idNegocio}
+                onClick={() => onAbrir(n.idNegocio)}
+                className={cn("cursor-pointer border-b border-surface-700 last:border-0 hover:bg-surface-700/50", !n.activo && "opacity-60")}
+                data-testid="fila-negocio"
+              >
+                <td className="px-4 py-3">
+                  <p className="font-bold text-gray-100">{n.nombre}</p>
+                  <p className="text-[11px] text-muted">
+                    código <span className="font-mono">{n.codigo}</span>
+                    {n.setupPendiente && <span className="ml-1 text-amber-300">· configuración pendiente</span>}
+                    {!n.activo && <span className="ml-1 font-bold text-rose-300">· SUSPENDIDO</span>}
+                  </p>
+                </td>
+                <td className="px-4 py-3 text-muted">{n.giro ? TIPO_NEGOCIO[n.giro] : "—"}</td>
+                <td className="px-4 py-3 text-right">
+                  <p className="font-bold tabular-nums text-gray-100">{dinero(n.importe30)}</p>
+                  <p className="text-[11px] text-muted">{n.ventas30} tickets</p>
+                </td>
+                <td className="px-4 py-3 text-muted">{hace(n.ultimaVenta)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted">
+                  {n.usuarios} · {n.productos} · {n.sucursales}
+                </td>
+              </tr>
+            ))}
+            {visibles.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted">
+                  Sin negocios que coincidan.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted">Toca un negocio para ver su ficha, sus usuarios y darles soporte.</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Ficha
+
+interface Ficha {
+  negocio: {
+    idNegocio: string;
+    codigo: string;
+    nombre: string;
+    activo: boolean;
+    creado: string;
+    giro: TipoNegocio | null;
+    setupPendiente: boolean;
+    modulos: string[];
+    metodosPago: string[];
+    productos: number;
+    clientes: number;
+    sucursales: number;
+    ventas30: number;
+    importe30: number;
+  };
+  usuarios: Array<{ idPersona: string; nombre: string; username: string; tipo: string; esDueno: boolean; activa: boolean; ultimoAcceso: string | null }>;
+  bitacora: Array<{ fecha: string; accion: string; usuario: string }>;
+}
+
+function FichaNegocio({ idNegocio, onClose, onCambio }: { idNegocio: string; onClose: () => void; onCambio: (msg: string) => void }) {
+  const [ficha, setFicha] = useState<Ficha | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const cargar = useCallback(() => {
+    fetch(`/api/plataforma/negocios/${idNegocio}`, { cache: "no-store" })
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "No se pudo abrir el negocio");
+        setFicha(d);
+      })
+      .catch((e) => setError(e.message));
+  }, [idNegocio]);
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  const accion = async (cuerpo: object, exito: string) => {
+    try {
+      await patch(idNegocio, cuerpo);
+      onCambio(exito);
+      cargar();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+  const n = ficha?.negocio;
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/60" onClick={onClose}>
+      <aside
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-surface-600 bg-surface-800 p-6"
+        className="h-full w-full max-w-xl overflow-y-auto border-l border-surface-600 bg-surface-800 p-6"
+        data-testid="ficha-negocio"
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-black text-gray-100">Nuevo negocio</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-muted hover:text-gray-100">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-gray-100">{n?.nombre ?? "…"}</h2>
+            {n && (
+              <p className="text-xs text-muted">
+                código <span className="font-mono">{n.codigo}</span> · {n.giro ? TIPO_NEGOCIO[n.giro] : "sin giro"} · alta{" "}
+                {new Date(n.creado).toLocaleDateString("es-MX")}
+              </p>
+            )}
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar ficha" className="text-muted hover:text-gray-100">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted">Nombre del negocio</span>
-            <input
-              value={nombre}
-              maxLength={120}
-              onChange={(e) => {
-                setNombre(e.target.value);
-                if (!codigoTocado) setCodigo(sugerirCodigo(e.target.value));
-              }}
-              placeholder="Ferretería El Tornillo"
-              className="input-dark"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted">Código para iniciar sesión</span>
-            <input
-              value={codigo}
-              maxLength={40}
-              onChange={(e) => {
-                setCodigoTocado(true);
-                setCodigo(e.target.value.toLowerCase());
-              }}
-              className="input-dark font-mono"
-            />
-            <span className="mt-1 block text-[11px] text-muted">Minúsculas, números y guiones; lo teclean al entrar.</span>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted">Giro</span>
-            <select value={giro} onChange={(e) => setGiro(e.target.value as TipoNegocio)} className="input-dark">
-              {Object.entries(TIPO_NEGOCIO).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
+        {error && <p className="mb-3 rounded-xl bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</p>}
+        {!ficha || !n ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted" />
+        ) : (
+          <div className="space-y-5">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {[
+                ["Ventas 30 días", dinero(n.importe30)],
+                ["Tickets", String(n.ventas30)],
+                ["Productos", String(n.productos)],
+                ["Clientes", String(n.clientes)],
+                ["Sucursales", String(n.sucursales)],
+                ["Estado", n.activo ? "Activo" : "Suspendido"],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-xl bg-surface-700/60 p-2">
+                  <p className="text-sm font-black text-gray-100">{v}</p>
+                  <p className="text-[10px] text-muted">{k}</p>
+                </div>
               ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => setEjemplos((v) => !v)}
-            aria-pressed={ejemplos}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-xl border bg-surface-700 p-3 text-left",
-              ejemplos ? "border-emerald-500/50" : "border-surface-500"
-            )}
-          >
-            <CheckCircle2 className={cn("h-5 w-5 shrink-0", ejemplos ? "text-emerald-300" : "text-muted")} />
-            <span className="text-xs text-gray-200">
-              Cargar catálogo de ejemplo: {r.productos} productos en {r.categorias} categorías (códigos EJ-).
-            </span>
-          </button>
-          <p className="pt-1 text-xs font-bold uppercase tracking-wider text-muted">Administradora del negocio</p>
-          <input
-            value={admin.nombre}
-            onChange={(e) => setAdmin({ ...admin, nombre: e.target.value })}
-            placeholder="Nombre completo"
-            className="input-dark"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={admin.username}
-              onChange={(e) => setAdmin({ ...admin, username: e.target.value })}
-              placeholder="Usuario"
-              className="input-dark"
-            />
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={admin.password}
-              onChange={(e) => setAdmin({ ...admin, password: e.target.value })}
-              placeholder="Contraseña (8+)"
-              className="input-dark"
-            />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  window.confirm(n.activo ? `¿Suspender ${n.nombre}? Nadie de ese negocio podrá entrar.` : `¿Reactivar ${n.nombre}?`) &&
+                  accion({ activo: !n.activo }, n.activo ? `${n.nombre} suspendido` : `${n.nombre} reactivado`)
+                }
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold",
+                  n.activo ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                )}
+              >
+                {n.activo ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
+                {n.activo ? "Suspender negocio" : "Reactivar negocio"}
+              </button>
+            </div>
+
+            <section>
+              <h3 className="mb-2 text-sm font-bold text-gray-100">Módulos encendidos</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {n.modulos.length === 0 ? (
+                  <span className="text-xs text-muted">{n.setupPendiente ? "Configuración pendiente" : "Ninguno"}</span>
+                ) : (
+                  n.modulos.map((m) => (
+                    <span key={m} className="rounded-full border border-surface-500 px-2 py-0.5 text-[11px] text-gray-200">
+                      {MODULOS_INFO[m as keyof FeatureFlags]?.label ?? m}
+                    </span>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="mb-2 text-sm font-bold text-gray-100">Usuarios ({ficha.usuarios.length})</h3>
+              <ul className="space-y-1.5">
+                {ficha.usuarios.map((u) => (
+                  <li key={u.idPersona} className="flex items-center gap-2 rounded-xl border border-surface-600 px-3 py-2" data-testid="usuario-negocio">
+                    <div className="min-w-0 flex-1">
+                      <p className={cn("truncate text-sm font-bold", u.activa ? "text-gray-100" : "text-muted line-through")}>
+                        {u.esDueno && <Crown className="mr-1 inline h-3.5 w-3.5 text-amber-300" />}
+                        {u.nombre}
+                      </p>
+                      <p className="text-[11px] text-muted">
+                        @{u.username} · {u.tipo} · último acceso {fechaHora(u.ultimoAcceso)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      title="Restablecer contraseña"
+                      aria-label={`Restablecer contraseña de ${u.nombre}`}
+                      onClick={() => {
+                        const nueva = window.prompt(`Nueva contraseña para ${u.nombre} (mínimo 8 caracteres):`);
+                        if (nueva) accion({ usuario: { idPersona: u.idPersona, nuevaClave: nueva } }, `Contraseña de ${u.username} restablecida`);
+                      }}
+                      className="rounded-lg border border-surface-500 p-1.5 text-muted hover:text-gray-100"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </button>
+                    {!u.esDueno && (
+                      <button
+                        type="button"
+                        title={u.activa ? "Desactivar usuario" : "Reactivar usuario"}
+                        aria-label={`${u.activa ? "Desactivar" : "Reactivar"} a ${u.nombre}`}
+                        onClick={() =>
+                          accion({ usuario: { idPersona: u.idPersona, activa: !u.activa } }, `${u.username} ${u.activa ? "desactivado" : "reactivado"}`)
+                        }
+                        className="rounded-lg border border-surface-500 p-1.5 text-muted hover:text-gray-100"
+                      >
+                        {u.activa ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section>
+              <h3 className="mb-2 text-sm font-bold text-gray-100">Actividad reciente del negocio</h3>
+              <ul className="space-y-1 text-xs">
+                {ficha.bitacora.map((b, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="shrink-0 text-muted">{fechaHora(b.fecha)}</span>
+                    <span className="text-gray-200">{b.accion}</span>
+                  </li>
+                ))}
+                {ficha.bitacora.length === 0 && <li className="text-muted">Sin actividad todavía.</li>}
+              </ul>
+            </section>
           </div>
-          {error && <p className="text-xs font-semibold text-rose-300">{error}</p>}
-          <button
-            type="button"
-            disabled={enviando}
-            onClick={crear}
-            className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 disabled:opacity-60"
-          >
-            {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Crear negocio
-          </button>
-        </div>
-      </div>
+        )}
+      </aside>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- Bitácora
+
+function Bitacora({ version }: { version: number }) {
+  const [registros, setRegistros] = useState<Array<{ id: string; fecha: string; accion: string; negocio: string | null }> | null>(null);
+  useEffect(() => {
+    fetch("/api/plataforma/bitacora", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { registros: [] }))
+      .then((d) => setRegistros(d.registros ?? []))
+      .catch(() => setRegistros([]));
+  }, [version]);
+  return (
+    <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5" data-testid="bitacora-plataforma">
+      <h3 className="mb-1 font-bold text-gray-100">Lo que se hizo desde la consola</h3>
+      <p className="mb-3 text-xs text-muted">Altas, suspensiones, contraseñas restablecidas, exportaciones e inicios de sesión.</p>
+      {!registros ? (
+        <Loader2 className="h-5 w-5 animate-spin text-muted" />
+      ) : registros.length === 0 ? (
+        <p className="text-sm text-muted">Sin registros todavía.</p>
+      ) : (
+        <ul className="divide-y divide-surface-700 text-sm">
+          {registros.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-baseline gap-x-3 py-2">
+              <span className="w-32 shrink-0 text-xs text-muted">{fechaHora(r.fecha)}</span>
+              <span className="min-w-0 flex-1 text-gray-100">{r.accion}</span>
+              {r.negocio && <span className="font-mono text-[11px] text-muted">{r.negocio}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

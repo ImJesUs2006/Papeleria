@@ -1132,3 +1132,21 @@ model AlertaDescartada {
   @@index([idNegocio])
   @@map("alertas_descartadas")
 }
+
+// ============================================================
+// Fase F · Bitácora de la CONSOLA DE PLATAFORMA (dueño del SaaS).
+// Global a propósito: registra acciones sobre los negocios (altas,
+// suspensiones, claves restablecidas) y no pertenece a ninguno.
+// ============================================================
+model PlataformaLog {
+  id        String   @id @default(uuid())
+  fecha     DateTime @default(now())
+  accion    String
+  // Negocio afectado (si aplica); sin relación para conservar el registro
+  // aunque el negocio cambie.
+  idNegocio String?
+  detalle   Json?
+
+  @@index([fecha])
+  @@map("plataforma_logs")
+}

@@ -5,6 +5,8 @@ import { tenantDb } from "@/lib/tenant";
 import { claveUsuario } from "@/lib/tenant-keys";
 import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { esObjetoJson } from "@/lib/validacion";
+import { actuaComoDueno } from "@/lib/usuarios";
+import { RolError, validarGestion } from "@/lib/roles";
 
 // ============================================================
 // /api/usuarios  (solo ADMINISTRADORA)
@@ -35,13 +37,18 @@ export async function GET() {
       idPerfil: true,
       perfil: { select: { nombre: true } },
       idSucursal: true,
+      isRoot: true,
       ultimoLoginAt: true,
       passwordCambiadaEn: true,
       createdAt: true,
     },
   });
 
-  return NextResponse.json({ usuarios });
+  return NextResponse.json({
+    usuarios,
+    // Quién pregunta: la pantalla decide qué ofrece (solo el dueño maneja administradores).
+    yo: { idPersona: auth.user.idPersona, esDueno: await actuaComoDueno(prisma, auth.user) },
+  });
 }
 
 export async function POST(request: Request) {
@@ -92,6 +99,17 @@ export async function POST(request: Request) {
   }
   if (!ROLES.includes(rol)) {
     return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
+  }
+  try {
+    validarGestion({
+      actorId: auth.user.idPersona,
+      actorEsDueno: await actuaComoDueno(prisma, auth.user),
+      objetivo: null,
+      cambio: { rolNuevo: rol },
+    });
+  } catch (e) {
+    if (e instanceof RolError) return NextResponse.json({ error: e.message }, { status: e.status });
+    throw e;
   }
 
   // Permisos de módulo: el perfil manda; si no hay perfil, los enviados.

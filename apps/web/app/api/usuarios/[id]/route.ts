@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { tieneOtroAdminActivo } from "@/lib/usuarios";
+import { actuaComoDueno, tieneOtroAdminActivo } from "@/lib/usuarios";
+import { RolError, validarGestion } from "@/lib/roles";
 import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { tenantDb } from "@/lib/tenant";
 import { esObjetoJson } from "@/lib/validacion";
@@ -118,6 +119,24 @@ export async function PATCH(
     return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
   }
 
+  // Tipos de usuario (Fase F): solo el dueño(a) toca administradores y nadie
+  // más que el dueño(a) toca su cuenta.
+  try {
+    const cambiaPermisos = ["permisoCobrar", "permisoInventario", "permisoReportes", "idSucursal"].some((k) => data[k] !== undefined);
+    validarGestion({
+      actorId: user.idPersona,
+      actorEsDueno: await actuaComoDueno(prisma, user),
+      objetivo: target,
+      cambio: {
+        rolNuevo: data.rol ?? (cambiaPermisos && target.rol === "ADMINISTRADORA" ? "ADMINISTRADORA" : undefined),
+        desactivar: data.activa === false,
+      },
+    });
+  } catch (e) {
+    if (e instanceof RolError) return NextResponse.json({ error: e.message }, { status: e.status });
+    throw e;
+  }
+
   try {
     // Si el cambio quita condición de admin activa, verificar que quede otra.
     const quitaAdmin =
@@ -194,6 +213,17 @@ export async function DELETE(
   });
   if (!target) {
     return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+  }
+  try {
+    validarGestion({
+      actorId: auth.user.idPersona,
+      actorEsDueno: await actuaComoDueno(prisma, auth.user),
+      objetivo: target,
+      cambio: { eliminar: true },
+    });
+  } catch (e) {
+    if (e instanceof RolError) return NextResponse.json({ error: e.message }, { status: e.status });
+    throw e;
   }
 
   const tieneHistorial =

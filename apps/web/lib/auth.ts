@@ -36,6 +36,7 @@ export async function getSession(): Promise<AuthPayload | null> {
       permisoCobrar: true,
       permisoInventario: true,
       permisoReportes: true,
+      isRoot: true,
     },
   });
   // Negocio suspendido ⇒ nadie de ese negocio opera.
@@ -55,6 +56,7 @@ export async function getSession(): Promise<AuthPayload | null> {
     permisoCobrar: user.permisoCobrar,
     permisoInventario: user.permisoInventario,
     permisoReportes: user.permisoReportes,
+    isRoot: user.isRoot === true,
   };
 }
 

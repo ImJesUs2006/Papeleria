@@ -9,6 +9,8 @@ import {
   ShieldOff,
   Loader2,
   RefreshCw,
+  Crown,
+  Check,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { SkeletonTable } from "@/components/ui/skeleton";
@@ -17,6 +19,7 @@ import { notificar } from "@/store/notificaciones";
 import { PerfilesPanel, type Perfil } from "@/components/configuracion/perfiles-panel";
 import { SucursalesPanel, type Sucursal } from "@/components/configuracion/sucursales-panel";
 import { usePersonalizacion } from "@/store/config";
+import { MATRIZ_PERMISOS, nivelDe, NIVELES, PLANTILLAS_USUARIO, type NivelUsuario } from "@/lib/roles";
 
 interface Usuario {
   idPersona: string;
@@ -31,6 +34,7 @@ interface Usuario {
   perfil?: { nombre: string } | null;
   idSucursal?: string | null;
   ultimoLoginAt: string | null;
+  isRoot?: boolean;
 }
 
 // Errores y confirmaciones salen como notificaciones deslizantes.
@@ -47,6 +51,9 @@ export function UserManagement() {
   const [modalPass, setModalPass] = useState<Usuario | null>(null);
   const [modalEliminar, setModalEliminar] = useState<Usuario | null>(null);
   const [modalPermisos, setModalPermisos] = useState<Usuario | null>(null);
+  // Solo el dueño(a) maneja administradores (lib/roles).
+  const [esDueno, setEsDueno] = useState(false);
+  const [yoId, setYoId] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -56,6 +63,8 @@ export function UserManagement() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al cargar usuarios");
       setUsuarios(data.usuarios);
+      setEsDueno(data.yo?.esDueno === true);
+      setYoId(data.yo?.idPersona ?? null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -121,6 +130,32 @@ export function UserManagement() {
       setAccionando(null);
     }
   };
+
+  // Transferir la propiedad: confirma con la contraseña del dueño(a) actual.
+  const transferir = async (u: Usuario) => {
+    const password = window.prompt(
+      `Vas a transferir la propiedad del negocio a ${u.nombre}. Tú seguirás como administrador(a).\n\nEscribe TU contraseña para confirmar:`
+    );
+    if (!password) return;
+    setAccionando(u.idPersona);
+    try {
+      const res = await fetch(`/api/usuarios/${u.idPersona}/dueno`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "No se pudo transferir");
+      aviso(`${data.dueno} es ahora el dueño(a) del negocio`);
+      cargar();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setAccionando(null);
+    }
+  };
+  // ¿Puedo tocar a esta persona? (el servidor lo vuelve a validar)
+  const bloqueado = (u: Usuario) => (u.isRoot ? u.idPersona !== yoId : u.rol === "ADMINISTRADORA" && !esDueno);
 
   const eliminar = async () => {
     if (!modalEliminar) return;
@@ -213,9 +248,20 @@ export function UserManagement() {
                     <span className="block text-[10px] text-muted">@{u.username}</span>
                   </td>
                   <td className="px-4 py-3">
+                    <span
+                      className={cn(
+                        "mb-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                        u.isRoot ? "bg-amber-500/15 text-amber-300" : "bg-surface-600 text-gray-200"
+                      )}
+                      data-testid="nivel-usuario"
+                    >
+                      {u.isRoot && <Crown className="h-3 w-3" />}
+                      {u.perfil?.nombre ?? NIVELES[nivelDe(u)].titulo}
+                    </span>
                     <select
                       value={u.rol}
-                      disabled={accionando === u.idPersona}
+                      disabled={accionando === u.idPersona || !!u.isRoot || bloqueado(u)}
+                      title={u.isRoot ? "Para dejar de ser dueño(a), transfiere la propiedad" : bloqueado(u) ? "Solo el dueño(a) cambia administradores" : undefined}
                       onChange={(e) => cambiar(u, { rol: e.target.value as Usuario["rol"] })}
                       className={cn(
                         "bg-surface-700 border rounded-lg px-2 py-1.5 text-xs font-bold focus:outline-none",
@@ -224,10 +270,12 @@ export function UserManagement() {
                           : "border-neon-cyan/40 text-neon-cyan"
                       )}
                     >
-                      <option value="ADMINISTRADORA">{etiquetasRol.ADMINISTRADORA}</option>
+                      <option value="ADMINISTRADORA" disabled={!esDueno}>
+                        {etiquetasRol.ADMINISTRADORA}
+                      </option>
                       <option value="CAJERA">{etiquetasRol.CAJERA}</option>
                     </select>
-                    {perfiles.length > 0 && (
+                    {perfiles.length > 0 && !u.isRoot && !bloqueado(u) && (
                       <select
                         value={u.idPerfil ?? ""}
                         disabled={accionando === u.idPersona}
@@ -309,6 +357,18 @@ export function UserManagement() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1.5">
+                      {esDueno && !u.isRoot && u.activa && (
+                        <button
+                          onClick={() => transferir(u)}
+                          disabled={accionando === u.idPersona}
+                          className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-amber-500/10 flex items-center justify-center text-muted hover:text-amber-300 transition-colors"
+                          title="Transferir la propiedad del negocio"
+                          aria-label={`Transferir la propiedad a ${u.nombre}`}
+                        >
+                          <Crown className="h-4 w-4" />
+                        </button>
+                      )}
+                      {!u.isRoot && !bloqueado(u) && (
                       <button
                         onClick={() => cambiar(u, { activa: !u.activa })}
                         disabled={accionando === u.idPersona}
@@ -321,6 +381,8 @@ export function UserManagement() {
                           <ShieldCheck className="h-4 w-4" />
                         )}
                       </button>
+                      )}
+                      {!bloqueado(u) && (
                       <button
                         onClick={() => setModalPass(u)}
                         className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-cyan/10 flex items-center justify-center text-muted hover:text-neon-cyan transition-colors"
@@ -328,6 +390,8 @@ export function UserManagement() {
                       >
                         <KeyRound className="h-4 w-4" />
                       </button>
+                      )}
+                      {!u.isRoot && !bloqueado(u) && (
                       <button
                         onClick={() => setModalEliminar(u)}
                         className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-red/10 flex items-center justify-center text-muted hover:text-neon-red transition-colors"
@@ -335,6 +399,7 @@ export function UserManagement() {
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
+                      )}
                       {accionando === u.idPersona && (
                         <Loader2 className="h-4 w-4 text-neon-cyan animate-spin" />
                       )}
@@ -347,7 +412,10 @@ export function UserManagement() {
         )}
       </div>
 
+      <MatrizPermisos />
+
       <NuevoUsuarioModal
+        esDueno={esDueno}
         perfiles={perfiles}
         open={modalNuevo}
         onClose={() => setModalNuevo(false)}
@@ -406,12 +474,14 @@ export function UserManagement() {
 }
 
 function NuevoUsuarioModal({
+  esDueno,
   perfiles,
   open,
   onClose,
   onCreado,
   onError,
 }: {
+  esDueno: boolean;
   perfiles: Perfil[];
   open: boolean;
   onClose: () => void;
@@ -509,25 +579,40 @@ function NuevoUsuarioModal({
         )}
         {!idPerfil && (
         <>
-        <Campo label="Rol">
-          <select
-            value={rol}
-            onChange={(e) => {
-              setRol(e.target.value as any);
-              // Fase 10 · Admin Override: una administradora accede a todo;
-              // sus flags se fuerzan a true y no se pueden apagar.
-              if (e.target.value === "ADMINISTRADORA") {
-                setPermisoCobrar(true);
-                setPermisoInventario(true);
-                setPermisoReportes(true);
-              }
-            }}
-            className="input-dark"
-          >
-            <option value="CAJERA">{etiquetasRol.CAJERA}</option>
-            <option value="ADMINISTRADORA">{etiquetasRol.ADMINISTRADORA}</option>
-          </select>
-        </Campo>
+        <div>
+          <span className="text-xs text-muted mb-1.5 block">Tipo de usuario</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup">
+            {(["CAJERO", "ENCARGADO", "ADMIN"] as const).map((n) => {
+              const p = PLANTILLAS_USUARIO[n];
+              const activo =
+                rol === p.rol && (p.rol === "ADMINISTRADORA" || nivelDe({ rol, permisoInventario, permisoReportes }) === n);
+              const permitido = n !== "ADMIN" || esDueno;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={activo}
+                  disabled={!permitido}
+                  title={permitido ? undefined : "Solo el dueño(a) crea administradores"}
+                  onClick={() => {
+                    setRol(p.rol);
+                    setPermisoCobrar(p.permisoCobrar);
+                    setPermisoInventario(p.permisoInventario);
+                    setPermisoReportes(p.permisoReportes);
+                  }}
+                  className={cn(
+                    "rounded-xl border px-3 py-2 text-left disabled:opacity-40",
+                    activo ? "border-acento bg-acento/10" : "border-surface-500 hover:border-surface-400"
+                  )}
+                >
+                  <span className="block text-sm font-bold text-gray-100">{NIVELES[n].titulo}</span>
+                  <span className="block text-[11px] text-muted">{NIVELES[n].resumen}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div>
           <span className="text-xs text-muted mb-1.5 block">
             {rol === "ADMINISTRADORA"
@@ -793,5 +878,49 @@ function Campo({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs text-muted mb-1 block">{label}</span>
       {children}
     </label>
+  );
+}
+
+/** ¿Quién puede hacer qué? — lo que el servidor ya valida, en una tabla. */
+function MatrizPermisos() {
+  const niveles: NivelUsuario[] = ["DUENO", "ADMIN", "ENCARGADO", "CAJERO"];
+  return (
+    <details className="rounded-2xl border border-surface-600 bg-surface-800 p-4" data-testid="matriz-permisos">
+      <summary className="cursor-pointer text-sm font-bold text-gray-100">¿Qué puede hacer cada tipo de usuario?</summary>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-muted">
+              <th className="py-2 pr-3 font-semibold">Acción</th>
+              {niveles.map((n) => (
+                <th key={n} className="px-2 py-2 text-center font-semibold">
+                  {NIVELES[n].titulo}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {MATRIZ_PERMISOS.map((f) => (
+              <tr key={f.accion} className="border-t border-surface-700">
+                <td className="py-1.5 pr-3 text-gray-200">{f.accion}</td>
+                {niveles.map((n) => (
+                  <td key={n} className="px-2 py-1.5 text-center">
+                    {f.niveles.includes(n) ? (
+                      <Check className="mx-auto h-4 w-4 text-emerald-300" aria-label="Sí" />
+                    ) : (
+                      <span className="text-muted" aria-label="No">—</span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-2 text-[11px] text-muted">
+          Con «Perfiles» puedes crear tus propios puestos (p. ej. «Encargado de almacén») encendiendo o apagando cobro,
+          inventario y reportes. Solo el dueño(a) asigna perfiles de administración.
+        </p>
+      </div>
+    </details>
   );
 }

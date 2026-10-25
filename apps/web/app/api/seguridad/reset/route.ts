@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
+import { actuaComoDueno } from "@/lib/usuarios";
 import { resetNegocio, MOTIVO_REINICIO } from "@/lib/snapshots";
 import { tenantDb } from "@/lib/tenant";
 import { esObjetoJson } from "@/lib/validacion";
@@ -54,8 +55,11 @@ export async function POST(request: Request) {
   if (!valida) {
     return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 401 });
   }
-  // Fase 9 (ABAC): cualquier administradora con su contraseña y la frase
-  // exacta puede reiniciar; el snapshot protege la información previa.
+  // Fase F: reiniciar es del dueño(a) (con su contraseña y la frase exacta);
+  // el snapshot protege la información previa.
+  if (!(await actuaComoDueno(prisma, session))) {
+    return NextResponse.json({ error: "Solo el dueño(a) del negocio puede reiniciar el sistema" }, { status: 403 });
+  }
 
   try {
     const snapshotId = await prisma.$transaction((tx) =>

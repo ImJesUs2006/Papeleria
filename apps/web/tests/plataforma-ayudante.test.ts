@@ -62,3 +62,18 @@ describe("módulos por giro", () => {
     expect(nivelModulo("FARMACIA", "lotesSeries")).toBe("recomendado");
   });
 });
+
+describe("ayudante en todas las pantallas (Fase F)", () => {
+  it("cada pantalla del menú tiene su tema con al menos 2 preguntas", async () => {
+    const { readFileSync } = await import("fs");
+    const { join } = await import("path");
+    const menu = readFileSync(join(process.cwd(), "components/layout/sidebar.tsx"), "utf8");
+    const rutas = [...menu.matchAll(/href: "(\/[a-z]+)"/g)].map((m) => m[1]);
+    expect(rutas.length).toBeGreaterThan(10);
+    for (const ruta of rutas) {
+      const tema = temaPara(ruta);
+      expect(tema, `sin tema: ${ruta}`).not.toBe(TEMA_GENERAL);
+      expect(tema.preguntas.length, ruta).toBeGreaterThanOrEqual(2);
+    }
+  });
+});

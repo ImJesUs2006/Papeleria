@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@papeleria/database";
-import { requirePlataforma } from "@/lib/plataforma";
+import { registrarPlataforma, requirePlataforma } from "@/lib/plataforma";
 import { crearNegocio, NegocioError } from "@/lib/negocios";
 import { tenantDb } from "@/lib/tenant";
 import { CONFIG_PROPIA } from "@/lib/snapshots";
@@ -89,6 +89,10 @@ export async function POST(request: Request) {
         { timeout: 60_000 }
       );
     }
+    await registrarPlataforma(`Alta del negocio ${negocio.nombre} (${negocio.codigo})`, negocio.idNegocio, {
+      giro: tipo,
+      catalogo: catalogo?.productos ?? 0,
+    });
     return NextResponse.json({ ...negocio, giro: tipo, catalogo }, { status: 201 });
   } catch (error) {
     if (error instanceof NegocioError) {

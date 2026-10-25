@@ -105,7 +105,7 @@ async function cajasAnuladas(prisma: PrismaClient): Promise<string[]> {
   return filas.map((s) => s.idCaja);
 }
 
-async function excluirAnuladas(prisma: PrismaClient): Promise<Record<string, unknown>> {
+export async function excluirAnuladas(prisma: PrismaClient): Promise<Record<string, unknown>> {
   const ids = await cajasAnuladas(prisma);
   return ids.length ? { idCaja: { notIn: ids } } : {};
 }

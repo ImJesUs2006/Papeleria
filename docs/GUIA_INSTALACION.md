@@ -159,6 +159,33 @@ Abre **http://localhost:3000** y entra con `admin / admin123`.
 > Get-NetTCPConnection -LocalPort 3000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 > ```
 
+### 6.1. Usar sin internet (instalar como aplicación)
+
+El sistema es una **aplicación web instalable (PWA)**. Instalada, se abre con su propio icono y
+sin barra del navegador, y **sigue cobrando aunque se caiga el internet**:
+
+- Las ventas sin conexión se guardan en el equipo y se envían solas al volver la red
+  (un aviso arriba dice cuántas hay en cola). No cierres sesión con ventas pendientes.
+- El catálogo de productos se guarda en el equipo para buscar y cobrar sin red.
+- Sin red **no** se pueden: dar de alta productos, asignar clientes o puntos a la venta,
+  hacer devoluciones ni cortes. Todo eso requiere al servidor.
+
+Cómo instalarla:
+
+1. Abre el sistema en **Chrome o Edge** desde una dirección `https://` o `http://localhost`
+   (el navegador no permite instalar ni trabajar sin red por `http` en la red local).
+2. Pulsa **Instalar aplicación** en el menú (abajo, junto al Ayudante) o el icono de instalar
+   en la barra de direcciones. En iPhone/iPad: Safari → Compartir → *Agregar a inicio*.
+3. La parte sin conexión se activa en modo producción (`npm run build` y `npm run start`);
+   en `npm run dev` la app funciona, pero no se guarda para usarse sin red.
+
+### 6.2. Servidor local en la tienda (opcional)
+
+Si la tienda pasa **días** sin internet, se puede correr el sistema completo en una PC del
+negocio, igual que en esta guía: Docker con la base de datos + `npm run build` y `npm run start`.
+Las cajas de la tienda entran por la red local a `http://<ip-de-esa-pc>:3000`. Esa instalación
+es independiente: no se sincroniza con un servidor en la nube (sería un proyecto aparte).
+
 ## 7. Correr las pruebas (opcional)
 
 ```powershell

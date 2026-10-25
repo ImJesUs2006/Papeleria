@@ -24,6 +24,7 @@ import {
 import { BitacoraPreview } from "@/components/reports/bitacora-preview";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
+import { AnalisisNegocio } from "@/components/reports/analisis-negocio";
 
 interface ReportDef {
   id: string;
@@ -309,9 +310,13 @@ export default function ReportesPage() {
         >
           <h2 className="text-2xl font-black text-gray-100 mb-1">Reportes</h2>
           <p className="text-sm text-muted">
-            Genera archivos Excel automatizados para análisis y pedidos
+            Cómo va tu negocio en gráficas explicadas y, abajo, los reportes descargables en Excel.
           </p>
         </motion.div>
+
+        <AnalisisNegocio />
+
+        <h3 className="mb-3 text-lg font-black text-gray-100">Reportes descargables (Excel)</h3>
 
         {/* Filtros globales: fechas + usuario + módulo (todos server-side) */}
         <div className="mb-6 flex flex-wrap items-start gap-x-4 gap-y-3">

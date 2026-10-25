@@ -4,6 +4,7 @@ import {
   COOKIE_PLATAFORMA,
   firmarSesionPlataforma,
   plataformaHabilitada,
+  registrarPlataforma,
   requirePlataforma,
 } from "@/lib/plataforma";
 import { limpiarIntentos, registrarFallo, segundosBloqueado } from "@/lib/rate-limit";
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Clave de plataforma incorrecta" }, { status: 401 });
   }
   limpiarIntentos(llave);
+  await registrarPlataforma("Inicio de sesión en la consola", null, { ip });
   const res = NextResponse.json({ ok: true });
   res.cookies.set(COOKIE_PLATAFORMA, await firmarSesionPlataforma(), {
     httpOnly: true,

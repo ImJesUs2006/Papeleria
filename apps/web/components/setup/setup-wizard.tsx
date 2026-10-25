@@ -130,7 +130,27 @@ const FLAG_KEYS = Object.keys(PRESETS_POR_NEGOCIO.PAPELERIA_RETAIL.featureFlags)
   keyof FeatureFlags
 >;
 
-export function SetupWizard() {
+/** Código de acceso sugerido a partir del nombre: "Papelería Luna" → "papeleria-luna". */
+function sugerirCodigo(nombre: string) {
+  return nombre
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+/**
+ * Asistente de configuración inicial. Con `plataforma`, el MISMO asistente
+ * da de alta un negocio desde la consola: al final pide el código y la
+ * administradora, crea el negocio y le aplica esta configuración.
+ */
+export function SetupWizard({
+  plataforma,
+}: {
+  plataforma?: { onTerminado: (mensaje: string) => void; onCancelar: () => void };
+} = {}) {
   const router = useRouter();
   const refreshConfig = useConfigStore((s) => s.hydrate);
   const configActual = useConfigStore((s) => s.config);
@@ -144,15 +164,21 @@ export function SetupWizard() {
   const [recoveryAbierto, setRecoveryAbierto] = useState(false);
   // Nombre real del negocio (antes se enviaba "Mi Negocio" y pisaba el nombre
   // capturado al volver a correr el asistente).
-  const [nombre, setNombre] = useState(configActual?.nombreNegocio ?? "");
+  // En la consola no hay negocio previo: nada se precarga de la configuración local.
+  const [nombre, setNombre] = useState(plataforma ? "" : configActual?.nombreNegocio ?? "");
   const [preciosConIva, setPreciosConIva] = useState(configActual?.preciosIncluyenIva ?? true);
   // Productos de ejemplo del giro (opcional): para probar sin capturar nada.
   const [conEjemplos, setConEjemplos] = useState(false);
+  // Solo en la consola: datos de acceso del negocio nuevo.
+  const [acceso, setAcceso] = useState({ codigo: "", tocado: false, adminNombre: "", adminUsuario: "admin", adminClave: "" });
   useEffect(() => {
-    if (!configActual) return;
+    if (plataforma && !acceso.tocado) setAcceso((a) => ({ ...a, codigo: sugerirCodigo(nombre) }));
+  }, [nombre, plataforma, acceso.tocado]);
+  useEffect(() => {
+    if (plataforma || !configActual) return;
     setNombre((n) => n || configActual.nombreNegocio || "");
     setPreciosConIva(configActual.preciosIncluyenIva ?? true);
-  }, [configActual]);
+  }, [configActual, plataforma]);
 
   const preset = useMemo(() => (tipo ? PRESETS_POR_NEGOCIO[tipo] : null), [tipo]);
 
@@ -199,13 +225,15 @@ export function SetupWizard() {
 
   const completar = async () => {
     if (!tipo || !flags) return;
+    if (plataforma) {
+      if (!/^[a-z0-9-]{3,40}$/.test(acceso.codigo)) return setError("Código: 3 a 40 minúsculas, números o guiones.");
+      if (acceso.adminNombre.trim().length < 2) return setError("Escribe el nombre de la administradora.");
+      if (acceso.adminClave.length < 8) return setError("La contraseña de la administradora debe tener 8 caracteres o más.");
+    }
     setGuardando(true);
     setError(null);
     try {
-      const res = await fetch("/api/setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const configuracion = {
           nombreNegocio: nombre.trim(),
           tipoNegocio: tipo,
           ivaRate: 16,
@@ -215,12 +243,49 @@ export function SetupWizard() {
           politicaStockOffline: preset?.politicaStockOffline,
           // Cambiar de giro trae su vocabulario y campos de producto; si el
           // giro es el mismo se respeta lo que el negocio ya personalizó.
-          ...(tipo !== configActual?.tipoNegocio ? { personalizacion: presetPorGiro(tipo) } : {}),
+          ...(plataforma || tipo !== configActual?.tipoNegocio ? { personalizacion: presetPorGiro(tipo) } : {}),
           // Configuración personalizable (Fase 10): preset por giro.
           usarCaducidad: preset?.usarCaducidad ?? DEFAULT_USAR_CADUCIDAD,
           usarUbicaciones: preset?.usarUbicaciones ?? DEFAULT_USAR_UBICACIONES,
           requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
-        }),
+      };
+      if (plataforma) {
+        // 1) el negocio y su administradora · 2) el mismo asistente aplicado a él.
+        const alta = await fetch("/api/plataforma/negocios", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            codigo: acceso.codigo,
+            nombre: nombre.trim(),
+            tipoNegocio: tipo,
+            catalogoEjemplo: false,
+            admin: { nombre: acceso.adminNombre.trim(), username: acceso.adminUsuario.trim(), password: acceso.adminClave },
+          }),
+        });
+        const creado = await alta.json().catch(() => ({}));
+        if (!alta.ok) throw new Error(creado.error || "No se pudo crear el negocio");
+        const setup = await fetch(`/api/plataforma/negocios/${creado.idNegocio}/setup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...configuracion, catalogoEjemplo: conEjemplos }),
+        });
+        const aplicado = await setup.json().catch(() => ({}));
+        if (!setup.ok) {
+          plataforma.onTerminado(
+            `Negocio "${creado.nombre}" creado, pero su configuración quedó pendiente (${aplicado.error ?? "error"}): la administradora la completará al entrar.`
+          );
+          return;
+        }
+        plataforma.onTerminado(
+          `Negocio "${creado.nombre}" listo. Entra en /login con el código ${creado.codigo} y el usuario ${creado.admin}` +
+            (aplicado.catalogo ? ` · ${aplicado.catalogo.productos} productos de ejemplo` : "")
+        );
+        return;
+      }
+      const res = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(configuracion),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar");
@@ -245,14 +310,21 @@ export function SetupWizard() {
   const pasoIndex = PASOS.indexOf(paso);
 
   return (
-    <div className="min-h-screen bg-app flex items-center justify-center p-6">
+    <div
+      className={
+        plataforma
+          ? "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-6"
+          : "min-h-screen bg-app flex items-center justify-center p-6"
+      }
+      data-testid={plataforma ? "asistente-plataforma" : undefined}
+    >
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-3xl"
       >
         <div className="mb-6">
-          <h1 className="text-xl font-black text-gray-100">Configura tu sistema</h1>
+          <h1 className="text-xl font-black text-gray-100">{plataforma ? "Nuevo negocio" : "Configura tu sistema"}</h1>
           <p className="text-xs text-muted">
             Plantilla universal · Marca Blanca · 4 pasos
           </p>
@@ -464,6 +536,46 @@ export function SetupWizard() {
                       </button>
                     );
                   })()}
+                  {plataforma && (
+                    <div className="space-y-2 rounded-xl border border-surface-500 p-3">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted">Acceso del negocio</p>
+                      <label className="block">
+                        <span className="mb-1 block text-xs text-muted">Código para iniciar sesión</span>
+                        <input
+                          value={acceso.codigo}
+                          maxLength={40}
+                          onChange={(e) => setAcceso({ ...acceso, codigo: e.target.value.toLowerCase(), tocado: true })}
+                          aria-label="Código del negocio"
+                          className="input-dark font-mono"
+                        />
+                      </label>
+                      <input
+                        value={acceso.adminNombre}
+                        onChange={(e) => setAcceso({ ...acceso, adminNombre: e.target.value })}
+                        placeholder="Nombre de la administradora (dueña)"
+                        aria-label="Nombre de la administradora"
+                        className="input-dark"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={acceso.adminUsuario}
+                          onChange={(e) => setAcceso({ ...acceso, adminUsuario: e.target.value })}
+                          placeholder="Usuario"
+                          aria-label="Usuario de la administradora"
+                          className="input-dark"
+                        />
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          value={acceso.adminClave}
+                          onChange={(e) => setAcceso({ ...acceso, adminClave: e.target.value })}
+                          placeholder="Contraseña (8+)"
+                          aria-label="Contraseña de la administradora"
+                          className="input-dark"
+                        />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {metodos.map((m) => {
                       const Icon = METODO_UI[m].icon;
@@ -496,6 +608,14 @@ export function SetupWizard() {
 
           {/* Actions */}
           <div className="mt-6 flex items-center justify-between">
+            {plataforma && paso === "tipo" ? (
+              <button
+                onClick={plataforma.onCancelar}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-muted hover:text-gray-100 transition-colors text-sm"
+              >
+                Cancelar
+              </button>
+            ) : (
             <button
               onClick={atras}
               disabled={paso === "tipo" || guardando}
@@ -503,6 +623,7 @@ export function SetupWizard() {
             >
               <ArrowLeft className="h-4 w-4" /> Atrás
             </button>
+            )}
 
             {paso !== "resumen" ? (
               <motion.button
@@ -524,12 +645,12 @@ export function SetupWizard() {
                 ) : (
                   <ShieldCheck className="h-4 w-4" />
                 )}
-                {guardando ? "Configurando..." : "Guardar y empezar"}
+                {guardando ? "Configurando..." : plataforma ? "Crear negocio" : "Guardar y empezar"}
               </motion.button>
             )}
           </div>
 
-          {paso === "resumen" && (
+          {paso === "resumen" && !plataforma && (
             <div className="mt-4 border-t border-surface-600 pt-3 flex justify-center">
               <button
                 onClick={() => setRecoveryAbierto(true)}

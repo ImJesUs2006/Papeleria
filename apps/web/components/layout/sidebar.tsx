@@ -25,6 +25,7 @@ import { ShortcutsHelp } from "./shortcuts-help";
 import { SucursalSelector } from "./sucursal-selector";
 import { CentroAlertas } from "@/components/alertas/centro-alertas";
 import { Ayudante } from "@/components/ayudante/ayudante";
+import { InstalarApp } from "./instalar-app";
 import type { FeatureFlags } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 
@@ -277,6 +278,7 @@ export function Sidebar() {
           </div>
         </div>
         <Ayudante />
+        <InstalarApp />
         <ShortcutsHelp />
         <button
           onClick={logout}

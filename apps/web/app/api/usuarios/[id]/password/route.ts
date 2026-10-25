@@ -3,6 +3,8 @@ import { hash, compare } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { esObjetoJson } from "@/lib/validacion";
+import { actuaComoDueno } from "@/lib/usuarios";
+import { RolError, validarGestion } from "@/lib/roles";
 
 // ============================================================
 // POST /api/usuarios/[id]/password
@@ -49,6 +51,21 @@ export async function POST(
   const target = await prisma.usuario.findUnique({ where: { idPersona: id } });
   if (!target) {
     return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+  }
+
+  // Cambiar la clave de OTRA persona: solo el dueño(a) toca administradores.
+  if (!esPropia) {
+    try {
+      validarGestion({
+        actorId: user.idPersona,
+        actorEsDueno: await actuaComoDueno(prisma, user),
+        objetivo: target,
+        cambio: { clave: true },
+      });
+    } catch (e) {
+      if (e instanceof RolError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
   }
 
   // Cambio propio (no admin): exige la contraseña actual.

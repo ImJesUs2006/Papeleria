@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
+import { prisma } from "@papeleria/database";
 
 // ============================================================
 // Consola de PLATAFORMA (dueño del SaaS). Es independiente de los
@@ -59,4 +60,15 @@ export async function sesionPlataformaValida(token: string | undefined): Promise
 export async function requirePlataforma(): Promise<boolean> {
   const c = await cookies();
   return sesionPlataformaValida(c.get(COOKIE_PLATAFORMA)?.value);
+}
+
+/** Bitácora de la consola: qué hizo el dueño de la plataforma y sobre qué negocio. */
+export async function registrarPlataforma(accion: string, idNegocio?: string | null, detalle?: Record<string, unknown>) {
+  try {
+    await prisma.plataformaLog.create({
+      data: { accion: accion.slice(0, 300), idNegocio: idNegocio ?? null, detalle: (detalle ?? undefined) as any },
+    });
+  } catch (e) {
+    console.error("[plataforma:bitacora]", e);
+  }
 }

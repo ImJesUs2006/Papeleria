@@ -135,6 +135,11 @@ describe("tenant · ninguna ruta usa el cliente global", () => {
       // Consola de plataforma (dueño del SaaS): opera sobre todos los negocios.
       "app/api/plataforma/negocios/route.ts",
       "app/api/plataforma/negocios/[id]/route.ts",
+      "app/api/plataforma/negocios/[id]/setup/route.ts",
+      "app/api/plataforma/tablero/route.ts",
+      "app/api/plataforma/exportar/route.ts",
+      "app/api/plataforma/bitacora/route.ts",
+      "lib/plataforma.ts",
       "lib/auth.ts",
       "lib/tenant.ts",
     ].map((p) => p.split("/").join(sep))

@@ -12,6 +12,8 @@ export interface AuthPayload extends JWTPayload {
   permisoCobrar?: boolean;
   permisoInventario?: boolean;
   permisoReportes?: boolean;
+  /** Dueño(a) del negocio (Fase F). Lo resuelve getSession desde la BD. */
+  isRoot?: boolean;
 }
 
 const DEV_SECRET = "dev-only-insecure-secret";

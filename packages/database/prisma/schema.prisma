@@ -194,10 +194,18 @@ model Producto {
   // Costo promedio ponderado: se recalcula en cada recepción de compra.
   // `precioCompra` queda como el ÚLTIMO costo pagado.
   costoPromedio      Decimal?       @db.Decimal(12, 4)
-  // ---- Fase 12 · Venta a Mayoreo ----
-  // Precio de mayoreo (opcional). Si es null o 0, el producto NO tiene
-  // precio de mayoreo y el interruptor del POS lo omite (usa menudeo).
+  // ---- Fase 12 · Venta a Mayoreo (OBSOLETO desde la Fase D) ----
+  // El mayoreo vive solo en `escalasPrecio`; la migración de la Fase D
+  // convirtió este precio en una escala y lo dejó en null.
   precioMayoreo      Decimal?       @db.Decimal(10, 2)
+  // ---- Fase D · Unidades ----
+  // Unidad en que se COMPRA ("Paquete", "Caja"; null = pieza) y cuántas
+  // piezas trae. El pedido se captura en esa unidad y el inventario sube
+  // en piezas; el costo por pieza = costo de la unidad ÷ piezas.
+  unidadCompra       String?
+  piezasPorUnidad    Int            @default(1)
+  // Unidad en que se VENDE a granel ("kg", "m", "L"; null = pieza).
+  unidadVenta        String?
   // Precios por volumen: [{ desde, precio, nombre? }] (lib/precios.ts).
   escalasPrecio      Json?
   // ---- Impuestos por producto ----
@@ -347,6 +355,9 @@ model ItemPedidoProveedor {
   codigoItem       String
   cantidad         Int
   precioCotizado   Decimal @db.Decimal(10, 2)
+  // Fase D: piezas por unidad de compra al momento del pedido (la cantidad
+  // y el precio cotizado van en esa unidad; recibir suma cantidad × piezas).
+  piezasPorUnidad  Int     @default(1)
   // Recepción parcial (Paso 7): unidades ya recibidas de este renglón.
   cantidadRecibida Int     @default(0)
 

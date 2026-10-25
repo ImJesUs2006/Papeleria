@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Barcode,
   PencilLine,
+  Trash2,
   Star,
   Plus,
   History,
@@ -40,6 +41,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { useLabelModal } from "@/components/inventario/label-modal";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 interface Product {
   codigoItem: string;
@@ -70,6 +72,9 @@ interface UploadResult {
   successCount: number;
   errorCount: number;
   errors: Array<{ row: number; field: string; message: string }>;
+  creados?: number;
+  actualizados?: number;
+  columnasIgnoradas?: string[];
 }
 
 type SortField = "descripcion" | "precioUnitario" | "stockActual" | "fechaCreacion" | "ubicacionEstante" | "proveedor";
@@ -128,6 +133,26 @@ export default function InventarioPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [gestorCategorias, setGestorCategorias] = useState(false);
   const [fichaCodigo, setFichaCodigo] = useState<string | null>(null);
+  const [fichaPestana, setFichaPestana] = useState<"resumen" | "variantes">("resumen");
+
+  // Sin historia se elimina; con ventas, pedidos o lotes se da de baja (oculto).
+  const quitarProducto = async (codigo: string, descripcion: string) => {
+    if (
+      !window.confirm(
+        `¿Quitar "${descripcion}" del catálogo?\n\nSi nunca se ha movido se elimina; si ya tiene ventas o compras se da de baja y deja de aparecer, pero su historial se conserva.`
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`/api/productos/${encodeURIComponent(codigo)}`, { method: "DELETE" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "No se pudo quitar el producto");
+      notificar.exito(d.modo === "ELIMINADO" ? "Producto eliminado" : "Producto dado de baja", d.motivo);
+      fetchProducts();
+    } catch (e: any) {
+      notificar.error("No se pudo quitar", e.message);
+    }
+  };
   const cargarCategorias = useCallback(() => {
     fetch("/api/categorias", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { categorias: [] }))
@@ -371,11 +396,14 @@ export default function InventarioPage() {
     formData.append("file", file);
     try {
       const res = await fetch("/api/inventario/carga-masiva", { method: "POST", body: formData });
-      const result: UploadResult = await res.json();
-      setUploadResult(result);
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(result.errors)) {
+        throw new Error(result.error || "Error al procesar archivo");
+      }
+      setUploadResult(result as UploadResult);
       if (result.successCount > 0) fetchProducts();
-    } catch {
-      setUploadResult({ totalRows: 0, successCount: 0, errorCount: 1, errors: [{ row: 0, field: "file", message: "Error al procesar archivo" }] });
+    } catch (e: any) {
+      setUploadResult({ totalRows: 0, successCount: 0, errorCount: 1, errors: [{ row: 0, field: "archivo", message: e.message || "Error al procesar archivo" }] });
     } finally {
       setIsUploading(false);
     }
@@ -835,6 +863,9 @@ export default function InventarioPage() {
                         ${p.precioUnitario.toFixed(2)}
                       </td>
                       <td className="px-4 py-3">
+                        {p.esServicio ? (
+                          <span className="text-sm text-muted" title="Los servicios no llevan existencia">—</span>
+                        ) : (<>
                         <span className={cn(
                           "text-sm font-bold px-2 py-0.5 rounded-md",
                           p.stockActual <= 0 ? "bg-neon-red/10 text-neon-red" :
@@ -846,7 +877,12 @@ export default function InventarioPage() {
                         {p.stockActual <= p.stockMinimo && p.stockActual > 0 && (
                           <span className="text-[10px] text-warning ml-2">MIN: {p.stockMinimo}</span>
                         )}
+                        </>)}
                       </td>
+                      {usarUbicaciones && (
+                        <td className="px-4 py-3 text-sm text-muted">{p.ubicacionEstante || "—"}</td>
+                      )}
+                      <td className="px-4 py-3 text-sm text-muted">{p.proveedor || "—"}</td>
                       {usarCaducidad && (
                         <td className="px-4 py-3 text-sm text-muted">
                           {p.fechaCaducidad
@@ -874,10 +910,6 @@ export default function InventarioPage() {
                             : "—"}
                         </td>
                       )}
-                      {usarUbicaciones && (
-                        <td className="px-4 py-3 text-sm text-muted">{p.ubicacionEstante || "—"}</td>
-                      )}
-                      <td className="px-4 py-3 text-sm text-muted">{p.proveedor || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
@@ -921,6 +953,14 @@ export default function InventarioPage() {
                             title="Generar etiqueta QR/barras"
                           >
                             <Barcode className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => quitarProducto(p.codigoItem, p.descripcion)}
+                            className="h-8 w-8 rounded-lg bg-surface-700 hover:bg-neon-red/10 flex items-center justify-center text-muted hover:text-neon-red transition-colors"
+                            title="Quitar del catálogo"
+                            aria-label={`Quitar ${p.descripcion} del catálogo`}
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -999,7 +1039,7 @@ export default function InventarioPage() {
               </motion.div>
             </div>
             <div className="mt-2 flex justify-end">
-              <a href="/templates/inventario-plantilla.xlsx" className="flex items-center gap-2 text-sm text-muted hover:text-neon-blue transition-colors">
+              <a href="/api/inventario/plantilla" className="flex items-center gap-2 text-sm text-muted hover:text-neon-blue transition-colors">
                 <Download className="h-4 w-4" />
                 Descargar plantilla
               </a>
@@ -1022,7 +1062,15 @@ export default function InventarioPage() {
                   )}
                   <div>
                     <h3 className="font-bold text-gray-100 text-sm">Resultado de carga</h3>
-                    <p className="text-xs text-muted">{uploadResult.successCount} de {uploadResult.totalRows} productos cargados</p>
+                    <p className="text-xs text-muted">
+                      {uploadResult.successCount} de {uploadResult.totalRows} renglones cargados
+                      {uploadResult.creados != null && ` · ${uploadResult.creados} nuevos, ${uploadResult.actualizados} actualizados`}
+                    </p>
+                    {!!uploadResult.columnasIgnoradas?.length && (
+                      <p className="text-[11px] text-warning">
+                        Columnas que no se reconocieron (se ignoraron): {uploadResult.columnasIgnoradas.join(", ")}
+                      </p>
+                    )}
                   </div>
                 </div>
                 {uploadResult.errors.length > 0 && (
@@ -1193,7 +1241,11 @@ export default function InventarioPage() {
 
         <FichaProducto
           codigo={fichaCodigo}
-          onClose={() => setFichaCodigo(null)}
+          pestanaInicial={fichaPestana}
+          onClose={() => {
+            setFichaCodigo(null);
+            setFichaPestana("resumen");
+          }}
           onEditar={(codigo) => {
             setFichaCodigo(null);
             setEditing({ codigoItem: codigo } as ProductFormData);
@@ -1213,6 +1265,10 @@ export default function InventarioPage() {
           open={formOpen}
           onClose={() => setFormOpen(false)}
           onSaved={() => fetchProducts()}
+          onAbrirVariantes={(codigo) => {
+            setFichaPestana("variantes");
+            setFichaCodigo(codigo);
+          }}
           producto={editing}
           usarCaducidad={usarCaducidad}
           usarUbicaciones={usarUbicaciones}

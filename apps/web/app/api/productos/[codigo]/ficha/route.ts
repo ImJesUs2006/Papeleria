@@ -92,6 +92,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cod
       ubicacionEstante: p.ubicacionEstante,
       atributos: p.atributos,
       atributosVariante: p.atributosVariante,
+      grupoVariante: p.grupoVariante,
+      unidadCompra: p.unidadCompra,
+      piezasPorUnidad: p.piezasPorUnidad,
+      unidadVenta: p.unidadVenta,
     },
     existencias: existencias
       .filter((e) => e.sucursal.activa)

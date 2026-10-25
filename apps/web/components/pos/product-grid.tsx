@@ -229,7 +229,7 @@ export function ProductGrid() {
                   <span className="text-[10px] font-bold text-neon-purple border border-neon-purple/40 rounded px-1 py-0.5 shrink-0">
                     Servicio
                   </span>
-                ) : Number(p.precioMayoreo) > 0 ? (
+                ) : (p.escalasPrecio?.length ?? 0) > 0 ? (
                   <span className="text-[10px] font-bold text-teal-300 border border-teal-500/40 rounded px-1 py-0.5 shrink-0">
                     Mayoreo
                   </span>

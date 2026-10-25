@@ -129,3 +129,33 @@ export async function devolverSeries(
   });
   return elegidas;
 }
+
+/**
+ * Baja de una serie DISPONIBLE (pieza dañada, capturada por error): la pieza
+ * sale del inventario de su sucursal y queda en el kardex. Las vendidas no
+ * se tocan: son historial de garantías.
+ */
+export async function bajaSerie(
+  tx: Tx,
+  d: { idSerie: string; motivo: string; idUsuario: string }
+) {
+  const serie = await tx.numeroSerie.findUnique({ where: { idSerie: d.idSerie } });
+  if (!serie) throw new SerieError("Serie no encontrada", 404);
+  if (serie.estado !== "DISPONIBLE") {
+    throw new SerieError(`La serie ${serie.serie} ya se vendió: se conserva para garantías`, 409);
+  }
+  const motivo = d.motivo.trim().slice(0, 120) || "baja";
+  await tx.numeroSerie.delete({ where: { idSerie: d.idSerie } });
+  await moverStock(tx, { codigoItem: serie.codigoItem, delta: -1, idSucursal: serie.idSucursal });
+  await registrarMovimientosKardex(tx, [
+    {
+      codigoItem: serie.codigoItem,
+      tipo: "SALIDA",
+      cantidad: 1,
+      motivo: `Baja de serie ${serie.serie}: ${motivo}`.slice(0, 190),
+      idUsuario: d.idUsuario,
+      idSucursal: serie.idSucursal,
+    },
+  ]);
+  return serie;
+}

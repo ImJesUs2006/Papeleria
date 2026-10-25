@@ -15,6 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { describirEscalas, type EscalaPrecio } from "@/lib/precios";
+import { GeneradorVariantes } from "@/components/inventario/generador-variantes";
+import { describirUnidadCompra } from "@/lib/unidades";
 import { notificar } from "@/store/notificaciones";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,10 @@ interface Ficha {
     usaSeries: boolean;
     codigoBarras: string | null;
     ubicacionEstante: string | null;
+    grupoVariante: string | null;
+    unidadCompra: string | null;
+    piezasPorUnidad: number;
+    unidadVenta: string | null;
   };
   existencias: Array<{ idSucursal: string; sucursal: string; esMatriz: boolean; stock: number; activa: boolean }>;
   lotes: Array<{ idLote: string; numeroLote: string; caducidad: string | null; cantidad: number; sucursal: string }>;
@@ -73,11 +79,14 @@ export function FichaProducto({
   onClose,
   onEditar,
   onCambio,
+  pestanaInicial = "resumen",
 }: {
   codigo: string | null;
   onClose: () => void;
   onEditar: (codigo: string) => void;
   onCambio?: () => void;
+  /** Pestaña con la que abre (p. ej. "variantes" justo después de crear el modelo). */
+  pestanaInicial?: Pestana;
 }) {
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -101,9 +110,9 @@ export function FichaProducto({
 
   useEffect(() => {
     setFicha(null);
-    setPestana("resumen");
+    setPestana(pestanaInicial);
     cargar();
-  }, [cargar]);
+  }, [cargar, pestanaInicial]);
 
   useEffect(() => {
     if (!codigo) return;
@@ -123,7 +132,8 @@ export function FichaProducto({
     { id: "existencias", label: "Existencias", icon: Store, visible: !p?.esServicio },
     { id: "lotes", label: "Lotes", icon: Boxes, visible: !!p?.usaLotes },
     { id: "series", label: "Series", icon: Barcode, visible: !!p?.usaSeries },
-    { id: "variantes", label: "Variantes", icon: Layers, visible: (ficha?.variantes.length ?? 0) > 0 },
+    // Un modelo (o un producto suelto) puede generar variantes; una variante ve a sus hermanas.
+    { id: "variantes", label: "Variantes", icon: Layers, visible: !!p && !p.esServicio },
     { id: "historial", label: "Historial", icon: History, visible: !p?.esServicio },
   ];
 
@@ -229,7 +239,7 @@ export function FichaProducto({
               ) : pestana === "series" ? (
                 <Series ficha={ficha} onCambio={recargar} />
               ) : pestana === "variantes" ? (
-                <Variantes ficha={ficha} />
+                <Variantes ficha={ficha} onCambio={recargar} />
               ) : (
                 <Historial codigo={ficha.producto.codigoItem} />
               )}
@@ -286,16 +296,28 @@ function Resumen({ ficha }: { ficha: Ficha }) {
         />
       </div>
       <div className="rounded-xl border border-surface-600 p-3">
-        <p className="mb-1 text-xs font-bold text-gray-100">Precios por volumen</p>
+        <p className="mb-1 text-xs font-bold text-gray-100">Precios de mayoreo</p>
         {p.escalasPrecio.length > 0 ? (
           <p className="text-sm text-emerald-300">{describirEscalas(p.escalasPrecio)}</p>
         ) : (
-          <p className="text-xs text-muted">Sin escalas. Agrégalas en “Editar” → Precios por volumen.</p>
-        )}
-        {p.precioMayoreo != null && (
-          <p className="mt-1 text-xs text-muted">Precio cliente mayorista: {dinero(p.precioMayoreo)}</p>
+          <p className="text-xs text-muted">Sin escalas. Agrégalas en “Editar” → Precios de mayoreo.</p>
         )}
       </div>
+      {!p.esServicio && (
+        <div className="rounded-xl border border-surface-600 p-3 text-xs text-muted">
+          <p>
+            Se compra por: <b className="text-gray-100">{describirUnidadCompra(p.unidadCompra, p.piezasPorUnidad)}</b>
+            {p.piezasPorUnidad > 1 && p.costo != null && (
+              <> · costo por {p.unidadCompra?.toLowerCase()} {dinero(p.costo * p.piezasPorUnidad)}</>
+            )}
+          </p>
+          {p.unidadVenta && (
+            <p className="mt-1">
+              Se vende a granel por <b className="text-gray-100">{p.unidadVenta}</b>
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -531,10 +553,26 @@ function Series({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
   );
 }
 
-function Variantes({ ficha }: { ficha: Ficha }) {
+function Variantes({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
+  const p = ficha.producto;
+  const esVariante = !!p.grupoVariante && p.grupoVariante !== p.codigoItem;
   return (
     <ul className="space-y-2">
-      <li className="text-xs text-muted">Otras variantes del mismo producto (talla, color…):</li>
+      {!esVariante && (
+        <li className="space-y-2 rounded-xl border border-surface-600 p-3">
+          <p className="text-xs text-muted">
+            Genera las combinaciones de este modelo (talla, color, medida). Cada una lleva su propia existencia y código.
+          </p>
+          <GeneradorVariantes codigoModelo={p.codigoItem} onCreadas={onCambio} />
+        </li>
+      )}
+      <li className="text-xs text-muted">
+        {ficha.variantes.length
+          ? esVariante
+            ? "Otras variantes del mismo modelo:"
+            : "Variantes de este modelo:"
+          : "Aún no tiene variantes."}
+      </li>
       {ficha.variantes.map((v) => (
         <li key={v.codigoItem} className="flex items-center justify-between rounded-xl border border-surface-600 px-3 py-2">
           <div className="min-w-0">

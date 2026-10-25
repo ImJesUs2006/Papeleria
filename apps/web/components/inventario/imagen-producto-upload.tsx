@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Loader2, Trash2, AlertTriangle, ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { leerConfigCloudinary, subirACloudinary, TIPOS_IMAGEN, type ConfigCloudinary } from "@/lib/imagenes-cliente";
 
 /**
  * FASE 12 · Subida de imagen del producto a Cloudinary.
@@ -15,21 +16,14 @@ import { cn } from "@/lib/utils";
  * del `.env`, el componente se oculta y deja avisar al usuario.
  */
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-const TIPOS = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const TIPOS = TIPOS_IMAGEN;
 
 interface Props {
   value: string | null;
   onChange: (url: string | null) => void;
 }
 
-interface CloudinaryConfig {
-  enabled: boolean;
-  cloudName?: string;
-  uploadPreset?: string;
-  folder?: string;
-  razon?: string;
-}
+type CloudinaryConfig = ConfigCloudinary;
 
 export function ImagenProductoUpload({ value, onChange }: Props) {
   const [config, setConfig] = useState<CloudinaryConfig | null>(null);
@@ -39,15 +33,9 @@ export function ImagenProductoUpload({ value, onChange }: Props) {
 
   useEffect(() => {
     let viva = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/configuracion/cloudinary", { cache: "no-store" });
-        const data = res.ok ? await res.json() : { enabled: false };
-        if (viva) setConfig(data);
-      } catch {
-        if (viva) setConfig({ enabled: false, razon: "Sin conexión" });
-      }
-    })();
+    leerConfigCloudinary().then((data) => {
+      if (viva) setConfig(data);
+    });
     return () => {
       viva = false;
     };
@@ -57,31 +45,10 @@ export function ImagenProductoUpload({ value, onChange }: Props) {
     if (!archivo || !config?.cloudName || !config.uploadPreset) return;
     setError(null);
 
-    if (!TIPOS.includes(archivo.type)) {
-      setError("Formato no admitido (usa PNG, JPG, WEBP o GIF)");
-      return;
-    }
-    if (archivo.size > MAX_BYTES) {
-      setError("La imagen supera los 5 MB");
-      return;
-    }
-
+    // Sin límite propio de tamaño: la imagen se reduce en el navegador antes de subir.
     setSubiendo(true);
     try {
-      const body = new FormData();
-      body.append("file", archivo);
-      body.append("upload_preset", config.uploadPreset);
-      if (config.folder) body.append("folder", config.folder);
-
-      const res = await fetch(
-        `https://api.cloudinary.com/v1_1/${config.cloudName}/image/upload`,
-        { method: "POST", body }
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.secure_url) {
-        throw new Error(data?.error?.message || "Cloudinary rechazó la imagen");
-      }
-      onChange(data.secure_url as string);
+      onChange(await subirACloudinary(archivo, config, "productos"));
     } catch (e: any) {
       setError(e?.message || "No se pudo subir la imagen");
     } finally {

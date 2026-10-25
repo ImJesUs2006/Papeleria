@@ -3,7 +3,7 @@
 //
 // Cada producto puede tener hasta 5 escalas: "desde N piezas, a $X c/u",
 // con nombre opcional ("Paquete", "Caja"). El precio baja solo cuando la
-// cantidad de la línea llega a la escala. El interruptor "Cliente mayorista"
+// cantidad de la línea llega a la escala. El interruptor "Precio mayorista"
 // del POS aplica el mejor precio disponible (la escala más baja o el
 // precio de mayoreo clásico) sin importar la cantidad.
 //

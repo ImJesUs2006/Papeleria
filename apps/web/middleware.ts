@@ -68,6 +68,7 @@ export async function middleware(request: NextRequest) {
         "/api/inventario",
         "/api/traspasos",
         "/api/lotes",
+        "/api/variantes",
         "/inventario",
         "/proveedores",
         "/pedidos",

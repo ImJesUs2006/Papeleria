@@ -1,5 +1,6 @@
 import { PrismaClient, Rol } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { sembrarDemo } from "./seed-demo";
 
 const prisma = new PrismaClient();
 
@@ -266,10 +267,17 @@ async function main() {
     }
   }
 
+  // Datos de demostración (Fase D): un producto de cada tipo y clientes fiscales ficticios.
+  const admin = await prisma.usuario.findUniqueOrThrow({
+    where: { idNegocio_username: { idNegocio: ID_NEGOCIO, username: "admin" } },
+  });
+  const demo = await sembrarDemo(prisma, { idNegocio: ID_NEGOCIO, idSucursal: matriz.idSucursal, idUsuario: admin.idPersona });
+
   console.log("✅ Seed completed!");
   console.log("   - Admin user: admin / admin123");
   console.log("   - Cajera user: cajera1 / cajera123");
   console.log(`   - ${sampleProducts.length} sample products`);
+  console.log(`   - Demostración: ${demo.productos} productos DEMO-* nuevos y ${demo.clientes} clientes fiscales ficticios`);
 }
 
 main()

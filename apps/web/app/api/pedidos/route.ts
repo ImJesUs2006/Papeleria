@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       include: {
         proveedor: { select: { nombre: true } },
         items: {
-          include: { producto: { select: { descripcion: true, usaLotes: true, usaSeries: true } } },
+          include: { producto: { select: { descripcion: true, usaLotes: true, usaSeries: true, unidadCompra: true } } },
         },
       },
     });
@@ -53,6 +53,9 @@ export async function GET(request: Request) {
           usaLotes: i.producto.usaLotes,
           usaSeries: i.producto.usaSeries,
           precioCotizado: Number(i.precioCotizado),
+          // Fase D: cantidad y precio van en esta unidad ("Paquete" de N piezas).
+          unidadCompra: i.piezasPorUnidad > 1 ? i.producto.unidadCompra ?? "Paquete" : null,
+          piezasPorUnidad: i.piezasPorUnidad,
         })),
         totalItems: p.items.length,
       })),
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
     // Todos los productos deben existir en el catálogo de este negocio.
     const existentes = await prisma.producto.findMany({
       where: { codigoItem: { in: items.map((i) => i.codigoItem) } },
-      select: { codigoItem: true },
+      select: { codigoItem: true, piezasPorUnidad: true },
     });
     const faltan = items.filter((i) => !existentes.some((e) => e.codigoItem === i.codigoItem));
     if (faltan.length > 0) {
@@ -123,6 +126,8 @@ export async function POST(request: Request) {
               codigoItem: it.codigoItem,
               cantidad: it.cantidad,
               precioCotizado: it.precioCotizado,
+              // La cantidad y el precio van en la unidad de compra del producto.
+              piezasPorUnidad: existentes.find((e) => e.codigoItem === it.codigoItem)?.piezasPorUnidad ?? 1,
             })),
           },
         },

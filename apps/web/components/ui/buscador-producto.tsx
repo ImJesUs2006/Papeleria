@@ -14,6 +14,10 @@ export interface ProductoEncontrado {
   esServicio?: boolean;
   grupoVariante?: string | null;
   imagenUrl?: string | null;
+  precioCompra?: number | null;
+  unidadCompra?: string | null;
+  piezasPorUnidad?: number;
+  unidadVenta?: string | null;
 }
 
 /**
@@ -183,7 +187,9 @@ export function BuscadorProducto({
                       {!ok && motivoFiltro ? ` · ${motivoFiltro}` : ""}
                     </p>
                   </div>
-                  <span className="shrink-0 text-xs font-bold tabular-nums text-gray-200">{Number(p.stockActual)} pzs</span>
+                  <span className="shrink-0 text-xs font-bold tabular-nums text-gray-200">
+                    {p.esServicio ? "servicio" : `${Number(p.stockActual)} ${p.unidadVenta ?? "pzs"}`}
+                  </span>
                 </li>
               );
             })

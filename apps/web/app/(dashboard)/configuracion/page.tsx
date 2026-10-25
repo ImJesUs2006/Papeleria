@@ -60,6 +60,7 @@ import {
 } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 import { notificar } from "@/store/notificaciones";
+import { aDataUrlReducida, leerConfigCloudinary, subirACloudinary } from "@/lib/imagenes-cliente";
 
 
 /** Tamaño máximo del logo en bytes (base64 ≈ 1 MB). */
@@ -300,27 +301,31 @@ function NegocioConfigPanel() {
   const [seccion, setSeccion] = useState<"identidad" | "pos" | "financiero" | "modulos">("identidad");
   const refreshConfig = useConfigStore((s) => s.refresh);
 
-  /** Lee un archivo de imagen, valida peso/mime y lo convierte a base64 (data URL). */
-  const aplicarLogoArchivo = (file: File | undefined | null) => {
+  /**
+   * Logo: con Cloudinary se sube ahí (URL); sin él, se reduce a 512 px y se
+   * guarda como data URL. En ambos casos sin límite de tamaño del original.
+   */
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const aplicarLogoArchivo = async (file: File | undefined | null) => {
     if (!file) return;
     setMarcaError(null);
     if (!file.type.startsWith("image/")) {
       setMarcaError("El archivo debe ser una imagen (PNG, JPG/JPEG o WEBP).");
       return;
     }
-    const lector = new FileReader();
-    lector.onload = () => {
-      if (typeof lector.result !== "string") return;
-      const dataUrl: string = lector.result;
-      const sinPrefijo = dataUrl.replace(/^data:image\/[^;,]+;base64,/, "");
-      const bytes = (sinPrefijo.length * 3) / 4;
-      if (bytes > LOGO_MAX_BYTES) {
-        setMarcaError("El logo excede 1 MB. Usa una imagen más ligera.");
-        return;
+    setSubiendoLogo(true);
+    try {
+      const nube = await leerConfigCloudinary();
+      const logo = nube.enabled ? await subirACloudinary(file, nube, "logos") : await aDataUrlReducida(file);
+      if (!nube.enabled && logo.length > LOGO_MAX_BYTES) {
+        throw new Error("No se pudo reducir el logo lo suficiente; prueba con otra imagen.");
       }
-      setConfig((c) => (c ? { ...c, logo: dataUrl } : c));
-    };
-    lector.readAsDataURL(file);
+      setConfig((c) => (c ? { ...c, logo } : c));
+    } catch (e: any) {
+      setMarcaError(e.message || "No se pudo cargar el logo");
+    } finally {
+      setSubiendoLogo(false);
+    }
   };
 
   const setTema = (temaBase: TemaBase) => {
@@ -679,7 +684,7 @@ const guardar = async () => {
               <p className="mt-1 text-[11px] text-neon-red">{marcaError}</p>
             )}
             <p className="mt-1 text-[11px] text-muted">
-              Máximo 1 MB · PNG, JPG o WEBP
+              {subiendoLogo ? "Subiendo logo…" : "PNG, JPG o WEBP · se ajusta el tamaño automáticamente"}
             </p>
           </div>
 

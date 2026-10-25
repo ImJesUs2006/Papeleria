@@ -20,6 +20,8 @@ import {
 import { cn } from "@/lib/utils";
 import { RecepcionModal, type ResultadoRecepcion } from "@/components/pedidos/recepcion-modal";
 import { notificar } from "@/store/notificaciones";
+import { BuscadorProducto, type ProductoEncontrado } from "@/components/ui/buscador-producto";
+import { costoPorPieza, describirUnidadCompra, piezasDe } from "@/lib/unidades";
 
 interface PedidoItem {
   idItemPedido: string;
@@ -30,6 +32,8 @@ interface PedidoItem {
   usaLotes?: boolean;
   usaSeries?: boolean;
   precioCotizado: number;
+  unidadCompra?: string | null;
+  piezasPorUnidad?: number;
 }
 
 interface Pedido {
@@ -54,8 +58,12 @@ interface Proveedor {
 interface ItemParaAgregar {
   codigoItem: string;
   descripcion: string;
+  /** En la unidad de compra (paquetes, cajas…). */
   cantidad: number;
+  /** Precio de UNA unidad de compra. */
   precioCotizado: number;
+  unidadCompra: string | null;
+  piezasPorUnidad: number;
 }
 
 const ESTADO_STYLE: Record<string, string> = {
@@ -113,9 +121,6 @@ export default function PedidosPage() {
   const [fCondicion, setFCondicion] = useState<"CONTADO" | "CREDITO">("CONTADO");
   const [fNotas, setFNotas] = useState("");
   const [items, setItems] = useState<ItemParaAgregar[]>([]);
-  const [busqueda, setBusqueda] = useState("");
-  const [resultados, setResultados] = useState<any[]>([]);
-  const [buscando, setBuscando] = useState(false);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -140,26 +145,6 @@ export default function PedidosPage() {
       .catch(() => {});
   }, [cargar]);
 
-  useEffect(() => {
-    if (!busqueda.trim()) {
-      setResultados([]);
-      return;
-    }
-    setBuscando(true);
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/productos?q=${encodeURIComponent(busqueda)}&limit=12`);
-        const d = await res.json();
-        setResultados(
-          (d.data ?? []).filter((p: any) => !items.some((i) => i.codigoItem === p.codigoItem))
-        );
-      } finally {
-        setBuscando(false);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [busqueda, items]);
-
   const celdas = useMemo(() => buildMonth(añoActual, mesActual), [añoActual, mesActual]);
   const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -174,13 +159,23 @@ export default function PedidosPage() {
     return map;
   }, [pedidos]);
 
-  const agregarProducto = (p: any) => {
+  // Se cotiza al COSTO (no al precio de venta) y en la unidad de compra:
+  // un paquete de 24 a $5 la pieza se propone en $120.
+  const agregarProducto = (p: ProductoEncontrado) => {
+    if (items.some((i) => i.codigoItem === p.codigoItem)) return;
+    const factor = Math.max(1, Number(p.piezasPorUnidad) || 1);
+    const costo = p.precioCompra != null ? Number(p.precioCompra) : 0;
     setItems((prev) => [
       ...prev,
-      { codigoItem: p.codigoItem, descripcion: p.descripcion, cantidad: 1, precioCotizado: Number(p.precioUnitario) },
+      {
+        codigoItem: p.codigoItem,
+        descripcion: p.descripcion,
+        cantidad: 1,
+        precioCotizado: Math.round(costo * factor * 100) / 100,
+        unidadCompra: factor > 1 ? p.unidadCompra ?? "Paquete" : null,
+        piezasPorUnidad: factor,
+      },
     ]);
-    setBusqueda("");
-    setResultados([]);
   };
 
   const crearPedido = async () => {
@@ -500,31 +495,30 @@ export default function PedidosPage() {
                     <PackagePlus className="h-4 w-4 text-neon-green" />
                     <span className="text-sm font-bold text-gray-100">Productos del pedido</span>
                   </div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
-                    <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar producto para agregar..." className="w-full bg-surface-700 border border-surface-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-muted/50 focus:border-neon-green focus:outline-none" />
-                  </div>
-                  {buscando && busqueda.trim() && <p className="text-[11px] text-muted mt-2"><Loader2 className="h-3 w-3 inline animate-spin mr-1" />Buscando...</p>}
-                  {resultados.length > 0 && (
-                    <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                      {resultados.map((r) => (
-                        <button key={r.codigoItem} onClick={() => agregarProducto(r)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-700 hover:bg-neon-green/10 text-left transition-colors">
-                          <span className="text-sm text-gray-200">{r.descripcion}</span>
-                          <span className="text-xs text-neon-cyan font-bold whitespace-nowrap ml-3">${Number(r.precioUnitario).toFixed(2)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <BuscadorProducto
+                    valor={null}
+                    onSeleccion={(p) => p && agregarProducto(p)}
+                    filtro={(p) => !p.esServicio && !items.some((i) => i.codigoItem === p.codigoItem)}
+                    motivoFiltro="ya está en el pedido o es servicio"
+                    placeholder="Busca el producto por nombre, código o escanea…"
+                  />
                 </div>
 
                 {items.length > 0 && (
                   <div className="bg-surface-900 rounded-xl border border-surface-600 overflow-hidden mb-4">
                     <table className="w-full text-sm">
-                      <thead><tr className="text-[10px] uppercase tracking-wider text-muted border-b border-surface-600"><th className="px-3 py-2 text-left">Producto</th><th className="px-3 py-2 w-20">Cantidad</th><th className="px-3 py-2 w-28">Precio cotizado</th><th className="px-3 py-2 w-24 text-right">Subtotal</th><th className="w-10"></th></tr></thead>
+                      <thead><tr className="text-[10px] uppercase tracking-wider text-muted border-b border-surface-600"><th className="px-3 py-2 text-left">Producto</th><th className="px-3 py-2 w-24">Cantidad</th><th className="px-3 py-2 w-28">Precio por unidad</th><th className="px-3 py-2 w-24 text-right">Subtotal</th><th className="w-10"></th></tr></thead>
                       <tbody>
                         {items.map((it) => (
                           <tr key={it.codigoItem} className="border-b border-surface-700 last:border-0">
-                            <td className="px-3 py-2 text-gray-200 text-xs">{it.descripcion}</td>
+                            <td className="px-3 py-2 text-gray-200 text-xs">
+                              {it.descripcion}
+                              <span className="mt-0.5 block text-[10px] text-muted">
+                                {it.piezasPorUnidad > 1
+                                  ? `Por ${describirUnidadCompra(it.unidadCompra, it.piezasPorUnidad).toLowerCase()} · entran ${piezasDe(it.cantidad, it.piezasPorUnidad)} pzs · $${costoPorPieza(it.precioCotizado, it.piezasPorUnidad).toFixed(2)} c/pza`
+                                  : "Por pieza"}
+                              </span>
+                            </td>
                             <td className="px-3 py-2"><input type="number" min={1} value={it.cantidad} onChange={(e) => setItems((prev) => prev.map((x) => x.codigoItem === it.codigoItem ? { ...x, cantidad: Math.max(1, Math.round(Number(e.target.value) || 1)) } : x))} className="w-full bg-surface-700 border border-surface-500 rounded px-2 py-1 text-sm text-gray-100" /></td>
                             <td className="px-3 py-2"><input type="number" min={0} step="0.01" value={it.precioCotizado} onChange={(e) => setItems((prev) => prev.map((x) => x.codigoItem === it.codigoItem ? { ...x, precioCotizado: Math.max(0, Number(e.target.value) || 0) } : x))} className="w-full bg-surface-700 border border-surface-500 rounded px-2 py-1 text-sm text-neon-cyan font-bold" /></td>
                             <td className="px-3 py-2 text-right text-neon-green font-bold text-xs">${(it.cantidad * it.precioCotizado).toFixed(2)}</td>

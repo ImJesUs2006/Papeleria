@@ -1,4 +1,5 @@
 import { leerEscalas, validarEscalas, type EscalaPrecio } from "@/lib/precios";
+import { validarUnidadCompra, validarUnidadVenta } from "@/lib/unidades";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireAuth } from "@/lib/auth";
@@ -177,6 +178,9 @@ escalasPrecio: leerEscalas(p.escalasPrecio, Number(p.precioUnitario)),
         usaLotes: p.usaLotes,
         usaSeries: p.usaSeries,
         grupoVariante: p.grupoVariante ?? null,
+        unidadCompra: p.unidadCompra ?? null,
+        piezasPorUnidad: p.piezasPorUnidad ?? 1,
+        unidadVenta: p.unidadVenta ?? null,
         idCategoria: p.idCategoria,
         atributos: (p.atributos as Record<string, unknown> | null) ?? null,
         ubicacionEstante: p.ubicacionEstante,
@@ -238,8 +242,10 @@ export async function POST(request: Request) {
   }
 
   let escalas: EscalaPrecio[] = [];
+  let unidades: ReturnType<typeof validarUnidadCompra>;
   try {
     escalas = validarEscalas(data.escalasPrecio, data.precioUnitario);
+    unidades = validarUnidadCompra(data);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
   }
@@ -299,6 +305,9 @@ precioCompra:
           stockActual: data.stockActual,
           stockMinimo: data.stockMinimo,
           permiteDecimales: data.permiteDecimales === true,
+          unidadCompra: data.esServicio === true ? null : unidades.unidadCompra,
+          piezasPorUnidad: data.esServicio === true ? 1 : unidades.piezasPorUnidad,
+          unidadVenta: validarUnidadVenta(data.unidadVenta, data.permiteDecimales === true && data.esServicio !== true),
           esServicio: data.esServicio === true,
           // Un servicio no tiene existencia: ni lotes ni series.
           usaLotes: data.esServicio !== true && data.usaLotes === true,

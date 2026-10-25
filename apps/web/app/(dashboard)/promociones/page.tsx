@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/modal";
 import { promocionVigente } from "@/lib/descuentos";
 import { cn } from "@/lib/utils";
 import { notificar } from "@/store/notificaciones";
+import { BuscadorProducto, type ProductoEncontrado } from "@/components/ui/buscador-producto";
 
 interface Promocion {
   idPromocion: string;
@@ -47,6 +48,7 @@ export default function PromocionesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [abierto, setAbierto] = useState(false);
+  const [productoPromo, setProductoPromo] = useState<ProductoEncontrado | null>(null);
   const [form, setForm] = useState({
     nombre: "",
     tipo: "PORCENTAJE" as "PORCENTAJE" | "NXM",
@@ -297,11 +299,12 @@ export default function PromocionesPage() {
               </select>
             </label>
             {form.alcance === "PRODUCTO" && (
-              <input
-                value={form.codigoItem}
-                onChange={(e) => setForm({ ...form, codigoItem: e.target.value })}
-                placeholder="Código del producto"
-                className="input-dark"
+              <BuscadorProducto
+                valor={productoPromo}
+                onSeleccion={(p) => {
+                  setProductoPromo(p);
+                  setForm({ ...form, codigoItem: p?.codigoItem ?? "" });
+                }}
               />
             )}
             {form.alcance === "CATEGORIA" && (

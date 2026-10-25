@@ -159,3 +159,76 @@ export async function lotesPorCaducar(
     take: 300,
   });
 }
+
+export type EstadoLote = "VIGENTE" | "POR_CADUCAR" | "CADUCADO" | "AGOTADO";
+
+/** Estado de un lote para la lista: agotado, caducado, por caducar (≤ 30 días) o vigente. */
+export function estadoLote(
+  l: { cantidad: unknown; caducidad: Date | null },
+  ahora = new Date(),
+  diasAviso = 30
+): EstadoLote {
+  if (Number(l.cantidad) <= 0) return "AGOTADO";
+  if (!l.caducidad) return "VIGENTE";
+  const inicio = hoy(ahora).getTime();
+  if (l.caducidad.getTime() < inicio) return "CADUCADO";
+  if (l.caducidad.getTime() <= inicio + diasAviso * 86_400_000) return "POR_CADUCAR";
+  return "VIGENTE";
+}
+
+/** Lista completa de lotes (con filtro por estado y texto) para la pantalla de lotes. */
+export async function listarLotes(
+  db: Pick<Tx, "lote">,
+  f: { idSucursal?: string | null; estado?: EstadoLote | "TODOS"; q?: string },
+  ahora = new Date()
+) {
+  const inicio = hoy(ahora);
+  const aviso = new Date(inicio.getTime() + 30 * 86_400_000);
+  const porEstado: Prisma.LoteWhereInput =
+    f.estado === "AGOTADO"
+      ? { cantidad: { lte: 0 } }
+      : f.estado === "CADUCADO"
+        ? { cantidad: { gt: 0 }, caducidad: { lt: inicio } }
+        : f.estado === "POR_CADUCAR"
+          ? { cantidad: { gt: 0 }, caducidad: { gte: inicio, lte: aviso } }
+          : f.estado === "VIGENTE"
+            ? { cantidad: { gt: 0 }, OR: [{ caducidad: null }, { caducidad: { gt: aviso } }] }
+            : {};
+  const q = f.q?.trim();
+  return db.lote.findMany({
+    where: {
+      ...porEstado,
+      ...(f.idSucursal ? { idSucursal: f.idSucursal } : {}),
+      ...(q
+        ? {
+            AND: [
+              {
+                OR: [
+                  { numeroLote: { contains: q, mode: "insensitive" } },
+                  { codigoItem: { contains: q, mode: "insensitive" } },
+                  { producto: { descripcion: { contains: q, mode: "insensitive" } } },
+                ],
+              },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ caducidad: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    include: { producto: { select: { descripcion: true } } },
+    take: 300,
+  });
+}
+
+/** Borra un lote AGOTADO (sin existencia no afecta inventario ni kardex). */
+export async function eliminarLoteAgotado(tx: Tx, idLote: string) {
+  const lote = await tx.lote.findUnique({ where: { idLote } });
+  if (!lote) throw new LoteError("Lote no encontrado", 404);
+  if (Number(lote.cantidad) > 0) {
+    throw new LoteError(
+      `El lote ${lote.numeroLote} aún tiene ${Number(lote.cantidad)} en existencia: dalo de baja como merma`,
+      409
+    );
+  }
+  await tx.lote.delete({ where: { idLote } });
+  return lote;
+}

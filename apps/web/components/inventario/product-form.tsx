@@ -24,6 +24,19 @@ import { EscalaError, validarEscalas, type EscalaPrecio } from "@/lib/precios";
 import { TIPO_IMPRESION_OPCIONES } from "@/lib/validate-product";
 import { cn } from "@/lib/utils";
 import { useConfigStore, usePersonalizacion } from "@/store/config";
+import {
+  banderasDeTipo,
+  CONTROLES_EXTRA,
+  controlesPermitidos,
+  costoPorPieza,
+  MODOS_VENTA,
+  stockSeCapturaDirecto,
+  tipoDeProducto,
+  UNIDADES_COMPRA,
+  UNIDADES_GRANEL,
+  type ControlExtra,
+  type ModoVenta,
+} from "@/lib/unidades";
 
 const TIPO_IMPRESION_LABELS: Record<(typeof TIPO_IMPRESION_OPCIONES)[number], string> = {
   BLANCO_NEGRO: "Blanco y negro",
@@ -36,8 +49,6 @@ export interface ProductFormData {
   descripcion: string;
   precioUnitario: number;
   precioCompra?: number | null;
-  /** Fase 12: precio de mayoreo (0 = el producto no tiene mayoreo). */
-  precioMayoreo?: number | null;
   /** Impuestos por producto: IVA propio (null = el del negocio), exento, IEPS. */
   tasaIva?: number | null;
   exentoIva?: boolean;
@@ -59,6 +70,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSaved?: (producto: ProductFormData) => void;
+  /** Al crear un modelo con "Variantes": abrir su ficha para generarlas. */
+  onAbrirVariantes?: (codigoItem: string) => void;
   /** Si se indica, el formulario entra en modo edición. */
   producto?: ProductFormData | null;
   /** Configuración personalizable (Fase 10): campos según el giro del negocio. */
@@ -110,11 +123,15 @@ const formSchema = z
       .min(0, "El precio de compra no puede ser negativo")
       .max(9_999_999, "Precio de compra demasiado alto")
       .optional(),
-    precioMayoreo: z
-      .number({ invalid_type_error: "Precio de mayoreo inválido" })
-      .min(0, "El precio de mayoreo no puede ser negativo")
-      .max(9_999_999, "Precio de mayoreo demasiado alto")
+    // Fase D: unidad de compra ("Paquete" de N piezas) y de venta a granel.
+    unidadCompra: z.string().trim().max(20, "Máximo 20 caracteres").optional().or(z.literal("")),
+    piezasPorUnidad: z
+      .number({ invalid_type_error: "Piezas inválidas" })
+      .int("Las piezas deben ser enteras")
+      .min(1, "Mínimo 1 pieza")
+      .max(10_000, "Máximo 10,000 piezas")
       .optional(),
+    unidadVenta: z.string().trim().max(10).optional().or(z.literal("")),
     // "" = tasa del negocio · "EXENTO" · o el porcentaje ("16", "8", "0").
     impuestoIva: z.string().optional(),
     tasaIeps: z
@@ -160,16 +177,16 @@ const formSchema = z
       path: ["precioUnitario"],
     }
   )
-  // Fase 12: el mayoreo, si existe, siempre es menor al precio de venta.
-  .refine(
-    (d) => !d.precioMayoreo || d.precioUnitario > d.precioMayoreo,
-    {
-      message: "El precio de mayoreo debe ser menor al precio de venta",
-      path: ["precioMayoreo"],
-    }
-  );
+  .refine((d) => !d.unidadCompra?.trim() || (d.piezasPorUnidad ?? 1) > 1, {
+    message: "¿Cuántas piezas trae? Debe ser más de 1",
+    path: ["piezasPorUnidad"],
+  });
 
 type FormValues = z.infer<typeof formSchema>;
+
+// `reset` de react-hook-form IGNORA los undefined (el campo conserva el valor
+// anterior): para vaciar un número opcional hay que pasar "".
+const NUMERO_VACIO = "" as unknown as number;
 
 const numeroOpcional = {
   setValueAs: (v: unknown) =>
@@ -200,7 +217,15 @@ function generarEAN13(seed: string): string {
   return base + check;
 }
 
-export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducidad = true, usarUbicaciones = true }: Props) {
+export function ProductFormModal({
+  open,
+  onClose,
+  onSaved,
+  onAbrirVariantes,
+  producto,
+  usarCaducidad = true,
+  usarUbicaciones = true,
+}: Props) {
   const editando = Boolean(producto);
 
   const [serverError, setServerError] = useState<string | null>(null);
@@ -211,6 +236,11 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
   const camposGiro = personalizacion.camposProducto;
   const [atributos, setAtributos] = useState<Record<string, string>>({});
   const [escalas, setEscalas] = useState<FilaEscala[]>([]);
+  // Las dos preguntas del tipo de producto (lib/unidades).
+  const [modo, setModo] = useState<ModoVenta>("PIEZA");
+  const [control, setControl] = useState<ControlExtra>("NINGUNO");
+  const [esVariante, setEsVariante] = useState(false);
+  const controles = controlesPermitidos(modo, usaLotesSeries);
   const [categorias, setCategorias] = useState<Array<{ id: string; nombre: string }>>([]);
   useEffect(() => {
     if (!open) return;
@@ -250,15 +280,12 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
 
   const precioCompra = watch("precioCompra");
   const precioUnitario = watch("precioUnitario");
-  const precioMayoreo = watch("precioMayoreo");
   const imagenUrl = watch("imagenUrl");
+  const unidadCompra = watch("unidadCompra");
+  const piezasPorUnidad = watch("piezasPorUnidad") ?? 1;
+  const porPaquete = !!unidadCompra?.trim();
   const margen =
     precioCompra != null && precioUnitario != null ? precioUnitario - precioCompra : null;
-  // Fase 12: ahorro que ve la cajera al pasar la venta a mayoreo.
-  const ahorroMayoreo =
-    precioMayoreo != null && precioUnitario != null && precioMayoreo > 0
-      ? precioUnitario - precioMayoreo
-      : null;
 
   useEffect(() => {
     if (!open) return;
@@ -270,6 +297,10 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error("No se pudo cargar"))))
         .then((p) => {
           setEscalas(escalasAFilas(p.escalasPrecio));
+          const tipo = tipoDeProducto(p);
+          setModo(tipo.modo);
+          setControl(tipo.control);
+          setEsVariante(!!p.grupoVariante && p.grupoVariante !== p.codigoItem);
           setAtributos(
             Object.fromEntries(
               Object.entries((p.atributos ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
@@ -279,11 +310,13 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
             codigoItem: p.codigoItem,
             descripcion: p.descripcion,
             precioUnitario: Number(p.precioUnitario),
-            precioCompra: p.precioCompra != null ? Number(p.precioCompra) : undefined,
-            precioMayoreo: p.precioMayoreo != null ? Number(p.precioMayoreo) : undefined,
+            precioCompra: p.precioCompra != null ? Number(p.precioCompra) : NUMERO_VACIO,
+            unidadCompra: p.unidadCompra ?? "",
+            piezasPorUnidad: p.piezasPorUnidad ?? 1,
+            unidadVenta: p.unidadVenta ?? "",
             imagenUrl: p.imagenUrl ?? "",
             impuestoIva: p.exentoIva ? "EXENTO" : p.tasaIva != null ? String(Number(p.tasaIva)) : "",
-            tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : undefined,
+            tasaIeps: p.tasaIeps != null ? Number(p.tasaIeps) : NUMERO_VACIO,
             stockActual: Number(p.stockActual),
             stockMinimo: Number(p.stockMinimo),
             codigoBarras: p.codigoBarras ?? "",
@@ -303,11 +336,18 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
     } else {
       setAtributos({});
       setEscalas([]);
+      setModo("PIEZA");
+      setControl("NINGUNO");
+      setEsVariante(false);
       reset({
         codigoItem: "",
         descripcion: "",
         precioUnitario: 0,
-        precioCompra: undefined,
+        precioCompra: NUMERO_VACIO,
+        tasaIeps: NUMERO_VACIO,
+        impuestoIva: "",
+        imagenUrl: "",
+        idCategoria: "",
         stockActual: 0,
         stockMinimo: 5,
         codigoBarras: "",
@@ -315,11 +355,19 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
         proveedor: "",
         tipoImpresion: "",
         fechaCaducidad: "",
+        unidadCompra: "",
+        piezasPorUnidad: 1,
+        unidadVenta: "",
         permiteDecimales: false,
         esServicio: false,
       });
     }
   }, [open, producto, reset]);
+
+  // Si cambia la forma de venta, el control extra se ajusta a lo permitido.
+  useEffect(() => {
+    if (!controles.includes(control)) setControl("NINGUNO");
+  }, [controles, control]);
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
@@ -339,7 +387,6 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       descripcion: values.descripcion,
       precioUnitario: values.precioUnitario,
       precioCompra: values.precioCompra ?? null,
-      precioMayoreo: values.precioMayoreo ?? null,
       escalasPrecio,
       exentoIva: values.impuestoIva === "EXENTO",
       tasaIva:
@@ -356,10 +403,10 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       proveedor: values.proveedor?.trim() || null,
       tipoImpresion: values.tipoImpresion || null,
       fechaCaducidad: values.fechaCaducidad?.trim() || null,
-      permiteDecimales: values.permiteDecimales === true,
-      usaLotes: values.usaLotes === true,
-      usaSeries: values.usaSeries === true,
-      esServicio: values.esServicio === true,
+      ...banderasDeTipo(modo, control),
+      unidadCompra: modo === "SERVICIO" || !porPaquete ? null : values.unidadCompra!.trim(),
+      piezasPorUnidad: modo === "SERVICIO" || !porPaquete ? 1 : values.piezasPorUnidad ?? 1,
+      unidadVenta: modo === "GRANEL" ? values.unidadVenta || "kg" : null,
       atributos: camposGiro.length
         ? Object.fromEntries(
             camposGiro
@@ -384,6 +431,8 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
       if (!res.ok) throw new Error(data.error || "Error al guardar el producto");
       onSaved?.({ ...payload, ...(data.data ?? data) });
       onClose();
+      // Modelo nuevo con variantes: directo a generarlas en su ficha.
+      if (!editando && control === "VARIANTES") onAbrirVariantes?.(payload.codigoItem);
     } catch (e: any) {
       setServerError(e.message || "Error al guardar el producto");
     }
@@ -482,9 +531,83 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
               </label>
             </div>
 
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-bold text-gray-100">¿Cómo se vende?</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup">
+                {MODOS_VENTA.map((m) => (
+                  <button
+                    key={m.valor}
+                    type="button"
+                    role="radio"
+                    aria-checked={modo === m.valor}
+                    disabled={esVariante && m.valor === "SERVICIO"}
+                    onClick={() => setModo(m.valor)}
+                    className={cn(
+                      "rounded-xl border px-3 py-2 text-left transition-colors disabled:opacity-40",
+                      modo === m.valor ? "border-acento bg-acento/10" : "border-surface-500 hover:border-surface-400"
+                    )}
+                  >
+                    <span className="block text-sm font-bold text-gray-100">{m.titulo}</span>
+                    <span className="block text-[11px] text-muted">{m.detalle}</span>
+                    <span className="block text-[10px] text-muted/80">Ej.: {m.ejemplo}</span>
+                  </button>
+                ))}
+              </div>
+              {modo === "GRANEL" && (
+                <label className="flex items-center gap-2 text-xs text-muted">
+                  Se vende por
+                  <select {...register("unidadVenta")} className="input-dark w-24">
+                    {UNIDADES_GRANEL.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                  y el precio es por {watch("unidadVenta") || "kg"}.
+                </label>
+              )}
+            </fieldset>
+
+            {controles.length > 1 && !esVariante && (
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-bold text-gray-100">¿Control extra?</legend>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup">
+                  {CONTROLES_EXTRA.filter((c) => controles.includes(c.valor)).map((c) => (
+                    <button
+                      key={c.valor}
+                      type="button"
+                      role="radio"
+                      aria-checked={control === c.valor}
+                      onClick={() => setControl(c.valor)}
+                      className={cn(
+                        "rounded-xl border px-3 py-2 text-left transition-colors",
+                        control === c.valor ? "border-acento bg-acento/10" : "border-surface-500 hover:border-surface-400"
+                      )}
+                    >
+                      <span className="block text-sm font-bold text-gray-100">{c.titulo}</span>
+                      <span className="block text-[11px] text-muted">{c.detalle}</span>
+                      <span className="block text-[10px] text-muted/80">Ej.: {c.ejemplo}</span>
+                    </button>
+                  ))}
+                </div>
+                {control === "VARIANTES" && (
+                  <p className="text-[11px] text-teal-300">
+                    {editando
+                      ? "Genera o revisa las combinaciones en la ficha del producto → Variantes."
+                      : "Al guardar este modelo se abrirá su ficha para generar las tallas, colores o medidas."}
+                  </p>
+                )}
+              </fieldset>
+            )}
+            {esVariante && (
+              <p className="rounded-xl border border-surface-600 px-3 py-2 text-[11px] text-muted">
+                Es una variante de un modelo: su existencia se lleva por separado y comparte precio con el modelo.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <label className="block">
-                <span className="text-xs text-muted mb-1 block">Precio compra</span>
+                <span className="text-xs text-muted mb-1 block">Costo por pieza</span>
                 <input
                   type="number"
                   min={0}
@@ -506,26 +629,6 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   placeholder="0.00"
                 />
                 {err("precioUnitario")}
-              </label>
-              {/* Fase 12: precio de mayoreo (vacío = sin mayoreo). */}
-              <label className="block">
-                <span className="text-xs text-muted mb-1 block">
-                  Precio mayoreo (opcional)
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  {...register("precioMayoreo", numeroOpcional)}
-                  className="input-dark"
-                  placeholder="Sin mayoreo"
-                />
-                {err("precioMayoreo")}
-                {ahorroMayoreo != null && (
-                  <span className="text-[11px] text-teal-300 mt-1 block">
-                    Ahorro por unidad: ${ahorroMayoreo.toFixed(2)}
-                  </span>
-                )}
               </label>
               <div className="col-span-full">
                 <EditorEscalas filas={escalas} onChange={setEscalas} precioMenudeo={precioUnitario} />
@@ -554,27 +657,107 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                 />
                 {err("tasaIeps")}
               </label>
-              <label className="block">
-                <span className="text-xs text-muted mb-1 block">Stock actual</span>
-                <input
-                  type="number"
-                  min={0}
-                  {...register("stockActual", numeroObligatorio)}
-                  className="input-dark"
-                />
-                {err("stockActual")}
-              </label>
-              <label className="block">
-                <span className="text-xs text-muted mb-1 block">Stock mínimo</span>
-                <input
-                  type="number"
-                  min={0}
-                  {...register("stockMinimo", numeroObligatorio)}
-                  className="input-dark"
-                />
-                {err("stockMinimo")}
-              </label>
+              {modo !== "SERVICIO" &&
+                (stockSeCapturaDirecto(modo, control) ? (
+                  <label className="block">
+                    <span className="text-xs text-muted mb-1 block">
+                      {editando ? "Existencia" : "Existencia inicial"}
+                      {modo === "GRANEL" && ` (${watch("unidadVenta") || "kg"})`}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={modo === "GRANEL" ? "0.001" : "1"}
+                      {...register("stockActual", numeroObligatorio)}
+                      className="input-dark"
+                    />
+                    {err("stockActual")}
+                  </label>
+                ) : (
+                  <p className="text-[11px] leading-snug text-muted">
+                    La existencia entra {control === "LOTES" ? "al registrar cada lote" : "al registrar cada serie"} (al
+                    recibir un pedido o en Lotes y series).
+                  </p>
+                ))}
+              {modo !== "SERVICIO" && (
+                <label className="block">
+                  <span className="text-xs text-muted mb-1 block">Stock mínimo</span>
+                  <input
+                    type="number"
+                    min={0}
+                    {...register("stockMinimo", numeroObligatorio)}
+                    className="input-dark"
+                  />
+                  {err("stockMinimo")}
+                </label>
+              )}
             </div>
+
+            {modo !== "SERVICIO" && (
+              <div className="rounded-xl border border-surface-600 p-3">
+                <p className="mb-2 text-xs font-bold text-gray-100">¿Cómo lo compras al proveedor?</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <span className="text-xs text-muted mb-1 block">Se compra por</span>
+                    <input
+                      list="unidades-compra"
+                      {...register("unidadCompra")}
+                      className="input-dark"
+                      placeholder="Pieza"
+                    />
+                    <datalist id="unidades-compra">
+                      {UNIDADES_COMPRA.map((u) => (
+                        <option key={u} value={u} />
+                      ))}
+                    </datalist>
+                    {err("unidadCompra")}
+                  </label>
+                  {porPaquete && (
+                    <>
+                      <label className="block">
+                        <span className="text-xs text-muted mb-1 block">¿Cuántas piezas trae?</span>
+                        <input
+                          type="number"
+                          min={2}
+                          step="1"
+                          {...register("piezasPorUnidad", numeroOpcional)}
+                          className="input-dark"
+                        />
+                        {err("piezasPorUnidad")}
+                      </label>
+                      <label className="block">
+                        <span className="text-xs text-muted mb-1 block">Costo del {unidadCompra?.toLowerCase()}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={
+                            precioCompra != null && piezasPorUnidad > 1
+                              ? Math.round(precioCompra * piezasPorUnidad * 100) / 100
+                              : ""
+                          }
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setValue(
+                              "precioCompra",
+                              e.target.value === "" || !Number.isFinite(v) ? undefined : costoPorPieza(v, piezasPorUnidad),
+                              { shouldValidate: true }
+                            );
+                          }}
+                          className="input-dark"
+                          placeholder="0.00"
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+                <p className="mt-2 text-[11px] text-muted">
+                  {porPaquete && piezasPorUnidad > 1
+                    ? `Los pedidos se capturan en ${unidadCompra?.toLowerCase()}s; al recibir 1 entran ${piezasPorUnidad} piezas y el costo se reparte por pieza.`
+                    : "Si lo compras por paquete o caja (p. ej. papas en paquete de 24), escribe la unidad y cuántas piezas trae."}
+                </p>
+              </div>
+            )}
 
             {margen != null && (
               <p
@@ -654,7 +837,7 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
                   )}
                 </label>
               ))}
-              {usarCaducidad && (
+              {usarCaducidad && modo !== "SERVICIO" && control !== "LOTES" && (
                 <label className="block">
                   <span className="text-xs text-muted mb-1 block">Fecha de caducidad</span>
                   <input
@@ -675,55 +858,6 @@ export function ProductFormModal({ open, onClose, onSaved, producto, usarCaducid
               }
             />
 
-            {/* Sellos de Fase 10: granel y servicios */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-neon-cyan/40 transition-colors">
-                <input
-                  type="checkbox"
-                  {...register("permiteDecimales")}
-                  className="mt-0.5 rounded accent-neon-cyan"
-                />
-                <span>
-                  <span className="block text-sm font-bold text-gray-100">Se vende a granel</span>
-                  <span className="block text-[11px] text-muted">
-                    Admite cantidades fraccionarias (kg, metros, litros)
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-neon-purple/40 transition-colors">
-                <input
-                  type="checkbox"
-                  {...register("esServicio")}
-                  className="mt-0.5 rounded accent-neon-purple"
-                />
-                <span>
-                  <span className="block text-sm font-bold text-gray-100">Es un servicio</span>
-                  <span className="block text-[11px] text-muted">
-                    No usa inventario ni Kardex; se cobra directamente
-                  </span>
-                </span>
-              </label>
-              {usaLotesSeries && (<>
-              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-amber-400/40 transition-colors">
-                <input type="checkbox" {...register("usaLotes")} className="mt-0.5 rounded accent-amber-400" />
-                <span>
-                  <span className="block text-sm font-bold text-gray-100">Controla lotes y caducidad</span>
-                  <span className="block text-[11px] text-muted">
-                    La venta toma primero lo que caduca antes y nunca lotes vencidos
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2.5 bg-surface-700 border border-surface-500 rounded-xl px-4 py-3 cursor-pointer hover:border-sky-400/40 transition-colors">
-                <input type="checkbox" {...register("usaSeries")} className="mt-0.5 rounded accent-sky-400" />
-                <span>
-                  <span className="block text-sm font-bold text-gray-100">Número de serie por unidad</span>
-                  <span className="block text-[11px] text-muted">
-                    Al vender se escanea la serie de cada pieza (garantías)
-                  </span>
-                </span>
-              </label>
-              </>)}
-            </div>
           </div>
         </div>
 

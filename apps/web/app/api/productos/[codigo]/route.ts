@@ -10,6 +10,8 @@ import { getBusinessConfig } from "@/lib/feature-flags";
 import { validarAtributos } from "@/lib/personalizacion";
 import { claveProducto } from "@/lib/tenant-keys";
 import { esObjetoJson } from "@/lib/validacion";
+import { validarUnidadCompra, validarUnidadVenta } from "@/lib/unidades";
+import { BajaProductoError, quitarProducto } from "@/lib/bajas-producto";
 
 export async function GET(
   request: Request,
@@ -56,6 +58,9 @@ export async function GET(
       usaSeries: producto.usaSeries,
       grupoVariante: producto.grupoVariante ?? null,
       atributosVariante: producto.atributosVariante ?? null,
+      unidadCompra: producto.unidadCompra ?? null,
+      piezasPorUnidad: producto.piezasPorUnidad ?? 1,
+      unidadVenta: producto.unidadVenta ?? null,
       idCategoria: producto.idCategoria,
       atributos: (producto.atributos as Record<string, unknown> | null) ?? null,
       ubicacionEstante: producto.ubicacionEstante,
@@ -190,6 +195,27 @@ export async function PATCH(
           mayoreoFinal = data.precioMayoreo;
         }
       }
+    }
+
+    // ---- Fase D: unidad de compra y de venta a granel ----
+    if (body.unidadCompra !== undefined || body.piezasPorUnidad !== undefined) {
+      try {
+        const u = validarUnidadCompra({
+          unidadCompra: body.unidadCompra !== undefined ? body.unidadCompra : existente.unidadCompra,
+          piezasPorUnidad: body.piezasPorUnidad !== undefined ? body.piezasPorUnidad : existente.piezasPorUnidad,
+        });
+        data.unidadCompra = u.unidadCompra;
+        data.piezasPorUnidad = u.piezasPorUnidad;
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+    }
+    if (body.unidadVenta !== undefined || body.permiteDecimales !== undefined) {
+      const granel = body.permiteDecimales !== undefined ? body.permiteDecimales === true : existente.permiteDecimales;
+      data.unidadVenta = validarUnidadVenta(
+        body.unidadVenta !== undefined ? body.unidadVenta : existente.unidadVenta,
+        granel && body.esServicio !== true
+      );
     }
 
     // ---- Precios por volumen: se validan contra el precio de venta final ----
@@ -337,6 +363,10 @@ export async function PATCH(
     if (data.esServicio === true || (data.esServicio === undefined && existente.esServicio)) {
       data.usaLotes = false;
       data.usaSeries = false;
+      // Un servicio no se compra por paquete ni se vende por kilo.
+      data.unidadCompra = null;
+      data.piezasPorUnidad = 1;
+      data.unidadVenta = null;
     }
     if (data.permiteDecimales === true) data.usaSeries = false;
     if (body.idCategoria !== undefined) {
@@ -462,5 +492,38 @@ export async function PATCH(
       { error: "Error al actualizar producto" },
       { status: 500 }
     );
+  }
+}
+
+// DELETE /api/productos/[codigo] → lo ELIMINA si nunca se movió; si ya tiene
+// historia (ventas, pedidos, lotes…) lo DA DE BAJA (inactivo, oculto).
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ codigo: string }> }
+) {
+  const auth = await requireAuth(["ADMINISTRADORA"], { permiso: "inventario" })();
+  if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const prisma = tenantDb(auth.user.idNegocio);
+  const { codigo } = await params;
+  const codigoItem = decodeURIComponent(codigo);
+  try {
+    const r = await prisma.$transaction(async (tx) => {
+      const res = await quitarProducto(tx, codigoItem);
+      await tx.bitacoraLog.create({
+        data: {
+          idUsuario: auth.user.idPersona,
+          accion: `Producto ${codigoItem} (${res.descripcion}) ${
+            res.modo === "ELIMINADO" ? "eliminado" : `dado de baja: ${res.motivo}`
+          }`,
+          moduloSistema: "INVENTARIO",
+        },
+      });
+      return res;
+    });
+    return NextResponse.json(r);
+  } catch (e) {
+    if (e instanceof BajaProductoError) return NextResponse.json({ error: e.message }, { status: e.status });
+    console.error("[productos:delete]", e);
+    return NextResponse.json({ error: "No se pudo quitar el producto" }, { status: 500 });
   }
 }

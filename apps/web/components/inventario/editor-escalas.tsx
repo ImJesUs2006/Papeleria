@@ -49,7 +49,7 @@ export function EditorEscalas({
     <div className="rounded-xl border border-surface-500 bg-surface-700/50 p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-xs font-bold text-gray-100">
-          <Layers className="h-3.5 w-3.5 text-acento" /> Precios por volumen (mayoreo)
+          <Layers className="h-3.5 w-3.5 text-acento" /> Precios de mayoreo
         </span>
         <button
           type="button"
@@ -63,7 +63,7 @@ export function EditorEscalas({
       {filas.length === 0 ? (
         <p className="text-[11px] leading-snug text-muted">
           Ejemplo: desde <b>12</b> piezas a <b>$4.00</b> c/u (docena) y desde <b>100</b> a <b>$3.50</b> (caja). El
-          cobro cambia solo al llegar a la cantidad; también aplica con el interruptor “Cliente mayorista”.
+          cobro cambia solo al llegar a la cantidad; con el interruptor “Precio mayorista” del cobro se aplica la escala más baja sin importar la cantidad.
         </p>
       ) : (
         <div className="space-y-2">

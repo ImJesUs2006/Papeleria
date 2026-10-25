@@ -3,10 +3,12 @@ import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { registrarSeries, SerieError } from "@/lib/series";
 import { esObjetoJson } from "@/lib/validacion";
+import { tienePermiso } from "@/lib/permisos";
 
 // ============================================================
 // GET  /api/series?codigoItem=…[&estado=DISPONIBLE|VENDIDO][&q=…]
 //      → series del producto (cualquier usuario: el POS las consulta)
+// GET  /api/series?todas=1[&estado][&q] → todas las series (inventario)
 // POST /api/series { codigoItem, series[] } → alta de unidades con serie en
 //      la sucursal activa (permiso de inventario)
 // ============================================================
@@ -21,14 +23,26 @@ export async function GET(request: Request) {
   const codigoItem = String(searchParams.get("codigoItem") ?? "").trim();
   const estado = searchParams.get("estado");
   const q = String(searchParams.get("q") ?? "").trim().toUpperCase();
-  if (!codigoItem && !q) {
+  // La lista completa es para quien maneja inventario; el POS siempre filtra.
+  const todas = searchParams.get("todas") === "1" && tienePermiso(auth.user, "inventario");
+  if (!codigoItem && !q && !todas) {
     return NextResponse.json({ error: "Indica codigoItem o q" }, { status: 400 });
   }
   const series = await prisma.numeroSerie.findMany({
     where: {
       ...(codigoItem ? { codigoItem } : {}),
       ...(estado === "DISPONIBLE" || estado === "VENDIDO" ? { estado } : {}),
-      ...(q ? { serie: { contains: q } } : {}),
+      ...(q
+        ? todas
+          ? {
+              OR: [
+                { serie: { contains: q } },
+                { codigoItem: { contains: q, mode: "insensitive" as const } },
+                { producto: { descripcion: { contains: q, mode: "insensitive" as const } } },
+              ],
+            }
+          : { serie: { contains: q } }
+        : {}),
     },
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -36,12 +50,14 @@ export async function GET(request: Request) {
   });
   return NextResponse.json({
     series: series.map((s) => ({
+      idSerie: s.idSerie,
       serie: s.serie,
       codigoItem: s.codigoItem,
       descripcion: s.producto.descripcion,
       estado: s.estado,
       idSucursal: s.idSucursal,
       folioVenta: s.folioVenta,
+      registrada: s.createdAt,
     })),
   });
 }

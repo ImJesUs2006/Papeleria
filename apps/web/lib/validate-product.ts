@@ -94,6 +94,11 @@ const BASE_PRODUCTO = z.object({
   // puede vender fracciones de tiempo; un producto a granel jamás es servicio.
   permiteDecimales: z.boolean().optional(),
   esServicio: z.boolean().optional(),
+  // Fase D: unidad de compra ("Paquete" de N piezas) y de venta a granel.
+  // Las reglas finas viven en lib/unidades (validarUnidadCompra).
+  unidadCompra: z.string().trim().max(20, "Unidad de compra demasiado larga").nullable().optional(),
+  piezasPorUnidad: z.number().int("Las piezas por unidad deben ser enteras").min(1).max(10_000).nullable().optional(),
+  unidadVenta: z.string().trim().max(10, "Unidad de venta demasiado larga").nullable().optional(),
   // Paso 6: control por lotes con caducidad y/o por número de serie.
   usaLotes: z.boolean().optional(),
   usaSeries: z.boolean().optional(),

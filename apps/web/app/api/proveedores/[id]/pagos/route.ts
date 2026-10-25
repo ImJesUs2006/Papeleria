@@ -19,6 +19,8 @@ export async function GET(
   const { id } = await params;
 
   try {
+    const proveedor = await prisma.proveedor.findUnique({ where: { idProveedor: id }, select: { idProveedor: true } });
+    if (!proveedor) return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 });
     const pagos = await prisma.pagoProveedor.findMany({
       where: { idProveedor: id },
       orderBy: { fechaHora: "desc" },

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { costoPorPieza, nombreUnidadCompra, piezasDe } from "@/lib/unidades";
 
 // ============================================================
 // Recepción de pedido (Paso 7): cuánto llegó de cada renglón, a qué costo
@@ -18,6 +19,8 @@ export interface RenglonPedido {
   precioCotizado: number;
   usaLotes?: boolean;
   usaSeries?: boolean;
+  unidadCompra?: string | null;
+  piezasPorUnidad?: number;
 }
 
 interface Captura {
@@ -105,11 +108,15 @@ export function RecepcionModal({
             const pendiente = Math.max(i.cantidad - (i.cantidadRecibida ?? 0), 0);
             const c = captura[i.idItemPedido];
             if (!c) return null;
+            const factor = Math.max(1, i.piezasPorUnidad ?? 1);
+            const u = (n: number) => (factor > 1 ? ` ${nombreUnidadCompra(i.unidadCompra, n)}` : "");
             return (
               <div key={i.idItemPedido} className="rounded-xl border border-surface-600 p-3">
                 <p className="text-sm font-bold text-gray-100">{i.descripcion}</p>
                 <p className="text-xs text-muted">
-                  Pedido {i.cantidad} · recibido {i.cantidadRecibida ?? 0} · pendiente {pendiente}
+                  Pedido {i.cantidad}{u(i.cantidad)} · recibido {i.cantidadRecibida ?? 0} · pendiente {pendiente}
+                  {u(pendiente)}
+                  {factor > 1 && ` · cada uno trae ${factor} piezas`}
                 </p>
                 {i.usaSeries ? (
                   <p className="mt-1 text-xs text-amber-300">
@@ -120,7 +127,7 @@ export function RecepcionModal({
                 ) : (
                   <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <label className="block">
-                      <span className="mb-1 block text-[11px] text-muted">Llegó</span>
+                      <span className="mb-1 block text-[11px] text-muted">Llegó{u(2)}</span>
                       <input
                         type="number"
                         min={0}
@@ -131,7 +138,9 @@ export function RecepcionModal({
                       />
                     </label>
                     <label className="block">
-                      <span className="mb-1 block text-[11px] text-muted">Costo unitario</span>
+                      <span className="mb-1 block text-[11px] text-muted">
+                        {factor > 1 ? `Costo por ${nombreUnidadCompra(i.unidadCompra, 1)}` : "Costo unitario"}
+                      </span>
                       <input
                         type="number"
                         min={0}
@@ -141,6 +150,12 @@ export function RecepcionModal({
                         className="input-dark"
                       />
                     </label>
+                    {factor > 1 && Number(c.cantidad) > 0 && (
+                      <p className="col-span-full text-[11px] text-teal-300">
+                        Entran {piezasDe(Number(c.cantidad), factor)} piezas al inventario · costo por pieza $
+                        {costoPorPieza(Number(c.costo) || 0, factor).toFixed(2)}
+                      </p>
+                    )}
                     {i.usaLotes && (
                       <>
                         <label className="block">

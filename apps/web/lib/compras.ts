@@ -2,6 +2,7 @@ import type { Prisma } from "@papeleria/database";
 import { moverStock } from "./existencias";
 import { registrarMovimientosKardex } from "./kardex";
 import { registrarEntradaLote } from "./lotes";
+import { costoPorPieza, nombreUnidadCompra, piezasDe } from "./unidades";
 import { claveProducto } from "./tenant-keys";
 import { registrarCuentaPorPagar } from "./cuentas-pagar";
 
@@ -78,6 +79,7 @@ export async function recibirPedido(
               usaSeries: true,
               stockActual: true,
               costoPromedio: true,
+              unidadCompra: true,
             },
           },
         },
@@ -97,7 +99,7 @@ export async function recibirPedido(
       : r.renglones;
   if (renglones.length === 0) throw new CompraError("No hay nada pendiente por recibir");
 
-  const recibidos: Array<{ codigoItem: string; cantidad: number; costo: number }> = [];
+  const recibidos: Array<{ codigoItem: string; cantidad: number; costo: number; piezas?: number }> = [];
   for (const ren of renglones) {
     const item = pedido.items.find((i) => i.idItemPedido === ren.idItemPedido);
     if (!item) throw new CompraError("Renglón que no pertenece al pedido", 404);
@@ -127,6 +129,12 @@ export async function recibirPedido(
       );
     }
     if (item.producto.esServicio) continue;
+    // Unidad de compra: 2 paquetes de 24 → 48 piezas; el costo es por pieza.
+    const factor = item.piezasPorUnidad || 1;
+    const piezas = piezasDe(cantidad, factor);
+    const costoPieza = costoPorPieza(costo, factor);
+    const enUnidades =
+      factor > 1 ? ` (${cantidad} ${nombreUnidadCompra(item.producto.unidadCompra, cantidad)} × ${factor})` : "";
 
     // Costo promedio con la existencia total ANTES de esta entrada.
     const actual = await tx.producto.findUnique({
@@ -136,8 +144,8 @@ export async function recibirPedido(
     const nuevoCosto = costoPromedioPonderado(
       Number(actual?.stockActual ?? 0),
       actual?.costoPromedio != null ? Number(actual.costoPromedio) : null,
-      cantidad,
-      costo
+      piezas,
+      costoPieza
     );
 
     if (item.producto.usaLotes && ren.numeroLote && r.idSucursal) {
@@ -146,17 +154,17 @@ export async function recibirPedido(
         idSucursal: r.idSucursal,
         numeroLote: ren.numeroLote,
         caducidad: ren.caducidad ?? null,
-        cantidad,
+        cantidad: piezas,
         idUsuario: r.idUsuario,
       });
     } else {
-      await moverStock(tx, { codigoItem: item.codigoItem, delta: cantidad, idSucursal: r.idSucursal });
+      await moverStock(tx, { codigoItem: item.codigoItem, delta: piezas, idSucursal: r.idSucursal });
       await registrarMovimientosKardex(tx, [
         {
           codigoItem: item.codigoItem,
           tipo: "ENTRADA",
-          cantidad,
-          motivo: `Recepción de pedido a ${pedido.proveedor.nombre}`.slice(0, 190),
+          cantidad: piezas,
+          motivo: `Recepción de pedido a ${pedido.proveedor.nombre}${enUnidades}`.slice(0, 190),
           idUsuario: r.idUsuario,
           idSucursal: r.idSucursal,
         },
@@ -164,9 +172,10 @@ export async function recibirPedido(
     }
     await tx.producto.update({
       where: claveProducto(item.codigoItem),
-      data: { costoPromedio: nuevoCosto, precioCompra: costo },
+      data: { costoPromedio: nuevoCosto, precioCompra: costoPieza },
     });
-    recibidos.push({ codigoItem: item.codigoItem, cantidad, costo });
+    // `cantidad` y `costo` en la unidad de compra (la deuda con el proveedor).
+    recibidos.push({ codigoItem: item.codigoItem, cantidad, costo, ...(factor > 1 ? { piezas } : {}) });
   }
 
   const items = await tx.itemPedidoProveedor.findMany({

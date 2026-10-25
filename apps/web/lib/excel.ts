@@ -105,3 +105,65 @@ export async function buildExcelBuffer(
   const arrayBuffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
 }
+
+/**
+ * Plantilla de carga masiva: hoja "Productos" con los encabezados que
+ * reconoce el sistema y renglones de ejemplo, listas desplegables donde el
+ * valor es cerrado, y hoja "Instrucciones" con qué va en cada columna.
+ */
+export async function buildPlantillaInventario(): Promise<Buffer> {
+  const { COLUMNAS_CARGA, EJEMPLOS_PLANTILLA } = await import("./carga-masiva");
+  const wb = new ExcelJS.Workbook();
+  const hoja = wb.addWorksheet("Productos", { views: [{ state: "frozen", ySplit: 1 }] });
+  hoja.columns = COLUMNAS_CARGA.map((c) => ({
+    header: c.requerido ? `${c.encabezado}` : c.encabezado,
+    key: c.campo,
+    width: Math.max(14, c.encabezado.length + 4),
+  }));
+  hoja.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  hoja.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } };
+  COLUMNAS_CARGA.forEach((c, i) => {
+    if (c.requerido) hoja.getRow(1).getCell(i + 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB45309" } };
+    hoja.getRow(1).getCell(i + 1).note = c.ayuda;
+  });
+  for (const e of EJEMPLOS_PLANTILLA) hoja.addRow(e);
+  // Listas desplegables para los valores cerrados (hasta el renglón 1000).
+  COLUMNAS_CARGA.forEach((c, i) => {
+    if (!c.opciones) return;
+    const letra = hoja.getColumn(i + 1).letter;
+    for (let r = 2; r <= 1000; r++) {
+      hoja.getCell(`${letra}${r}`).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [`"${c.opciones.join(",")}"`],
+        showErrorMessage: true,
+        errorTitle: c.encabezado,
+        error: `Elige: ${c.opciones.join(", ")}`,
+      };
+    }
+  });
+
+  const ins = wb.addWorksheet("Instrucciones");
+  ins.columns = [
+    { header: "Columna", key: "col", width: 22 },
+    { header: "¿Obligatoria?", key: "req", width: 14 },
+    { header: "Qué va", key: "ayuda", width: 70 },
+    { header: "Ejemplo", key: "ej", width: 22 },
+  ];
+  ins.getRow(1).font = { bold: true };
+  for (const c of COLUMNAS_CARGA) {
+    ins.addRow({ col: c.encabezado, req: c.requerido ? "Sí" : "No", ayuda: c.ayuda, ej: c.ejemplo });
+  }
+  ins.addRow({});
+  for (const nota of [
+    "Borra los renglones de ejemplo antes de subir tus productos.",
+    "Si el código ya existe, el producto se ACTUALIZA solo con las columnas que traiga el archivo (lo que no venga no se toca).",
+    "La existencia es la de la sucursal activa al subir el archivo; queda registrada en el kardex.",
+    "Costo por pieza: si compras por paquete, divide el costo del paquete entre sus piezas (o déjalo vacío).",
+    "Variantes (talla, color) se generan después en la ficha del producto; lotes y series se registran en Lotes y series.",
+  ]) {
+    ins.addRow({ col: "•", ayuda: nota });
+  }
+  const ab = await wb.xlsx.writeBuffer();
+  return Buffer.from(ab);
+}

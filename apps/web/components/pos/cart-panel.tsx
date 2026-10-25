@@ -762,7 +762,7 @@ export function CartPanel() {
         </AnimatePresence>
       </div>
 
-      {/* Fase 12: interruptor de precios de mayoreo (reprecia todo el carrito). */}
+      {/* Precio mayorista: aplica la escala más baja de cada producto sin importar la cantidad. */}
       <div className="px-4 py-2.5 border-t border-surface-600">
         <button
           type="button"
@@ -780,7 +780,7 @@ export function CartPanel() {
         >
           <span className="flex items-center gap-2 font-medium">
             <BadgePercent className="h-4 w-4 shrink-0" />
-            Precios de Mayoreo
+            Precio mayorista
           </span>
           <span
             className={cn(
@@ -798,7 +798,7 @@ export function CartPanel() {
         </button>
         {!tieneMayoreo && items.length > 0 && (
           <p className="mt-1 text-[11px] text-muted">
-            Ningún producto del carrito tiene precio de mayoreo configurado.
+            Ningún producto del carrito tiene precios de mayoreo (escalas).
           </p>
         )}
       </div>

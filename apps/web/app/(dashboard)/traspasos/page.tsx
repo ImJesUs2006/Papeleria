@@ -5,6 +5,7 @@ import { ArrowRight, Loader2, Plus, Trash2, Truck } from "lucide-react";
 import { notificar } from "@/store/notificaciones";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useAuthStore } from "@/store/auth";
+import { BuscadorProducto, type ProductoEncontrado } from "@/components/ui/buscador-producto";
 
 interface Sucursal {
   idSucursal: string;
@@ -25,6 +26,7 @@ interface Traspaso {
 interface Linea {
   codigoItem: string;
   cantidad: string;
+  producto?: ProductoEncontrado | null;
 }
 
 export default function TraspasosPage() {
@@ -159,14 +161,18 @@ export default function TraspasosPage() {
 
               {lineas.map((l, i) => (
                 <div key={i} className="flex flex-wrap items-center gap-2">
-                  <input
-                    value={l.codigoItem}
-                    onChange={(e) =>
-                      setLineas((ls) => ls.map((x, k) => (k === i ? { ...x, codigoItem: e.target.value } : x)))
-                    }
-                    placeholder="Código del producto"
-                    className="input-dark w-48"
-                  />
+                  <div className="min-w-[16rem] flex-1">
+                    <BuscadorProducto
+                      valor={l.producto ?? null}
+                      onSeleccion={(p) =>
+                        setLineas((ls) =>
+                          ls.map((x, k) => (k === i ? { ...x, producto: p, codigoItem: p?.codigoItem ?? "" } : x))
+                        )
+                      }
+                      filtro={(p) => !p.esServicio && !lineas.some((x, k) => k !== i && x.codigoItem === p.codigoItem)}
+                      motivoFiltro="servicio o ya está en la lista"
+                    />
+                  </div>
                   <input
                     type="number"
                     min={0}

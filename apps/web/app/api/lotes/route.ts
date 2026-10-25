@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
-import { LoteError, lotesPorCaducar, registrarEntradaLote } from "@/lib/lotes";
+import { estadoLote, listarLotes, LoteError, lotesPorCaducar, registrarEntradaLote, type EstadoLote } from "@/lib/lotes";
 import { esObjetoJson } from "@/lib/validacion";
 
 // ============================================================
 // GET  /api/lotes?dias=30[&todas=1] → lotes por caducar (o caducados) de la
 //                                     sucursal activa (todas=1: del negocio)
+// GET  /api/lotes?vista=lista[&estado=VIGENTE|POR_CADUCAR|CADUCADO|AGOTADO][&q=]
+//                                   → lista completa con su estado
 // POST /api/lotes { codigoItem, numeroLote, caducidad?, cantidad }
 //                 → entrada de mercancía con lote en la sucursal activa
 // Requiere permiso de inventario.
@@ -21,6 +23,28 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dias = Math.min(Math.max(Number(searchParams.get("dias") ?? 30) || 30, 0), 365);
   const idSucursal = searchParams.get("todas") === "1" ? null : auth.user.idSucursal;
+
+  if (searchParams.get("vista") === "lista") {
+    const estados: EstadoLote[] = ["VIGENTE", "POR_CADUCAR", "CADUCADO", "AGOTADO"];
+    const e = searchParams.get("estado") as EstadoLote | null;
+    const lista = await listarLotes(prisma, {
+      idSucursal,
+      estado: e && estados.includes(e) ? e : "TODOS",
+      q: (searchParams.get("q") ?? "").slice(0, 60),
+    });
+    return NextResponse.json({
+      lotes: lista.map((l) => ({
+        idLote: l.idLote,
+        codigoItem: l.codigoItem,
+        descripcion: l.producto.descripcion,
+        numeroLote: l.numeroLote,
+        caducidad: l.caducidad?.toISOString().slice(0, 10) ?? null,
+        cantidad: Number(l.cantidad),
+        estado: estadoLote(l),
+        registrado: l.createdAt,
+      })),
+    });
+  }
 
   const lotes = await lotesPorCaducar(prisma, dias, idSucursal);
   const hoy = new Date();

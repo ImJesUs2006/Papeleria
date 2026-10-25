@@ -1,280 +1,109 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { FileText, Save, Loader2, Check, AlertTriangle } from "lucide-react";
-import { normalizarPersonalizacion } from "@/lib/personalizacion";
-import { DatosFiscalesEditor } from "@/components/configuracion/datos-fiscales";
+import { AlertTriangle, CheckCircle2, FileText, Pencil } from "lucide-react";
 import { FacturacionEmitir } from "@/components/facturacion/facturacion-emitir";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useAuthStore } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
-import type { BusinessConfig, DatosFiscales } from "@/lib/business-types";
+import { faltantesEmisor } from "@/lib/factura-manual";
+import { REGIMENES_FISCALES, USOS_CFDI } from "@/lib/sat-catalogos";
+
+// ============================================================
+// Facturación: emitir y listar facturas. Los datos del EMISOR se leen de
+// Configuración → Financiero (una sola fuente): aquí solo se muestran y se
+// avisa qué falta, para no capturarlos dos veces.
+// ============================================================
 
 export default function FacturacionPage() {
   return (
-    <>
-      <div className="p-6 max-w-5xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
-          <h2 className="text-2xl font-black text-gray-100 mb-1">Facturación</h2>
-          <p className="text-sm text-muted">
-            CFDI 4.0 · Emisión de comprobantes y datos fiscales del negocio
-          </p>
-        </motion.div>
+    <div className="p-6 max-w-5xl mx-auto">
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
+        <h2 className="text-2xl font-black text-gray-100 mb-1">Facturación</h2>
+        <p className="text-sm text-muted">CFDI 4.0 · prepara cada factura con los datos de tu negocio y de tu cliente.</p>
+      </motion.div>
 
-        {/* Fase 12: emitir y listar facturas (cliente registrado + ticket). */}
-        <div className="mb-8">
-          <ErrorBoundary>
-            <FacturacionEmitir />
-          </ErrorBoundary>
-        </div>
+      <ErrorBoundary>
+        <EmisorResumen />
+      </ErrorBoundary>
 
+      <div className="mt-6">
         <ErrorBoundary>
-          <FacturacionDatosFiscales />
+          <FacturacionEmitir />
         </ErrorBoundary>
       </div>
-    </>
+    </div>
   );
 }
 
-function FacturacionDatosFiscales() {
-  const [config, setConfig] = useState<BusinessConfig | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-  const refreshConfig = useConfigStore((s) => s.refresh);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/configuracion/negocio", { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Error al cargar configuración");
-        setConfig(extractConfig(data.config));
-      } catch (e: any) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const guardar = async () => {
-    if (!config || guardando) return;
-    setGuardando(true);
-    setError(null);
-    setOk(false);
-    try {
-      const res = await fetch("/api/configuracion/negocio", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombreNegocio: config.nombreNegocio,
-          tipoNegocio: config.tipoNegocio,
-          moneda: config.moneda,
-          ivaRate: Number(config.ivaRate),
-          featureFlags: config.featureFlags,
-          metodosPago: config.metodosPago,
-          politicaStockOffline: config.politicaStockOffline,
-          logo: config.logo ?? null,
-          temaBase: config.temaBase,
-          colorAcento: config.colorAcento,
-          datosBancarios: config.datosBancarios ?? null,
-          mensajeTicket: config.mensajeTicket ?? null,
-          anchoTicket: config.anchoTicket,
-          vistaDefectoPOS: config.vistaDefectoPOS,
-          datosFiscales: config.datosFiscales ?? null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al guardar");
-      if (data.config && typeof data.firma === "string") {
-        refreshConfig(data.config, data.firma, data.sessionKey ?? "");
-      }
-      setOk(true);
-      setTimeout(() => setOk(false), 2500);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  const setDatoFiscal = (datos: DatosFiscales) => {
-    setConfig((c) => {
-      if (!c) return c;
-      const limpios: DatosFiscales = {};
-      for (const [k, v] of Object.entries(datos) as Array<[keyof DatosFiscales, any]>) {
-        if (typeof v === "string" && v.trim()) limpios[k] = v;
-      }
-      const tieneAlgo = Object.values(limpios).some((v) => typeof v === "string" && v.trim());
-      return { ...c, datosFiscales: tieneAlgo ? limpios : null };
-    });
-  };
-
-  if (loading) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-surface-800 border border-surface-600 rounded-2xl p-6 space-y-4"
-      >
-        <Skeleton className="h-9 w-2/3" />
-        <div className="grid grid-cols-2 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-10" />
-          ))}
-        </div>
-        <Skeleton className="h-11 w-40" />
-      </motion.div>
-    );
-  }
-
-  if (!config) {
-    return (
-      <div className="flex items-center gap-3 bg-neon-red/10 border border-neon-red/40 rounded-2xl px-5 py-4 text-sm text-gray-100">
-        <AlertTriangle className="h-5 w-5 text-neon-red" /> {error || "No se pudo cargar"}
-      </div>
-    );
-  }
+function EmisorResumen() {
+  const config = useConfigStore((s) => s.config);
+  const esAdmin = useAuthStore((s) => s.rol) === "ADMINISTRADORA";
+  const d = config?.datosFiscales ?? null;
+  const faltan = faltantesEmisor(d);
+  const regimen = REGIMENES_FISCALES.find((r) => r.clave === d?.regimenFiscal);
+  const uso = USOS_CFDI.find((u) => u.clave === d?.usoCFDI);
+  const domicilio = [
+    [d?.calle, d?.numExt && `#${d.numExt}`, d?.numInt && `int. ${d.numInt}`].filter(Boolean).join(" "),
+    d?.colonia,
+    d?.municipio,
+    d?.estado,
+    (d?.cp || d?.codigoPostal) && `C.P. ${d?.cp || d?.codigoPostal}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const filas: Array<[string, string | null | undefined]> = [
+    ["RFC", d?.rfc],
+    ["Razón social", d?.razonSocial],
+    ["Régimen fiscal", regimen ? `${regimen.clave} · ${regimen.nombre}` : d?.regimenFiscal],
+    ["Uso de CFDI por defecto", uso ? `${uso.clave} · ${uso.nombre}` : null],
+    ["Domicilio fiscal", domicilio || null],
+  ];
 
   return (
-    <fieldset disabled={guardando} className="contents">
-      <div className="bg-surface-800 border border-surface-600 rounded-2xl p-6 space-y-5">
-        {error && (
-          <div className="flex items-center gap-2 bg-neon-red/10 border border-neon-red/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-            <AlertTriangle className="h-4 w-4 text-neon-red" /> {error}
-          </div>
-        )}
-        {ok && (
-          <div className="flex items-center gap-2 bg-neon-green/10 border border-neon-green/40 rounded-xl px-4 py-2.5 text-sm text-gray-100">
-            <Check className="h-4 w-4 text-neon-green" /> Datos fiscales guardados
-          </div>
-        )}
-
+    <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5" data-testid="emisor-resumen">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-neon-cyan/10 flex items-center justify-center shrink-0">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neon-cyan/10">
             <FileText className="h-5 w-5 text-neon-cyan" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-gray-100">
-              Datos fiscales del negocio
-            </h3>
-            <p className="text-xs text-muted">
-              RFC/CURP validados, catálogos SAT de Régimen Fiscal y Uso de CFDI,
-              y domicilio fiscal fraccionado. Base de los comprobantes que emita
-              este sistema.
-            </p>
+            <h3 className="font-bold text-gray-100">Tus datos como emisor</h3>
+            <p className="text-xs text-muted">Se toman de Configuración → Financiero. No hace falta escribirlos aquí.</p>
           </div>
         </div>
-
-        <DatosFiscalesEditor datos={config.datosFiscales} onChange={setDatoFiscal} disabled={guardando} />
-
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            onClick={guardar}
-            className="flex items-center gap-2 py-3 px-6 rounded-xl font-bold bg-neon-cyan text-btn-ink shadow-neon-cyan transition-all hover:brightness-110 active:scale-[0.97] disabled:bg-surface-600 disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed"
+        {esAdmin && (
+          <Link
+            href="/configuracion?tab=negocio&seccion=financiero"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-surface-500 px-3 py-2 text-xs font-bold text-gray-200 hover:border-acento/60 hover:text-acento"
           >
-            {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Guardar datos fiscales
-          </button>
-          <span className="text-xs text-muted">
-            La facturación electrónica (CFDI 4.0) operará sobre estos datos.
-          </span>
-        </div>
+            <Pencil className="h-3.5 w-3.5" /> Editar en Configuración
+          </Link>
+        )}
       </div>
-    </fieldset>
+
+      {faltan.length > 0 ? (
+        <p className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          Para facturar falta: {faltan.join(", ")}.
+        </p>
+      ) : (
+        <p className="mb-3 flex items-center gap-2 text-xs text-emerald-300">
+          <CheckCircle2 className="h-4 w-4" /> Datos del emisor completos.
+        </p>
+      )}
+
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm md:grid-cols-2">
+        {filas.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-3 border-b border-surface-700 py-1">
+            <dt className="shrink-0 text-xs text-muted">{k}</dt>
+            <dd className="min-w-0 truncate text-right text-gray-100" title={v ?? undefined}>
+              {v || "—"}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
-}
-
-function extractConfig(raw: any): BusinessConfig {
-  const anchoRaw: any = raw?.anchoTicket;
-  const vistaRaw: any = raw?.vistaDefectoPOS;
-  const flags = (raw?.featureFlags ?? {}) as BusinessConfig["featureFlags"];
-  const fRaw: any =
-    raw?.datosFiscales && typeof raw.datosFiscales === "object" ? raw.datosFiscales : {};
-  const datosFiscales: DatosFiscales = {
-    rfc: typeof fRaw.rfc === "string" ? fRaw.rfc : undefined,
-    razonSocial: typeof fRaw.razonSocial === "string" ? fRaw.razonSocial : undefined,
-    curp: typeof fRaw.curp === "string" ? fRaw.curp : undefined,
-    regimenFiscal: typeof fRaw.regimenFiscal === "string" ? fRaw.regimenFiscal : undefined,
-    usoCFDI: typeof fRaw.usoCFDI === "string" ? fRaw.usoCFDI : undefined,
-    codigoPostal: typeof fRaw.codigoPostal === "string" ? fRaw.codigoPostal : undefined,
-    calle: typeof fRaw.calle === "string" ? fRaw.calle : undefined,
-    numExt: typeof fRaw.numExt === "string" ? fRaw.numExt : undefined,
-    numInt: typeof fRaw.numInt === "string" ? fRaw.numInt : undefined,
-    colonia: typeof fRaw.colonia === "string" ? fRaw.colonia : undefined,
-    municipio: typeof fRaw.municipio === "string" ? fRaw.municipio : undefined,
-    estado: typeof fRaw.estado === "string" ? fRaw.estado : undefined,
-    cp:
-      typeof fRaw.cp === "string"
-        ? fRaw.cp
-        : typeof fRaw.codigoPostal === "string"
-          ? fRaw.codigoPostal
-          : undefined,
-  };
-  const tieneFiscales = Object.values(datosFiscales).some((v) => typeof v === "string" && v.trim());
-
-  return {
-    nombreNegocio: raw?.nombreNegocio ?? "Mi Negocio",
-    tipoNegocio: raw?.tipoNegocio ?? "PAPELERIA",
-    moneda: raw?.moneda ?? "MXN",
-    ivaRate: Number(raw?.ivaRate ?? 0),
-    preciosIncluyenIva: raw?.preciosIncluyenIva === true,
-    descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
-    personalizacion: normalizarPersonalizacion(raw?.personalizacion, raw?.tipoNegocio),
-    featureFlags: {
-      inventario: flags.inventario === true,
-      facturacion: flags.facturacion === true,
-      dashboard: flags.dashboard === true,
-      proveedores: flags.proveedores === true,
-      bitacora: flags.bitacora === true,
-      recargas: flags.recargas === true,
-      imagenesCloudinary: flags.imagenesCloudinary === true,
-      lotesSeries: flags.lotesSeries !== false,
-      apartados: flags.apartados !== false,
-    },
-    metodosPago: Array.isArray(raw?.metodosPago) ? raw.metodosPago : ["EFECTIVO", "TRANSFERENCIA"],
-    politicaStockOffline:
-      raw?.politicaStockOffline === "RECHAZAR" ? "RECHAZAR" : "PERMITIR_NEGATIVO",
-    logo: raw?.logo ?? null,
-    temaBase: raw?.temaBase ?? "NEON",
-    colorAcento: raw?.colorAcento ?? "#10b981",
-    datosBancarios: raw?.datosBancarios ?? null,
-    mensajeTicket:
-      typeof raw?.mensajeTicket === "string" && raw.mensajeTicket.trim() ? raw.mensajeTicket : null,
-    anchoTicket: anchoRaw === "58mm" || anchoRaw === "80mm" ? anchoRaw : "80mm",
-    vistaDefectoPOS:
-      vistaRaw === "ESCANER" || vistaRaw === "CATALOGO_TACTIL" ? vistaRaw : "ESCANER",
-    datosFiscales: tieneFiscales ? datosFiscales : null,
-    usarCaducidad: raw?.usarCaducidad === true,
-    usarUbicaciones: raw?.usarUbicaciones !== false,
-    requerirFondoInicial: raw?.requerirFondoInicial !== false,
-    diasApartado: Number(raw?.diasApartado) > 0 ? Number(raw.diasApartado) : 30,
-    corteConReferencia: raw?.corteConReferencia === true,
-    diasDevolucion: Number(raw?.diasDevolucion) > 0 ? Number(raw.diasDevolucion) : 30,
-    montoAutorizarDevolucion: Number(raw?.montoAutorizarDevolucion) > 0 ? Number(raw.montoAutorizarDevolucion) : null,
-    puntosConfig: normalizePuntos(raw?.puntosConfig),
-    configVersion: raw?.configVersion ?? 1,
-    setupPendiente: raw?.setupPendiente ?? false,
-  };
-}
-
-/** Fase 12: tasa del Puntos Monedero (defaults seguros si no llega config). */
-function normalizePuntos(raw: any) {
-  return {
-    pesosCompraPorPunto:
-      typeof raw?.pesosCompraPorPunto === "number" && raw.pesosCompraPorPunto > 0
-        ? Math.min(raw.pesosCompraPorPunto, 100000)
-        : 100,
-    valorPuntoPesos:
-      typeof raw?.valorPuntoPesos === "number" && raw.valorPuntoPesos > 0
-        ? Math.min(raw.valorPuntoPesos, 10000)
-        : 1,
-  };
 }

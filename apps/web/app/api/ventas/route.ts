@@ -91,7 +91,7 @@ export async function POST(request: Request) {
         descuentoMaxCajera: config.descuentoMaxCajera,
         autorizadoPor,
         promociones,
-        puntos: config.puntosConfig,
+        puntos: { ...config.puntosConfig, acumula: config.metodosPago.includes("PUNTOS_MONEDERO") },
       })
     );
 

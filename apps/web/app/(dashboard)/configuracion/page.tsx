@@ -176,6 +176,7 @@ function normalizeConfig(raw: any): BusinessConfig {
       typeof raw?.requerirFondoInicial === "boolean" ? raw.requerirFondoInicial : true,
     diasApartado: Number(raw?.diasApartado) > 0 ? Number(raw.diasApartado) : 30,
     corteConReferencia: raw?.corteConReferencia === true,
+    imprimirCorteAuto: raw?.imprimirCorteAuto === true,
     diasDevolucion: Number(raw?.diasDevolucion) > 0 ? Number(raw.diasDevolucion) : 30,
     montoAutorizarDevolucion: Number(raw?.montoAutorizarDevolucion) > 0 ? Number(raw.montoAutorizarDevolucion) : null,
     puntosConfig: normalizePuntosConfigLocal(raw?.puntosConfig),
@@ -204,6 +205,11 @@ function normalizePuntosConfigLocal(raw: any): PuntosConfig {
 export default function ConfiguracionPage() {
   const { nombre, rol } = useAuthStore();
   const [tab, setTab] = useState<"usuarios" | "negocio" | "equipo">("usuarios");
+  // Enlaces directos: /configuracion?tab=negocio&seccion=financiero
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "negocio" || t === "equipo" || t === "usuarios") setTab(t);
+  }, []);
 
   return (
     <>
@@ -299,6 +305,10 @@ function NegocioConfigPanel() {
   const [error, setError] = useState<string | null>(null);
   const [marcaError, setMarcaError] = useState<string | null>(null);
   const [seccion, setSeccion] = useState<"identidad" | "pos" | "financiero" | "modulos">("identidad");
+  useEffect(() => {
+    const sec = new URLSearchParams(window.location.search).get("seccion");
+    if (sec === "identidad" || sec === "pos" || sec === "financiero" || sec === "modulos") setSeccion(sec);
+  }, []);
   const refreshConfig = useConfigStore((s) => s.refresh);
 
   /**
@@ -407,6 +417,7 @@ const guardar = async () => {
           requerirFondoInicial: config.requerirFondoInicial,
           diasApartado: Math.round(Number(config.diasApartado) || 30),
           corteConReferencia: config.corteConReferencia === true,
+          imprimirCorteAuto: config.imprimirCorteAuto === true,
           diasDevolucion: Math.round(Number(config.diasDevolucion) || 30),
           montoAutorizarDevolucion:
             config.montoAutorizarDevolucion != null && Number(config.montoAutorizarDevolucion) > 0
@@ -1108,6 +1119,30 @@ const guardar = async () => {
             <span className="text-[11px] leading-snug text-muted">
               Apagado = corte ciego (recomendado con cajeras): no ven lo esperado. Encendido: lo ven mientras
               cuentan (útil si el dueño cobra).
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfig({ ...config, imprimirCorteAuto: !config.imprimirCorteAuto })}
+            aria-pressed={config.imprimirCorteAuto}
+            className={cn(
+              "flex flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-all",
+              config.imprimirCorteAuto ? "border-neon-cyan/40 bg-neon-cyan/10" : "border-surface-500 bg-surface-700"
+            )}
+          >
+            <span className="flex items-center gap-2 text-sm font-bold text-gray-100">
+              <span
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-md border",
+                  config.imprimirCorteAuto ? "border-neon-cyan bg-neon-cyan" : "border-surface-400"
+                )}
+              >
+                {config.imprimirCorteAuto && <Check className="h-3 w-3 text-btn-ink" />}
+              </span>
+              Imprimir el corte al cerrar
+            </span>
+            <span className="text-[11px] leading-snug text-muted">
+              Apagado = el resultado se muestra en pantalla y se imprime solo si pulsas «Imprimir».
             </span>
           </button>
           <label className="block rounded-xl border border-surface-500 bg-surface-700 px-3 py-2.5">

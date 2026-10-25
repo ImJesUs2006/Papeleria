@@ -12,8 +12,11 @@ import {
   Check,
   ShieldCheck,
   AlertTriangle,
+  Vault,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
+import { abrirCajon, hayWebSerial, leerHardware } from "@/lib/hardware/serial";
 
 interface Cliente {
   idCliente: string;
@@ -57,6 +60,7 @@ export function AccionesSesion({ sesion, esAdmin, onCambio }: Props) {
             <ShieldCheck className="h-4 w-4" /> Retiro de efectivo
           </motion.button>
         )}
+        <BotonCajon />
       </div>
 
       {abierto === "abono" && (
@@ -381,5 +385,49 @@ function ModalRetiro({
         </div>
       </motion.div>
     </div>
+  );
+}
+
+/**
+ * Abre el cajón SIN venta (dar cambio, revisar). Solo aparece si este equipo
+ * imprime en térmica directa (el cajón va conectado a la impresora) y siempre
+ * deja registro en la bitácora con el motivo.
+ */
+function BotonCajon() {
+  const [disponible, setDisponible] = useState(false);
+  const [abriendo, setAbriendo] = useState(false);
+  useEffect(() => {
+    setDisponible(leerHardware().impresora === "ESCPOS" && hayWebSerial());
+  }, []);
+  if (!disponible) return null;
+  const abrir = async () => {
+    const motivo = window.prompt("¿Por qué abres el cajón sin venta? (queda en la bitácora)", "Dar cambio");
+    if (!motivo || motivo.trim().length < 3) return;
+    setAbriendo(true);
+    try {
+      const res = await fetch("/api/caja/cajon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "No se pudo registrar la apertura");
+      await abrirCajon();
+      notificar.exito("Cajón abierto", "Quedó registrado en la bitácora");
+    } catch (e: any) {
+      notificar.error("No se abrió el cajón", e.message);
+    } finally {
+      setAbriendo(false);
+    }
+  };
+  return (
+    <motion.button
+      whileTap={{ scale: 0.97 }}
+      onClick={abrir}
+      disabled={abriendo}
+      className="col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-500 text-sm font-bold text-gray-200 hover:bg-surface-700 disabled:opacity-50"
+    >
+      <Vault className="h-4 w-4" /> Abrir cajón
+    </motion.button>
   );
 }

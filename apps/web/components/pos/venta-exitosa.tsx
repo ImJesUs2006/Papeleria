@@ -125,6 +125,12 @@ export function VentaExitosaModal({ result, anchoTicket, nombreNegocio, mensajeT
                   </div>
                   <p className="mt-1">{ETIQUETA_PAGO[result.metodoPago] ?? result.metodoPago}</p>
                   {result.nombreCliente && <p>Cliente: {result.nombreCliente}</p>}
+                  {!!result.puntosGanados && result.puntosGanados > 0 && (
+                    <p data-testid="puntos-ganados">
+                      +{result.puntosGanados} puntos
+                      {result.puntosCliente != null ? ` · saldo ${result.puntosCliente} pts` : ""}
+                    </p>
+                  )}
                   <p className="text-center mt-1 whitespace-pre-line break-anywhere">
                     {mensajeTicket?.trim() || "¡Gracias por su compra!"}
                   </p>

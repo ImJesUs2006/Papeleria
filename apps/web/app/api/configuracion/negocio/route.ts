@@ -99,6 +99,7 @@ export async function PUT(request: Request) {
         requerirFondoInicial: parsed.data.requerirFondoInicial,
         diasApartado: parsed.data.diasApartado,
         corteConReferencia: parsed.data.corteConReferencia,
+        imprimirCorteAuto: parsed.data.imprimirCorteAuto,
         diasDevolucion: parsed.data.diasDevolucion,
         montoAutorizarDevolucion:
           parsed.data.montoAutorizarDevolucion && parsed.data.montoAutorizarDevolucion > 0

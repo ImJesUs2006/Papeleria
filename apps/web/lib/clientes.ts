@@ -49,11 +49,19 @@ export const CLIENTE_SCHEMA = z
     regimenFiscal: opcionalDe(CLAVES_REGIMEN, "Régimen fiscal").optional(),
     codigoPostalFiscal: cpOpcional.optional(),
     usoCfdi: opcionalDe(CLAVES_USO, "Uso de CFDI").optional(),
+    // Fase E: domicilio fiscal completo (mismos límites que el del negocio).
+    calle: zTextoOpcional("La calle", 120).optional(),
+    numExt: zTextoOpcional("El número exterior", 10).optional(),
+    numInt: zTextoOpcional("El número interior", 10).optional(),
+    colonia: zTextoOpcional("La colonia", 80).optional(),
+    municipio: zTextoOpcional("El municipio", 80).optional(),
+    estado: zTextoOpcional("El estado", 60).optional(),
     notas: zTextoOpcional("Las notas", 500).optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
-    if (c.regimenFiscal && c.rfc && !regimenCompatible(c.regimenFiscal, c.rfc)) {
+    // Solo con un RFC bien formado tiene sentido comparar el tipo de persona.
+    if (c.regimenFiscal && c.rfc && (c.rfc.length === 12 || c.rfc.length === 13) && !regimenCompatible(c.regimenFiscal, c.rfc)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["regimenFiscal"],

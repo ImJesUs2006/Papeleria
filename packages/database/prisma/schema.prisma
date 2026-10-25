@@ -573,6 +573,8 @@ model ConfiguracionNegocio {
   diasApartado             Int         @default(30)
   // Corte de caja: false = corte ciego (la cajera no ve lo esperado).
   corteConReferencia       Boolean     @default(false)
+  // Fase E: imprimir el ticket del corte al cerrar la caja (por defecto solo se muestra).
+  imprimirCorteAuto        Boolean     @default(false)
   // Devoluciones: plazo en días y monto desde el que se pide autorización.
   diasDevolucion           Int         @default(30)
   montoAutorizarDevolucion Decimal?    @db.Decimal(10, 2)
@@ -732,6 +734,13 @@ model Cliente {
   regimenFiscal      String?
   codigoPostalFiscal String?
   usoCfdi            String?
+  // Fase E · domicilio fiscal del receptor (mismos campos que el emisor).
+  calle              String?
+  numExt             String?
+  numInt             String?
+  colonia            String?
+  municipio          String?
+  estado             String?
   email              String?
   notas              String?
   createdAt          DateTime @default(now())

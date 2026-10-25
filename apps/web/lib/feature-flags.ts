@@ -165,6 +165,7 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
       requerirFondoInicial: DEFAULT_REQUERIR_FONDO_INICIAL,
       diasApartado: DEFAULT_DIAS_APARTADO,
       corteConReferencia: false,
+      imprimirCorteAuto: false,
       diasDevolucion: 30,
       montoAutorizarDevolucion: null,
       puntosConfig: { ...DEFAULT_PUNTOS_CONFIG },
@@ -207,6 +208,7 @@ export async function getBusinessConfig(idNegocio: string): Promise<BusinessConf
     diasApartado:
       Number.isInteger(row.diasApartado) && row.diasApartado > 0 ? row.diasApartado : DEFAULT_DIAS_APARTADO,
     corteConReferencia: row.corteConReferencia === true,
+    imprimirCorteAuto: row.imprimirCorteAuto === true,
     diasDevolucion: Number.isInteger(row.diasDevolucion) && row.diasDevolucion > 0 ? row.diasDevolucion : 30,
     montoAutorizarDevolucion:
       row.montoAutorizarDevolucion != null && Number(row.montoAutorizarDevolucion) > 0

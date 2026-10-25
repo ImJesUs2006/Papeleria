@@ -224,6 +224,7 @@ export const CONFIG_INPUT_SCHEMA = z
       .max(365, "Máximo 365 días de apartado")
       .default(30),
     corteConReferencia: z.boolean().default(false),
+    imprimirCorteAuto: z.boolean().default(false),
     diasDevolucion: z
       .number({ invalid_type_error: "Los días para devoluciones deben ser un número" })
       .int("Los días para devoluciones deben ser un número entero")

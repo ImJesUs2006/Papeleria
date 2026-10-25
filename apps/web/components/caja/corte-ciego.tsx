@@ -15,6 +15,7 @@ import {
   Eye,
   Coins,
   Calculator,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/store/config";
@@ -73,7 +74,9 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
     anchoTicket: s.config?.anchoTicket ?? "80mm",
     mensajeTicket: s.config?.mensajeTicket ?? null,
     recargas: s.config?.featureFlags?.recargas ?? false,
+    imprimirAuto: s.config?.imprimirCorteAuto === true,
   }));
+  const imprimir = () => imprimirTicket(areaImpresion.current, configCaja.anchoTicket as AnchoTicketImpresion);
   const areaImpresion = useRef<HTMLDivElement>(null);
   const [fase, setFase] = useState<Fase>("iniciando");
   const [token, setToken] = useState<string | null>(null);
@@ -173,9 +176,12 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
       if (!res.ok) throw new Error(data.error || "Error al cerrar");
       setResultado(data.arqueo);
       setFase("resultado");
-      requestAnimationFrame(() => {
-        setTimeout(() => imprimirTicket(areaImpresion.current, configCaja.anchoTicket as AnchoTicketImpresion), 80);
-      });
+      // Por defecto el resultado solo se muestra; se imprime si el negocio lo pidió.
+      if (configCaja.imprimirAuto) {
+        requestAnimationFrame(() => {
+          setTimeout(imprimir, 80);
+        });
+      }
     } catch (err: any) {
       setError(err.message);
       setFase("error");
@@ -507,13 +513,22 @@ export function CorteCiego({ onCerrada, onCancelar }: Props) {
                 <Fila etiqueta="Recargas contadas" valor={dinero(resultado.declaradoRecargas)} />
               </div>
 
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={onCerrada}
-                className="w-full rounded-2xl bg-acento py-3.5 font-bold text-btn-ink shadow-card"
-              >
-                Terminar
-              </motion.button>
+              <div className="print-hint flex gap-2">
+                <button
+                  type="button"
+                  onClick={imprimir}
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-surface-500 px-4 py-3.5 text-sm font-bold text-gray-200 hover:bg-surface-700"
+                >
+                  <Printer className="h-4 w-4" /> Imprimir
+                </button>
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={onCerrada}
+                  className="flex-1 rounded-2xl bg-acento py-3.5 font-bold text-btn-ink shadow-card"
+                >
+                  Terminar
+                </motion.button>
+              </div>
               <p className="print-hint text-center text-[10px] text-muted">
                 (El reporte detallado queda en Reportes → Cierre de Caja)
               </p>

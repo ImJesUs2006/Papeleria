@@ -176,6 +176,8 @@ export interface BusinessConfig {
   diasApartado: number;
   /** Corte de caja: true = se muestra lo esperado mientras se cuenta. */
   corteConReferencia: boolean;
+  /** Fase E: imprimir el ticket del corte al cerrar (si no, solo se muestra). */
+  imprimirCorteAuto: boolean;
   /** Días máximos para aceptar una devolución (la administradora puede pasar por alto). */
   diasDevolucion: number;
   /** Devoluciones desde este monto requieren autorización (null = nunca). */

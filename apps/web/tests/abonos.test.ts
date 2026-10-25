@@ -92,6 +92,7 @@ describe("GET /api/proveedores/[id]/pagos", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("lista el historial de abonos", async () => {
+    mocks.prisma.proveedor.findUnique.mockResolvedValue({ idProveedor: "prov1" });
     mocks.prisma.cuentaPorPagar.findMany.mockResolvedValue([]);
     mocks.prisma.pagoProveedor.findMany.mockResolvedValue([
       {
@@ -109,5 +110,12 @@ describe("GET /api/proveedores/[id]/pagos", () => {
     const body = await res.json();
     expect(body.data).toHaveLength(1);
     expect(body.data[0].usuario).toBe("Admin");
+  });
+
+  it("un proveedor que no es de este negocio responde 404", async () => {
+    mocks.prisma.proveedor.findUnique.mockResolvedValue(null);
+    const res = await GET(new Request("http://localhost"), { params } as any);
+    expect(res.status).toBe(404);
+    expect(mocks.prisma.pagoProveedor.findMany).not.toHaveBeenCalled();
   });
 });

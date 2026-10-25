@@ -249,7 +249,7 @@ export function ClientSelectModal({
                   >
                     {esMonedero ? <Coins className="h-5 w-5" /> : <Users className="h-5 w-5" />}
                     <h3 className="font-black text-gray-100">
-                      {esMonedero ? "Puntos Monedero" : "Crédito de Tienda"}
+                      {esMonedero ? "Puntos Monedero" : "Cliente registrado"}
                     </h3>
                   </div>
                   <button onClick={onClose} className="text-muted hover:text-gray-100">

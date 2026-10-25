@@ -392,16 +392,29 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
     );
     expect(res.status).toBe(201);
 
-    expect(tx.cliente.update).toHaveBeenCalledWith({
-      where: { idCliente: "CLI-1" },
-      data: { puntosFidelidad: { increment: 1 } },
-    });
+    expect(tx.cliente.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idCliente: "CLI-1" },
+        data: { puntosFidelidad: { increment: 1 } },
+      })
+    );
     // El importe sí ingresa a la caja (ya no existe el fiado).
     expect(tx.sesionCaja.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { totalVentasEfectivo: { increment: 130.5 } },
       })
     );
+  });
+
+  it("no acumula puntos si el negocio no usa el monedero", async () => {
+    const tx = txConCliente(0);
+    const res = await postVenta(
+      tx,
+      { ...configPuntos, metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"] },
+      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO", idCliente: "CLI-1" }
+    );
+    expect(res.status).toBe(201);
+    expect(tx.cliente.update).not.toHaveBeenCalled();
   });
 
   it("no acumula puntos si la venta no tiene cliente", async () => {

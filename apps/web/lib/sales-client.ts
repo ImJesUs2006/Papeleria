@@ -37,6 +37,9 @@ export interface ResultadoVenta {
   pagos?: Array<{ metodo: string; monto: number }>;
   metodoPago: string;
   nombreCliente: string | null;
+  /** Puntos ganados con la compra y saldo del cliente (si hubo cliente). */
+  puntosGanados?: number;
+  puntosCliente?: number | null;
   fechaHora: string;
 }
 
@@ -128,6 +131,8 @@ export async function registrarVentaClient(items: CartItem[], extra: {
       pagos: Array.isArray(data.pagos) ? data.pagos : undefined,
       metodoPago: data.metodoPago ?? extra.metodoPago,
       nombreCliente: data.nombreCliente ?? null,
+      puntosGanados: numeroSeguro(data.puntosGanados),
+      puntosCliente: data.puntosCliente == null ? null : numeroSeguro(data.puntosCliente),
       fechaHora: data.fechaHora ?? new Date().toISOString(),
     };
   } catch (e) {

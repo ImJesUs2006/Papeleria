@@ -286,10 +286,12 @@ describe("executeSale · descuentos y pagos mixtos", () => {
       where: { idCliente: "CLI", puntosFidelidad: { gte: 16 } },
       data: { puntosFidelidad: { decrement: 16 } },
     });
-    expect(tx.cliente.update).toHaveBeenCalledWith({
-      where: { idCliente: "CLI" },
-      data: { puntosFidelidad: { increment: 1 } },
-    });
+    expect(tx.cliente.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idCliente: "CLI" },
+        data: { puntosFidelidad: { increment: 1 } },
+      })
+    );
     expect(tx.sesionCaja.update).toHaveBeenCalledWith({
       where: { idCaja: "c1" },
       data: { totalVentasEfectivo: { increment: 100 } },

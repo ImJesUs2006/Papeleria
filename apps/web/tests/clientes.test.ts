@@ -88,3 +88,33 @@ describe("perfil de compra", () => {
     expect(perfilDeCompra([], dia(2)).estado).toBe("NUEVO");
   });
 });
+
+describe("Fase E · domicilio fiscal del cliente con el mismo editor del negocio", () => {
+  it("el editor y la ficha del cliente se traducen sin perder datos", async () => {
+    const { clienteADatosFiscales, datosFiscalesACliente } = await import("@/lib/cliente-fiscal");
+    const cliente = {
+      rfc: "EKU9003173C9",
+      razonSocial: "ESCUELA KEMPER URGATE",
+      regimenFiscal: "601",
+      usoCfdi: "G03",
+      codigoPostalFiscal: "42501",
+      calle: "Av. de las Pruebas",
+      numExt: "100",
+      numInt: null,
+      colonia: "Centro",
+      municipio: "Pachuca de Soto",
+      estado: "Hidalgo",
+    };
+    const editor = clienteADatosFiscales(cliente);
+    expect(editor).toMatchObject({ usoCFDI: "G03", cp: "42501", calle: "Av. de las Pruebas" });
+    expect(datosFiscalesACliente(editor)).toEqual(cliente);
+  });
+
+  it("valida los campos del domicilio", async () => {
+    const { CLIENTE_SCHEMA } = await import("@/lib/clientes");
+    const { validar } = await import("@/lib/validacion");
+    expect(validar(CLIENTE_SCHEMA, { nombre: "Ana", calle: "x".repeat(121) }).ok).toBe(false);
+    expect(validar(CLIENTE_SCHEMA, { nombre: "Ana", numExt: "12345678901" }).ok).toBe(false);
+    expect(validar(CLIENTE_SCHEMA, { nombre: "Ana", calle: "Reforma", numExt: "10", colonia: "Juárez", municipio: "Cuauhtémoc", estado: "CDMX" }).ok).toBe(true);
+  });
+});

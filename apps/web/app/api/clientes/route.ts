@@ -121,6 +121,12 @@ export async function POST(request: Request) {
         regimenFiscal: datos.regimenFiscal ?? null,
         codigoPostalFiscal: datos.codigoPostalFiscal ?? null,
         usoCfdi: datos.usoCfdi ?? null,
+        calle: datos.calle ?? null,
+        numExt: datos.numExt ?? null,
+        numInt: datos.numInt ?? null,
+        colonia: datos.colonia ?? null,
+        municipio: datos.municipio ?? null,
+        estado: datos.estado ?? null,
         notas: datos.notas ?? null,
       },
     });

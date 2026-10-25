@@ -1,3 +1,4 @@
+import type { DatosFiscales } from "./business-types";
 import { z } from "zod";
 import { validarRfc } from "./validacion";
 
@@ -41,4 +42,62 @@ export function tieneDatosFiscales(cliente: {
   razonSocial?: string | null;
 }): boolean {
   return Boolean((cliente.rfc && cliente.rfc.trim()) || (cliente.razonSocial && cliente.razonSocial.trim()));
+}
+
+// ---- Fase E: cliente (columnas de la BD) ⇄ editor fiscal compartido con el negocio ----
+
+export interface ClienteFiscal {
+  rfc?: string | null;
+  razonSocial?: string | null;
+  regimenFiscal?: string | null;
+  usoCfdi?: string | null;
+  codigoPostalFiscal?: string | null;
+  calle?: string | null;
+  numExt?: string | null;
+  numInt?: string | null;
+  colonia?: string | null;
+  municipio?: string | null;
+  estado?: string | null;
+}
+
+export function clienteADatosFiscales(c: ClienteFiscal): DatosFiscales {
+  const v = (x: string | null | undefined) => x || undefined;
+  return {
+    rfc: v(c.rfc),
+    razonSocial: v(c.razonSocial),
+    regimenFiscal: v(c.regimenFiscal),
+    usoCFDI: v(c.usoCfdi),
+    cp: v(c.codigoPostalFiscal),
+    calle: v(c.calle),
+    numExt: v(c.numExt),
+    numInt: v(c.numInt),
+    colonia: v(c.colonia),
+    municipio: v(c.municipio),
+    estado: v(c.estado),
+  };
+}
+
+export function datosFiscalesACliente(d: DatosFiscales): Required<ClienteFiscal> {
+  const v = (x: string | undefined) => x?.trim() || null;
+  return {
+    rfc: v(d.rfc)?.toUpperCase() ?? null,
+    razonSocial: v(d.razonSocial),
+    regimenFiscal: v(d.regimenFiscal),
+    usoCfdi: v(d.usoCFDI),
+    codigoPostalFiscal: v(d.cp),
+    calle: v(d.calle),
+    numExt: v(d.numExt),
+    numInt: v(d.numInt),
+    colonia: v(d.colonia),
+    municipio: v(d.municipio),
+    estado: v(d.estado),
+  };
+}
+
+/** Errores del esquema del cliente → claves del editor. */
+export function erroresClienteAEditor(campos: Record<string, string>): Partial<Record<keyof DatosFiscales, string>> {
+  const mapa: Record<string, keyof DatosFiscales> = { usoCfdi: "usoCFDI", codigoPostalFiscal: "cp" };
+  const out: Partial<Record<keyof DatosFiscales, string>> = {};
+  for (const [k, msg] of Object.entries(campos)) out[(mapa[k] ?? k) as keyof DatosFiscales] = msg;
+  return out;
 }

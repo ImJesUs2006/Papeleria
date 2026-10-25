@@ -107,6 +107,13 @@ export async function GET(
         regimenFiscal: cliente.regimenFiscal ?? null,
         codigoPostalFiscal: completo ? cliente.codigoPostalFiscal ?? null : cliente.codigoPostalFiscal ? "•••••" : null,
         usoCfdi: cliente.usoCfdi ?? null,
+        // Domicilio fiscal: con datos protegidos solo se ve completo al pedirlo.
+        calle: completo ? cliente.calle ?? null : cliente.calle ? "•••••" : null,
+        numExt: completo ? cliente.numExt ?? null : null,
+        numInt: completo ? cliente.numInt ?? null : null,
+        colonia: cliente.colonia ?? null,
+        municipio: cliente.municipio ?? null,
+        estado: cliente.estado ?? null,
         notas: cliente.notas ?? null,
         faltantesFiscales: faltantesFiscales(cliente),
         datosCompletos: completo,

@@ -26,7 +26,9 @@ import { useCartStore } from "@/store/cart";
 import { notificar } from "@/store/notificaciones";
 import { CLIENTE_SCHEMA, enmascarar } from "@/lib/clientes";
 import { validar } from "@/lib/validacion";
-import { REGIMENES_FISCALES, USOS_CFDI } from "@/lib/sat-catalogos";
+import { REGIMENES_FISCALES } from "@/lib/sat-catalogos";
+import { clienteADatosFiscales, DatosFiscalesEditor, datosFiscalesACliente, erroresClienteAEditor } from "@/components/configuracion/datos-fiscales";
+import type { DatosFiscales } from "@/lib/business-types";
 
 interface ClienteFila {
   idCliente: string;
@@ -83,6 +85,12 @@ interface ClienteDetalle extends ClienteFila {
   regimenFiscal?: string | null;
   codigoPostalFiscal?: string | null;
   usoCfdi?: string | null;
+  calle?: string | null;
+  numExt?: string | null;
+  numInt?: string | null;
+  colonia?: string | null;
+  municipio?: string | null;
+  estado?: string | null;
   notas?: string | null;
   faltantesFiscales?: string[];
   datosCompletos?: boolean;
@@ -125,13 +133,9 @@ export default function ClientesPage() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
-  // Fase 12: datos fiscales del cliente (necesarios para emitir CFDI).
-  const [rfc, setRfc] = useState("");
-  const [razonSocial, setRazonSocial] = useState("");
+  // Datos fiscales del cliente (receptor del CFDI): mismo editor que el negocio.
+  const [fiscal, setFiscal] = useState<DatosFiscales>({});
   const [email, setEmail] = useState("");
-  const [regimenFiscal, setRegimenFiscal] = useState("");
-  const [codigoPostalFiscal, setCodigoPostalFiscal] = useState("");
-  const [usoCfdi, setUsoCfdi] = useState("");
   const [notas, setNotas] = useState("");
   const [erroresCampo, setErroresCampo] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
@@ -204,12 +208,8 @@ export default function ClientesPage() {
     setEditandoId(null);
     setNombre("");
     setTelefono("");
-    setRfc("");
-    setRazonSocial("");
+    setFiscal({});
     setEmail("");
-    setRegimenFiscal("");
-    setCodigoPostalFiscal("");
-    setUsoCfdi("");
     setNotas("");
     setErroresCampo({});
     setFormError(null);
@@ -228,12 +228,8 @@ export default function ClientesPage() {
     setEditandoId(c.idCliente);
     setNombre(d.nombre);
     setTelefono(d.telefono ?? "");
-    setRfc(d.rfc ?? "");
-    setRazonSocial(d.razonSocial ?? "");
+    setFiscal(clienteADatosFiscales(d));
     setEmail(d.email ?? "");
-    setRegimenFiscal(d.regimenFiscal ?? "");
-    setCodigoPostalFiscal(d.codigoPostalFiscal ?? "");
-    setUsoCfdi(d.usoCfdi ?? "");
     setNotas(d.notas ?? "");
     setErroresCampo({});
     setFormError(null);
@@ -277,11 +273,7 @@ export default function ClientesPage() {
       nombre,
       telefono: telefono || null,
       email: email || null,
-      rfc: rfc.trim().toUpperCase() || null,
-      razonSocial: razonSocial.trim() || null,
-      regimenFiscal: regimenFiscal || null,
-      codigoPostalFiscal: codigoPostalFiscal || null,
-      usoCfdi: usoCfdi || null,
+      ...datosFiscalesACliente(fiscal),
       notas: notas.trim() || null,
     };
     // Mismas reglas que el servidor: el error aparece junto al campo.
@@ -617,6 +609,21 @@ export default function ClientesPage() {
                       ["Régimen", detalle.regimenFiscal ? `${detalle.regimenFiscal} · ${REGIMENES_FISCALES.find((r) => r.clave === detalle.regimenFiscal)?.nombre ?? ""}` : null],
                       ["C.P. fiscal", detalle.datosCompletos && !mostrarDatos && detalle.codigoPostalFiscal ? "•••••" : detalle.codigoPostalFiscal],
                       ["Uso de CFDI", detalle.usoCfdi],
+                      [
+                        "Domicilio fiscal",
+                        detalle.datosCompletos && !mostrarDatos && detalle.calle
+                          ? "•••••"
+                          : [
+                              [detalle.calle, detalle.numExt && `#${detalle.numExt}`, detalle.numInt && `int. ${detalle.numInt}`]
+                                .filter(Boolean)
+                                .join(" "),
+                              detalle.colonia,
+                              detalle.municipio,
+                              detalle.estado,
+                            ]
+                              .filter(Boolean)
+                              .join(", ") || null,
+                      ],
                     ];
                     return (
                       <dl className="space-y-1 text-xs">
@@ -752,83 +759,15 @@ export default function ClientesPage() {
                 </label>
               </div>
 
-              {/* Fase 12: datos fiscales para la facturación (opcionales). */}
-              <p className="mt-3 text-xs text-muted">
-                Datos fiscales del cliente (opcionales; obligatorios solo para facturarle). Cópialos de su
-                Constancia de Situación Fiscal.
-              </p>
-              <div className="mt-1 grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted">
-                    RFC
-                  </span>
-                  <input
-                    value={rfc}
-                    onChange={(e) => setRfc(e.target.value.toUpperCase())}
-                    maxLength={13}
-                    placeholder="13 (persona) o 12 (empresa)"
-                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
-                  />
-                  <ErrorCampo msg={erroresCampo.rfc} />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted">
-                    Razón social
-                  </span>
-                  <input
-                    value={razonSocial}
-                    onChange={(e) => setRazonSocial(e.target.value)}
-                    maxLength={120}
-                    placeholder="Como aparece en su constancia"
-                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
-                  />
-                  <ErrorCampo msg={erroresCampo.razonSocial} />
-                </label>
-                <label className="col-span-2 block">
-                  <span className="mb-1 block text-xs font-bold text-muted">Régimen fiscal</span>
-                  <select
-                    value={regimenFiscal}
-                    onChange={(e) => setRegimenFiscal(e.target.value)}
-                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
-                  >
-                    <option value="">Sin capturar</option>
-                    {REGIMENES_FISCALES.filter((r) =>
-                      rfc.trim().length === 12 ? r.moral : rfc.trim().length === 13 ? r.fisica : true
-                    ).map((r) => (
-                      <option key={r.clave} value={r.clave}>
-                        {r.clave} · {r.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  <ErrorCampo msg={erroresCampo.regimenFiscal} />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted">C.P. fiscal</span>
-                  <input
-                    value={codigoPostalFiscal}
-                    onChange={(e) => setCodigoPostalFiscal(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                    inputMode="numeric"
-                    placeholder="5 dígitos"
-                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
-                  />
-                  <ErrorCampo msg={erroresCampo.codigoPostalFiscal} />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted">Uso de CFDI</span>
-                  <select
-                    value={usoCfdi}
-                    onChange={(e) => setUsoCfdi(e.target.value)}
-                    className="w-full rounded-xl border border-surface-500 bg-surface-700 px-3 py-2 text-sm text-gray-100 outline-none focus:border-acento"
-                  >
-                    <option value="">Sin capturar</option>
-                    {USOS_CFDI.map((u) => (
-                      <option key={u.clave} value={u.clave}>
-                        {u.clave} · {u.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  <ErrorCampo msg={erroresCampo.usoCfdi} />
-                </label>
+              <div className="mt-4 rounded-xl border border-surface-600 p-3">
+                <DatosFiscalesEditor
+                  modo="receptor"
+                  datos={fiscal}
+                  onChange={setFiscal}
+                  errores={erroresClienteAEditor(erroresCampo)}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
                 <label className="col-span-2 block">
                   <span className="mb-1 block text-xs font-bold text-muted">Notas</span>
                   <input

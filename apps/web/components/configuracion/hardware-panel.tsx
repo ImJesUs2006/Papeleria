@@ -141,6 +141,14 @@ export function HardwarePanel() {
           />
           Abrir el cajón al cobrar en efectivo (conectado a la impresora térmica)
         </label>
+        {h.impresora !== "ESCPOS" && (
+          <ol className="list-decimal space-y-0.5 pl-5 text-[11px] text-muted">
+            <li>Conecta el cajón a la impresora térmica con su cable (RJ11/RJ12, el que trae el cajón).</li>
+            <li>Arriba, en «Impresora de tickets», elige «Térmica directa» y pulsa «Elegir impresora».</li>
+            <li>Activa esta casilla. En Caja aparecerá además el botón «Abrir cajón» (queda en la bitácora).</li>
+            {!soportado && <li className="text-amber-300">Necesitas Chrome o Edge para conectar la impresora.</li>}
+          </ol>
+        )}
         {h.impresora === "ESCPOS" && (
           <button
             type="button"

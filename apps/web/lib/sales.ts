@@ -153,6 +153,8 @@ export interface SaleContext {
   puntos?: {
     pesosCompraPorPunto: number;
     valorPuntoPesos: number;
+    /** false = el negocio no usa el monedero: la venta no acumula puntos. */
+    acumula?: boolean;
   };
   /** Rol de quien cobra: la CAJERA tiene tope de descuento manual. */
   rol?: string;
@@ -190,6 +192,10 @@ export interface SaleResult {
     promocion: string | null;
   }>;
   nombreCliente: string | null;
+  /** Puntos que ganó el cliente con esta compra (0 sin cliente o sin monedero). */
+  puntosGanados: number;
+  /** Saldo de puntos del cliente después de la venta (null sin cliente). */
+  puntosCliente: number | null;
   fechaHora: string;
 }
 
@@ -586,16 +592,21 @@ export async function executeSale(
       throw new SaleError("Puntos insuficientes: el saldo del cliente cambió", 409);
     }
   }
+  let puntosGanados = 0;
+  let puntosCliente: number | null = null;
   if (idCliente) {
     const pagadoConDinero = round2(totalNeto - (pagoPuntos?.monto ?? 0));
     const pesoPunto = ctx.puntos?.pesosCompraPorPunto ?? PESOS_POR_PUNTO;
-    const puntosGanados = puntosGanadosPorCompra(pagadoConDinero, pesoPunto);
-    if (puntosGanados > 0) {
-      await tx.cliente.update({
-        where: { idCliente },
-        data: { puntosFidelidad: { increment: puntosGanados } },
-      });
-    }
+    puntosGanados = ctx.puntos?.acumula === false ? 0 : puntosGanadosPorCompra(pagadoConDinero, pesoPunto);
+    const actualizado =
+      puntosGanados > 0
+        ? await tx.cliente.update({
+            where: { idCliente },
+            data: { puntosFidelidad: { increment: puntosGanados } },
+            select: { puntosFidelidad: true },
+          })
+        : await tx.cliente.findUnique({ where: { idCliente }, select: { puntosFidelidad: true } });
+    puntosCliente = actualizado?.puntosFidelidad ?? null;
   }
 
   // 7. Bitácora
@@ -651,6 +662,8 @@ export async function executeSale(
       promocion: l.promocion,
     })),
     nombreCliente: nombreCliente ?? null,
+    puntosGanados,
+    puntosCliente,
     fechaHora: new Date().toISOString(),
   };
 }

@@ -22,12 +22,13 @@ import {
   Split,
   Tag,
   Scale,
+  UserRound,
 } from "lucide-react";
 import { useCartStore, CartItem, type MetodoPagoPOS } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
 import { useConfigStore, usePersonalizacion } from "@/store/config";
 import { registrarVentaClient, type ResultadoVenta } from "@/lib/sales-client";
-import { puntosRequeridos } from "@/lib/fidelidad";
+import { puntosGanadosPorCompra, puntosRequeridos } from "@/lib/fidelidad";
 import { montosSugeridos } from "@/lib/pagos";
 import { escalaAplicable, leerEscalas, siguienteEscala } from "@/lib/precios";
 import { useHotkeys } from "@/hooks/use-hotkeys";
@@ -589,6 +590,12 @@ export function CartPanel() {
   // Fase 12: tasa del negocio (defaults = 1 punto por $100; 1pt = $1).
   const valorPunto = config?.puntosConfig?.valorPuntoPesos ?? 1;
   const necesitaCliente = esMonedero;
+  // Programa de puntos: activo cuando el negocio habilitó el método "Puntos Monedero".
+  const monederoActivo = (config?.metodosPago ?? []).includes("PUNTOS_MONEDERO" as any);
+  const puntosAGanar =
+    monederoActivo && idCliente && !esMonedero
+      ? puntosGanadosPorCompra(total, config?.puntosConfig?.pesosCompraPorPunto ?? 100)
+      : 0;
   const ptsNecesarios = esMonedero && idCliente ? puntosRequeridos(total, valorPunto) : 0;
   const monederoAlcanza = esMonedero ? puntosCliente >= ptsNecesarios : true;
   const recibido = esEfectivo && montoRecibido ? parseFloat(montoRecibido) : 0;
@@ -760,6 +767,53 @@ export function CartPanel() {
             ))
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Cliente de la venta: público general o registrado (acumula puntos). */}
+      <div className="px-4 py-2.5 border-t border-surface-600" data-testid="cliente-venta">
+        {idCliente ? (
+          <div className="flex items-center gap-2 rounded-lg border border-acento/40 bg-acento/5 px-3 py-2">
+            <UserRound className="h-4 w-4 shrink-0 text-acento" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-bold text-gray-100">{nombreCliente}</p>
+              {monederoActivo && (
+                <p className="text-[11px] text-muted">
+                  {puntosCliente} pts
+                  {puntosAGanar > 0 && <span className="text-emerald-300"> · gana {puntosAGanar} con esta compra</span>}
+                  {nivelCliente === "MAYOREO" && " · cliente mayorista"}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setClienteModalOpen(true)}
+              className="text-[11px] font-bold text-acento hover:underline"
+            >
+              Cambiar
+            </button>
+            <button
+              type="button"
+              onClick={() => setCliente(null, null)}
+              aria-label="Quitar cliente (público general)"
+              className="text-muted hover:text-gray-100"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="flex items-center gap-2 text-muted">
+              <Users className="h-4 w-4" /> Público general
+            </span>
+            <button
+              type="button"
+              onClick={() => setClienteModalOpen(true)}
+              className="rounded-lg border border-surface-500 px-2.5 py-1 font-bold text-gray-200 hover:border-acento/60 hover:text-acento"
+            >
+              {monederoActivo ? "Cliente registrado (puntos)" : "Cliente registrado"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Precio mayorista: aplica la escala más baja de cada producto sin importar la cantidad. */}

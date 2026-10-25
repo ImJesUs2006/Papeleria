@@ -28,6 +28,7 @@ export async function GET() {
     }),
     prisma.venta.groupBy({ by: ["idNegocio"], _max: { fechaHora: true } }),
     prisma.usuario.findMany({
+      where: { eliminadoEn: null },
       orderBy: [{ idNegocio: "asc" }, { nombre: "asc" }],
       select: { idNegocio: true, nombre: true, username: true, rol: true, isRoot: true, activa: true, permisoInventario: true, permisoReportes: true, ultimoLoginAt: true },
     }),

@@ -59,8 +59,11 @@ const pct = (v: unknown): number | null => {
  */
 export function tasasProducto(
   producto: { tasaIva?: unknown; exentoIva?: boolean | null; tasaIeps?: unknown },
-  ivaNegocio: number
+  ivaNegocio: number,
+  /** false = el negocio no cobra impuestos: IVA e IEPS en 0. */
+  cobraImpuestos = true
 ): TasasLinea {
+  if (!cobraImpuestos) return { tasaIva: 0, tasaIeps: 0 };
   const negocio = pct(ivaNegocio) ?? 16;
   return {
     tasaIva: producto.exentoIva === true ? 0 : pct(producto.tasaIva) ?? negocio,

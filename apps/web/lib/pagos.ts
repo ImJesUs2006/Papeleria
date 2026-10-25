@@ -53,7 +53,8 @@ export function normalizarPagos(
     montoRecibido?: number | null;
     referenciaTransferencia?: string | null;
   },
-  total: number
+  total: number,
+  opts: { exigirRecibido?: boolean } = {}
 ): PagosNormalizados {
   const crudos =
     Array.isArray(input.pagos) && input.pagos.length > 0
@@ -95,6 +96,10 @@ export function normalizarPagos(
 
   const efectivo = pagos.find((x) => x.metodo === "EFECTIVO")?.monto ?? 0;
   let cambio: number | null = null;
+  const sinRecibido = input.montoRecibido == null || !Number.isFinite(Number(input.montoRecibido));
+  if (opts.exigirRecibido && efectivo > 0 && sinRecibido) {
+    throw new PagoError("Captura cuánto efectivo entregó el cliente");
+  }
   if (input.montoRecibido != null && Number.isFinite(Number(input.montoRecibido)) && efectivo > 0) {
     const recibido = c(Number(input.montoRecibido));
     if (recibido < c(efectivo)) {

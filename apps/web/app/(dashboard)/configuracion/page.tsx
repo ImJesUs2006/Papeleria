@@ -61,6 +61,8 @@ import {
 import { cn } from "@/lib/utils";
 import { notificar } from "@/store/notificaciones";
 import { aDataUrlReducida, leerConfigCloudinary, subirACloudinary } from "@/lib/imagenes-cliente";
+import { confirmar } from "@/store/dialogo";
+import { ImpuestosPanel } from "@/components/configuracion/impuestos-panel";
 
 
 /** Tamaño máximo del logo en bytes (base64 ≈ 1 MB). */
@@ -71,6 +73,12 @@ const LOGO_MAX_BYTES = 1_000_000;
  * incompatibles (p. ej. creada bajo otro tipo de negocio) para que el
  * renderizado nunca reciba `undefined`/valores fuera de rango.
  */
+const ETIQUETA_METODO: Record<string, string> = {
+  EFECTIVO: "Efectivo",
+  TARJETA_TERMINAL: "Tarjeta (terminal)",
+  TRANSFERENCIA: "Transferencia",
+};
+
 function normalizeConfig(raw: any): BusinessConfig {
   const flagsRaw = raw?.featureFlags && typeof raw.featureFlags === "object" ? raw.featureFlags : {};
   const featureFlags = VALID_FLAG_KEYS.reduce<FeatureFlags>(
@@ -111,6 +119,7 @@ function normalizeConfig(raw: any): BusinessConfig {
     moneda: typeof raw?.moneda === "string" ? raw.moneda : "MXN",
     ivaRate: Number.isFinite(iva) ? iva : 16,
     preciosIncluyenIva: raw?.preciosIncluyenIva === true,
+    cobraImpuestos: raw?.cobraImpuestos !== false,
     descuentoMaxCajera: Number.isFinite(Number(raw?.descuentoMaxCajera)) ? Number(raw?.descuentoMaxCajera) : 10,
     personalizacion: normalizarPersonalizacion(raw?.personalizacion, raw?.tipoNegocio),
     featureFlags,
@@ -399,6 +408,7 @@ const guardar = async () => {
           moneda: config.moneda,
           ivaRate: Number(config.ivaRate),
           preciosIncluyenIva: config.preciosIncluyenIva === true,
+          cobraImpuestos: config.cobraImpuestos !== false,
           descuentoMaxCajera: Number(config.descuentoMaxCajera ?? 10),
           personalizacion: config.personalizacion,
           featureFlags: config.featureFlags,
@@ -597,35 +607,14 @@ const guardar = async () => {
             className="input-dark"
           />
         </label>
-        <label className="block">
-          <span className="text-xs text-muted mb-1 block">IVA (%)</span>
-          <input
-            type="number"
-            value={config.ivaRate}
-            onChange={(e) => setConfig({ ...config, ivaRate: Number(e.target.value) })}
-            className="input-dark"
-          />
-        </label>
       </div>
 
-      <label className="flex items-start gap-3 rounded-xl border border-surface-600 bg-surface-700/40 p-3">
-        <input
-          type="checkbox"
-          checked={config.preciosIncluyenIva === true}
-          onChange={(e) => setConfig({ ...config, preciosIncluyenIva: e.target.checked })}
-          className="mt-1"
-        />
-        <span>
-          <span className="block text-sm font-bold text-gray-100">
-            Mis precios ya incluyen impuestos
-          </span>
-          <span className="block text-xs text-muted">
-            Activado: el cliente paga el precio de etiqueta y el ticket desglosa el IVA. Desactivado:
-            el IVA se suma al precio al cobrar. Cada producto puede tener su propia tasa (0%, exento,
-            IEPS) desde Inventario.
-          </span>
-        </span>
-      </label>
+      <ImpuestosPanel
+        cobraImpuestos={config.cobraImpuestos !== false}
+        ivaRate={Number(config.ivaRate)}
+        preciosIncluyenIva={config.preciosIncluyenIva === true}
+        onChange={(cambio) => setConfig({ ...config, ...cambio })}
+      />
 
       <label className="block max-w-xs">
         <span className="text-xs text-muted mb-1 block">
@@ -882,7 +871,7 @@ const guardar = async () => {
             <button
               type="button"
               onClick={async () => {
-                if (!window.confirm(`¿Cargar los productos de ejemplo de ${TIPO_NEGOCIO[config.tipoNegocio]}? Sus códigos empiezan con EJ- y no se duplican.`)) return;
+                if (!(await confirmar({ titulo: `¿Cargar los productos de ejemplo de ${TIPO_NEGOCIO[config.tipoNegocio]}?`, mensaje: "Sus códigos empiezan con EJ- y no se duplican.", aceptar: "Cargar" }))) return;
                 const r = await fetch("/api/setup/catalogo-ejemplo", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -1191,13 +1180,41 @@ const guardar = async () => {
         </div>
       </div>
 
-      <div className="border-t border-surface-600 pt-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Coins className="h-4 w-4 text-neon-yellow" />
-          <span className="text-xs font-bold text-muted uppercase tracking-wider">
-            Puntos Monedero · Fidelización
-          </span>
+      <div className="border-t border-surface-600 pt-4" data-testid="programa-puntos">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Coins className="h-4 w-4 text-neon-yellow" />
+            <span className="text-xs font-bold text-muted uppercase tracking-wider">
+              Programa de puntos (monedero)
+            </span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={config.metodosPago.includes("PUNTOS_MONEDERO")}
+            aria-label="Programa de puntos"
+            data-testid="interruptor-puntos"
+            onClick={() => toggleMetodo("PUNTOS_MONEDERO")}
+            className={cn(
+              "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+              config.metodosPago.includes("PUNTOS_MONEDERO") ? "bg-neon-green" : "bg-surface-500"
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all",
+                config.metodosPago.includes("PUNTOS_MONEDERO") ? "left-[22px]" : "left-0.5"
+              )}
+            />
+          </button>
         </div>
+        {!config.metodosPago.includes("PUNTOS_MONEDERO") ? (
+          <p className="text-xs text-muted">
+            Apagado: las ventas no acumulan puntos y en el cobro no aparece la opción de pagar con puntos.
+            Los puntos que ya tienen tus clientes se conservan por si lo vuelves a encender.
+          </p>
+        ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block">
             <span className="text-xs text-muted mb-1 block">
@@ -1245,17 +1262,17 @@ const guardar = async () => {
           </label>
         </div>
         <p className="mt-2 text-[11px] text-muted">
-          Con el método{" "}
-          <span className="font-bold text-neon-yellow">PUNTOS_MONEDERO</span>{" "}
-          activo, la cajera canjea los puntos del cliente desde el POS. Los
+          Los clientes registrados ganan puntos al comprar y la cajera los canjea desde el cobro. Los
           puntos no ingresan a la caja: se descuentan del saldo del cliente.
         </p>
+        </>
+        )}
       </div>
 
       <div>
         <span className="text-xs text-muted mb-2 block">Métodos de pago aceptados</span>
         <div className="flex flex-wrap gap-2">
-          {METODOS_PAGO_DISPONIBLES.map((m) => (
+          {METODOS_PAGO_DISPONIBLES.filter((m) => m !== "PUNTOS_MONEDERO").map((m) => (
             <button
               key={m}
               onClick={() => toggleMetodo(m)}
@@ -1266,7 +1283,7 @@ const guardar = async () => {
                   : "bg-surface-700 border-surface-500 text-muted"
               )}
             >
-              {m.replace("_", " ")}
+              {ETIQUETA_METODO[m] ?? m}
             </button>
           ))}
         </div>

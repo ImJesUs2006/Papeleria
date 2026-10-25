@@ -139,6 +139,7 @@ describe("tenant · ninguna ruta usa el cliente global", () => {
       "app/api/plataforma/tablero/route.ts",
       "app/api/plataforma/exportar/route.ts",
       "app/api/plataforma/bitacora/route.ts",
+      "app/api/plataforma/bitacora/purgar/route.ts",
       "lib/plataforma.ts",
       "lib/auth.ts",
       "lib/tenant.ts",

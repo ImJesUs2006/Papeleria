@@ -25,6 +25,7 @@ import { BitacoraPreview } from "@/components/reports/bitacora-preview";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 import { AnalisisNegocio } from "@/components/reports/analisis-negocio";
+import { notificar } from "@/store/notificaciones";
 
 interface ReportDef {
   id: string;
@@ -214,7 +215,7 @@ export default function ReportesPage() {
     }
     if (report.needsCajaId) {
       if (!cajaId.trim()) {
-        alert("Ingresa el ID de la sesión de caja");
+        notificar.aviso("Ingresa el ID de la sesión de caja");
         return null;
       }
       params.set("idCaja", cajaId.trim());
@@ -275,7 +276,7 @@ export default function ReportesPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error al generar reporte");
+        notificar.error(err?.error || "Error al generar reporte");
         return;
       }
 
@@ -293,7 +294,7 @@ export default function ReportesPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      alert("Error de conexión al generar reporte");
+      notificar.error("Error de conexión al generar reporte");
     } finally {
       setIsGenerating(false);
       setSelectedType(null);

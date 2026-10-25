@@ -44,6 +44,7 @@ import { SerieModal } from "@/components/pos/serie-modal";
 import { actualizarCatalogo } from "@/lib/offline/catalogo-cliente";
 import { abrirCajon, leerBascula, leerHardware } from "@/lib/hardware/serial";
 import { cn } from "@/lib/utils";
+import { notificar } from "@/store/notificaciones";
 
 function CartItemRow({
   item,
@@ -121,7 +122,7 @@ function CartItemRow({
               try {
                 updateQuantity(item.codigoItem, await leerBascula());
               } catch (e: any) {
-                window.alert(e?.message || "No se pudo leer la báscula");
+                notificar.error(e?.message || "No se pudo leer la báscula");
               }
             }}
             title="Leer báscula"
@@ -577,6 +578,7 @@ export function CartPanel() {
   const { subtotal, iva, ieps, total, precios, descuentoTotal } = getTotales();
   const precioPorCodigo = new Map(precios.lineas.map((l) => [l.codigoItem, l]));
   const preciosIncluyenIva = useConfigStore((s) => s.config?.preciosIncluyenIva === true);
+  const cobraImpuestos = useConfigStore((s) => s.config?.cobraImpuestos !== false);
   const itemCount = getItemCount();
   const tieneMayoreo = getTieneMayoreo();
 
@@ -603,6 +605,8 @@ export function CartPanel() {
     esEfectivo && recibido >= total
       ? Math.round((recibido - total) * 100) / 100
       : null;
+  // En efectivo no se cobra sin capturar cuánto entregó el cliente.
+  const faltaRecibido = esEfectivo && items.length > 0 && (montoRecibido === "" || recibido < total);
 
   const cobrar = async (opciones: OpcionesCobro = {}) => {
     if (!items.length || estado === "cobrando") return;
@@ -611,6 +615,16 @@ export function CartPanel() {
     if (!dividido && esTransferencia && !referenciaTransferencia) {
       setReferenciaInput("");
       setShowTransferencia(true);
+      return;
+    }
+    if (!dividido && faltaRecibido) {
+      setMensajeError(
+        montoRecibido === ""
+          ? "Captura cuánto pagó el cliente (o toca «Exacto»)"
+          : `El efectivo recibido no cubre el total: faltan $${(Math.round((total - recibido) * 100) / 100).toFixed(2)}`
+      );
+      setEstado("error");
+      document.querySelector<HTMLInputElement>('[data-testid="monto-recibido"]')?.focus();
       return;
     }
     // CRM/Monedero: la venta exige un cliente asignado.
@@ -971,6 +985,7 @@ export function CartPanel() {
                   // Sin negativos ni más de 2 decimales.
                   const v = e.target.value;
                   if (v === "" || /^\d{0,7}(\.\d{0,2})?$/.test(v)) setMontoRecibido(v);
+                  if (estado === "error") setEstado("idle");
                 }}
                 placeholder="0.00"
                 min={0}
@@ -1074,10 +1089,12 @@ export function CartPanel() {
             <span>${ieps.toFixed(2)}</span>
           </div>
         )}
-        <div className="flex justify-between text-sm text-muted">
-          <span>IVA{preciosIncluyenIva ? " (incluido)" : ""}</span>
-          <span>${iva.toFixed(2)}</span>
-        </div>
+        {cobraImpuestos && (
+          <div className="flex justify-between text-sm text-muted">
+            <span>IVA{preciosIncluyenIva ? " (incluido)" : ""}</span>
+            <span>${iva.toFixed(2)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-lg font-bold text-gray-100 pt-1 border-t border-surface-500">
           <span>Total</span>
           <span className="text-neon-green">${total.toFixed(2)}</span>
@@ -1109,11 +1126,13 @@ export function CartPanel() {
           whileTap={{ scale: 0.97 }}
           onClick={() => cobrar()}
           disabled={items.length === 0 || estado === "cobrando"}
+          data-testid="boton-cobrar"
           className={cn(
             "w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2",
-            items.length > 0
+            items.length > 0 && !faltaRecibido
               ? "bg-neon-green text-btn-ink shadow-neon hover:shadow-glow"
-              : "bg-surface-600 text-muted cursor-not-allowed"
+              : "bg-surface-600 text-muted",
+            items.length === 0 && "cursor-not-allowed"
           )}
         >
           {estado === "cobrando" ? (
@@ -1121,6 +1140,8 @@ export function CartPanel() {
               <Loader2 className="h-5 w-5 animate-spin" />
               Procesando...
             </>
+          ) : faltaRecibido ? (
+            <>{montoRecibido === "" ? "Captura lo recibido" : "Lo recibido no alcanza"} · ${total.toFixed(2)}</>
           ) : (
             <>Cobrar ${total.toFixed(2)}</>
           )}

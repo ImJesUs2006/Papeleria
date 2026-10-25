@@ -158,6 +158,8 @@ model Usuario {
   updatedAt          DateTime  @updatedAt
   ultimoLoginAt      DateTime?
   passwordCambiadaEn DateTime?
+  // Eliminado con historial: datos personales anonimizados (Fase G).
+  eliminadoEn        DateTime?
 
   ventas             Venta[]
   sesionesCaja       SesionCaja[]
@@ -520,6 +522,9 @@ model ConfiguracionNegocio {
   // true = los precios de lista YA incluyen impuestos (lo usual en mostrador):
   // el ticket los desglosa hacia atrás. false = se suman al cobrar.
   preciosIncluyenIva       Boolean     @default(false)
+  // false = el negocio no cobra impuestos (no inscrito o régimen sin IVA):
+  // todas las líneas van a tasa 0 sin importar la tasa de cada producto.
+  cobraImpuestos           Boolean     @default(true)
   // ---- Descuentos (Paso 3) ----
   // % máximo de descuento manual que una CAJERA aplica sin autorización.
   // Arriba de él, una ADMINISTRADORA autoriza con su usuario y contraseña.

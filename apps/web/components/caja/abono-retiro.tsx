@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { notificar } from "@/store/notificaciones";
 import { abrirCajon, hayWebSerial, leerHardware } from "@/lib/hardware/serial";
+import { pedirTexto } from "@/store/dialogo";
 
 interface Cliente {
   idCliente: string;
@@ -401,8 +402,15 @@ function BotonCajon() {
   }, []);
   if (!disponible) return null;
   const abrir = async () => {
-    const motivo = window.prompt("¿Por qué abres el cajón sin venta? (queda en la bitácora)", "Dar cambio");
-    if (!motivo || motivo.trim().length < 3) return;
+    const motivo = await pedirTexto({
+      titulo: "Abrir el cajón sin venta",
+      mensaje: "El motivo queda en la bitácora.",
+      etiqueta: "Motivo",
+      valorInicial: "Dar cambio",
+      aceptar: "Abrir cajón",
+      validar: (v) => (v.length < 3 ? "Escribe un motivo de al menos 3 letras" : null),
+    });
+    if (!motivo) return;
     setAbriendo(true);
     try {
       const res = await fetch("/api/caja/cajon", {

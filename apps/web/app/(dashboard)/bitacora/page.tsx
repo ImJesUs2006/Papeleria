@@ -17,6 +17,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 import { Modal } from "@/components/ui/modal";
+import { notificar } from "@/store/notificaciones";
+import { descargarBase64 } from "@/lib/descargar";
 
 interface LogEntry {
   idLog: string;
@@ -247,7 +249,7 @@ export default function BitacoraPage() {
                 <button
                   onClick={() => setModalPurga(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-700 border border-neon-red/40 text-[11px] font-bold text-neon-red hover:bg-neon-red/10 transition-colors"
-                  title="Genera un respaldo JSON y elimina registros antiguos"
+                  title="Descarga un respaldo en Excel y elimina los registros antiguos"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Purgar registros antiguos
@@ -423,14 +425,14 @@ function PurgaModal({
   onDone: () => void;
 }) {
   const [password, setPassword] = useState("");
-  const [meses, setMeses] = useState<number>(6);
+  const [meses, setMeses] = useState<number>(3);
   const [purgando, setPurgando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setPassword("");
-      setMeses(6);
+      setMeses(3);
       setError(null);
       setPurgando(false);
     }
@@ -448,14 +450,11 @@ function PurgaModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo purgar la bitácora");
 
-      if (data.backup) {
-        const blob = new Blob([data.backup], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `respaldo-bitacora-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+      if (data.respaldoXlsx) {
+        descargarBase64(data.respaldoXlsx, data.archivo || "respaldo-bitacora.xlsx");
+        notificar.exito(`${data.purgados} registros purgados`, "El respaldo en Excel se descargó");
+      } else {
+        notificar.info("No hay registros tan antiguos", "No se borró nada");
       }
       onDone();
     } catch (e: any) {
@@ -470,14 +469,18 @@ function PurgaModal({
       open={open}
       onClose={onClose}
       title="Purgar registros antiguos"
-      subtitle="Genera un respaldo JSON antes de eliminar"
+      subtitle="Solo el dueño(a) · se descarga un respaldo en Excel antes de borrar"
     >
       <div className="space-y-4">
         <p className="text-sm text-muted">
-          Se eliminarán los registros anteriores a la antigüedad elegida. El sistema
-          genera un{" "}
-          <span className="text-gray-100 font-bold">respaldo JSON descargable</span>{" "}
-          antes de borrar y deja constancia de la purga en la bitácora.
+          Se eliminan <span className="text-gray-100 font-bold">todos</span> los registros anteriores a la
+          antigüedad elegida (no se pueden borrar registros sueltos: así la bitácora sigue sirviendo como
+          prueba). Antes de borrar se descarga un{" "}
+          <span className="text-gray-100 font-bold">respaldo en Excel</span> y la purga queda anotada.
+        </p>
+        <p className="text-xs text-muted">
+          ¿Quieres borrar los datos de una persona? Elimínala en Configuración → Usuarios: su nombre se
+          quita de todos los registros.
         </p>
         <label className="block">
           <span className="text-xs text-muted mb-1 block">Antigüedad a purgar</span>
@@ -486,6 +489,7 @@ function PurgaModal({
             onChange={(e) => setMeses(Number(e.target.value))}
             className="w-full bg-surface-700 border border-surface-500 rounded-xl px-3 py-2.5 text-sm text-gray-100 focus:border-neon-red focus:shadow-neon-red focus:outline-none transition-all"
           >
+            <option value={1}>Más de 1 mes</option>
             <option value={3}>Más de 3 meses</option>
             <option value={6}>Más de 6 meses</option>
             <option value={12}>Más de 12 meses</option>

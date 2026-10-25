@@ -24,6 +24,7 @@ export async function GET() {
   const prisma = tenantDb(auth.user.idNegocio);
 
   const usuarios = await prisma.usuario.findMany({
+    where: { eliminadoEn: null },
     orderBy: [{ activa: "desc" }, { nombre: "asc" }],
     select: {
       idPersona: true,

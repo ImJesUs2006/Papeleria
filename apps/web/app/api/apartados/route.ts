@@ -44,6 +44,7 @@ export async function POST(request: Request) {
         idSucursal: sesion?.idSucursal ?? user.idSucursal ?? null,
         ivaRate: config.ivaRate,
         preciosIncluyenIva: config.preciosIncluyenIva,
+        cobraImpuestos: config.cobraImpuestos,
       })
     );
 

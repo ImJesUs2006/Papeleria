@@ -236,7 +236,7 @@ export async function POST(request: Request) {
               precioMomento,
               subtotalLinea: Math.round(precioMomento * cantidad * 100) / 100,
               esServicio,
-              ...tasasProducto(producto, config.ivaRate),
+              ...tasasProducto(producto, config.ivaRate, config.cobraImpuestos),
               ivaLinea: 0,
               iepsLinea: 0,
             });

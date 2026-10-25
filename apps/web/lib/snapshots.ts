@@ -45,6 +45,7 @@ export interface SnapshotJson {
     ivaRate: number;
     /** Opcionales: los snapshots anteriores no los traen. */
     preciosIncluyenIva?: boolean;
+    cobraImpuestos?: boolean;
     descuentoMaxCajera?: number;
     personalizacion?: JsonValue | null;
     featureFlags: JsonValue;
@@ -101,6 +102,7 @@ export function buildResetJson(
       moneda: configRow?.moneda ?? "MXN",
       ivaRate: toNumber(configRow?.ivaRate, 16),
       preciosIncluyenIva: Boolean(configRow?.preciosIncluyenIva ?? false),
+      cobraImpuestos: configRow?.cobraImpuestos !== false,
       descuentoMaxCajera: toNumber(configRow?.descuentoMaxCajera, 10),
       personalizacion: configRow?.personalizacion ?? null,
       featureFlags: configRow?.featureFlags ?? {},
@@ -286,6 +288,7 @@ export async function restoreFromSnapshot(tx: RestoreTx, input: RestoreInput) {
       ...(typeof cfg.preciosIncluyenIva === "boolean"
         ? { preciosIncluyenIva: cfg.preciosIncluyenIva }
         : {}),
+      ...(typeof cfg.cobraImpuestos === "boolean" ? { cobraImpuestos: cfg.cobraImpuestos } : {}),
       ...(Number.isFinite(Number(cfg.descuentoMaxCajera))
         ? { descuentoMaxCajera: Number(cfg.descuentoMaxCajera) }
         : {}),

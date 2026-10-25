@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { BuscadorProducto, type ProductoEncontrado } from "@/components/ui/buscador-producto";
 import { GeneradorVariantes } from "@/components/inventario/generador-variantes";
 import { notificar } from "@/store/notificaciones";
+import { confirmar, pedirTexto } from "@/store/dialogo";
 
 // ============================================================
 // Lotes, series y variantes: listas completas con su estado, y desde
@@ -202,10 +203,14 @@ function PestanaLotes() {
   }, [cargar]);
 
   const baja = async (l: LoteFila) => {
-    const motivo = window.prompt(
-      `Dar de baja ${l.cantidad} de "${l.descripcion}" (lote ${l.numeroLote}) como merma.\nMotivo:`,
-      l.estado === "CADUCADO" ? "caducado" : "dañado"
-    );
+    const motivo = await pedirTexto({
+      titulo: `Dar de baja el lote ${l.numeroLote}`,
+      mensaje: `${l.cantidad} de "${l.descripcion}" salen del inventario como merma.`,
+      etiqueta: "Motivo",
+      valorInicial: l.estado === "CADUCADO" ? "caducado" : "dañado",
+      aceptar: "Dar de baja",
+      peligro: true,
+    });
     if (!motivo) return;
     try {
       await pedir(`/api/lotes/${l.idLote}/baja`, { method: "POST", body: JSON.stringify({ motivo }) });
@@ -216,7 +221,7 @@ function PestanaLotes() {
     }
   };
   const eliminar = async (l: LoteFila) => {
-    if (!window.confirm(`¿Eliminar el registro del lote agotado ${l.numeroLote}?`)) return;
+    if (!(await confirmar({ titulo: `¿Eliminar el registro del lote agotado ${l.numeroLote}?`, aceptar: "Eliminar", peligro: true }))) return;
     try {
       await pedir(`/api/lotes/${l.idLote}`, { method: "DELETE" });
       notificar.exito(`Lote ${l.numeroLote} eliminado`);
@@ -416,7 +421,14 @@ function PestanaSeries() {
   }, [cargar]);
 
   const baja = async (s: SerieFila) => {
-    const motivo = window.prompt(`Dar de baja la pieza con serie ${s.serie} (${s.descripcion}).\nMotivo:`, "dañada");
+    const motivo = await pedirTexto({
+      titulo: `Dar de baja la serie ${s.serie}`,
+      mensaje: s.descripcion,
+      etiqueta: "Motivo",
+      valorInicial: "dañada",
+      aceptar: "Dar de baja",
+      peligro: true,
+    });
     if (!motivo) return;
     try {
       await pedir(`/api/series/${s.idSerie}`, { method: "DELETE", body: JSON.stringify({ motivo }) });
@@ -592,7 +604,7 @@ function PestanaVariantes() {
   }, [cargar]);
 
   const quitar = async (codigo: string, descripcion: string) => {
-    if (!window.confirm(`¿Quitar la variante "${descripcion}"? Si ya tuvo movimientos se da de baja (no se borra).`)) return;
+    if (!(await confirmar({ titulo: `¿Quitar la variante "${descripcion}"?`, mensaje: "Si ya tuvo movimientos se da de baja (no se borra).", aceptar: "Quitar", peligro: true }))) return;
     try {
       const r = await pedir(`/api/productos/${encodeURIComponent(codigo)}`, { method: "DELETE" });
       notificar.exito(r.modo === "ELIMINADO" ? "Variante eliminada" : "Variante dada de baja", r.motivo);

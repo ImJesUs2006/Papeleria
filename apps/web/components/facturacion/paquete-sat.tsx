@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { notificar } from "@/store/notificaciones";
 import type { PaqueteFactura } from "@/lib/factura-manual";
 import { cn } from "@/lib/utils";
+import { confirmar } from "@/store/dialogo";
 
 interface Respuesta {
   factura: {
@@ -253,8 +254,16 @@ export function PaqueteSat({
             <button
               type="button"
               disabled={enviando}
-              onClick={() => {
-                if (window.confirm(`¿Marcar la factura ${f.folio} como cancelada?${f.estado === "EMITIDA" ? " Recuerda cancelarla también en el portal del SAT." : ""}`)) {
+              onClick={async () => {
+                if (
+                  await confirmar({
+                    titulo: `¿Marcar la factura ${f.folio} como cancelada?`,
+                    mensaje: f.estado === "EMITIDA" ? "Recuerda cancelarla también en el portal del SAT." : undefined,
+                    aceptar: "Cancelar factura",
+                    cancelar: "Volver",
+                    peligro: true,
+                  })
+                ) {
                   enviar({ cancelar: true }, `Factura ${f.folio} cancelada`);
                 }
               }}

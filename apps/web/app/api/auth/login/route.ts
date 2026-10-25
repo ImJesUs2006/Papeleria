@@ -7,6 +7,7 @@ import { tenantDb } from "@/lib/tenant";
 import { claveUsuario } from "@/lib/tenant-keys";
 import { CONFIG_PROPIA } from "@/lib/snapshots";
 import { esObjetoJson } from "@/lib/validacion";
+import { actuaComoDueno } from "@/lib/usuarios";
 
 // ============================================================
 // POST /api/auth/login   { negocio?, username, password }
@@ -127,12 +128,8 @@ export async function POST(request: Request) {
       select: { setupPendiente: true },
     });
 
-    const canPurge =
-      user.isRoot === true ||
-      (user.rol === "ADMINISTRADORA" &&
-        user.permisoCobrar === true &&
-        user.permisoInventario === true &&
-        user.permisoReportes === true);
+    // Purgar la bitácora es del dueño(a) (el servidor lo vuelve a exigir).
+    const canPurge = await actuaComoDueno(db, user);
 
     const response = NextResponse.json({
       idPersona: user.idPersona,

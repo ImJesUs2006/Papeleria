@@ -181,6 +181,7 @@ export const CONFIG_INPUT_SCHEMA = z
     moneda: z.string().trim().min(3).max(8).default("MXN"),
     ivaRate: z.number().min(0).max(100).default(16),
     preciosIncluyenIva: z.boolean().default(false),
+    cobraImpuestos: z.boolean().default(true),
     descuentoMaxCajera: z.number().min(0).max(100).default(10),
     // Vocabulario / roles / campos del giro (se normaliza y valida al guardar).
     personalizacion: z.record(z.unknown()).nullable().optional(),

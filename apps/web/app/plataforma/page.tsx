@@ -27,6 +27,7 @@ import {
   ScrollText,
   Search,
   ShieldCheck,
+  Trash2,
   UserCheck,
   UserX,
   X,
@@ -35,6 +36,9 @@ import { MODULOS_INFO, TIPO_NEGOCIO, type FeatureFlags, type TipoNegocio } from 
 import { SetupWizard } from "@/components/setup/setup-wizard";
 import { useColoresTema } from "@/hooks/use-colores-tema";
 import { cn } from "@/lib/utils";
+import { confirmar, pedirTexto } from "@/store/dialogo";
+import { DialogoHost } from "@/components/dialogo-host";
+import { descargarBase64 } from "@/lib/descargar";
 
 // ============================================================
 // Consola de PLATAFORMA: solo para el dueño del SaaS. Tablero con gráficas,
@@ -275,6 +279,7 @@ export default function ConsolaPlataforma() {
           }}
         />
       )}
+      <DialogoHost />
     </main>
   );
 }
@@ -561,10 +566,14 @@ function FichaNegocio({ idNegocio, onClose, onCambio }: { idNegocio: string; onC
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  window.confirm(n.activo ? `¿Suspender ${n.nombre}? Nadie de ese negocio podrá entrar.` : `¿Reactivar ${n.nombre}?`) &&
-                  accion({ activo: !n.activo }, n.activo ? `${n.nombre} suspendido` : `${n.nombre} reactivado`)
-                }
+                onClick={async () => {
+                  const ok = await confirmar(
+                    n.activo
+                      ? { titulo: `¿Suspender ${n.nombre}?`, mensaje: "Nadie de ese negocio podrá entrar.", aceptar: "Suspender", peligro: true }
+                      : { titulo: `¿Reactivar ${n.nombre}?`, aceptar: "Reactivar" }
+                  );
+                  if (ok) accion({ activo: !n.activo }, n.activo ? `${n.nombre} suspendido` : `${n.nombre} reactivado`);
+                }}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold",
                   n.activo ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
@@ -608,8 +617,14 @@ function FichaNegocio({ idNegocio, onClose, onCambio }: { idNegocio: string; onC
                       type="button"
                       title="Restablecer contraseña"
                       aria-label={`Restablecer contraseña de ${u.nombre}`}
-                      onClick={() => {
-                        const nueva = window.prompt(`Nueva contraseña para ${u.nombre} (mínimo 8 caracteres):`);
+                      onClick={async () => {
+                        const nueva = await pedirTexto({
+                          titulo: `Nueva contraseña para ${u.nombre}`,
+                          etiqueta: "Mínimo 8 caracteres",
+                          tipo: "password",
+                          aceptar: "Restablecer",
+                          validar: (v) => (v.length < 8 ? "Debe tener al menos 8 caracteres" : null),
+                        });
                         if (nueva) accion({ usuario: { idPersona: u.idPersona, nuevaClave: nueva } }, `Contraseña de ${u.username} restablecida`);
                       }}
                       className="rounded-lg border border-surface-500 p-1.5 text-muted hover:text-gray-100"
@@ -657,16 +672,69 @@ function FichaNegocio({ idNegocio, onClose, onCambio }: { idNegocio: string; onC
 
 function Bitacora({ version }: { version: number }) {
   const [registros, setRegistros] = useState<Array<{ id: string; fecha: string; accion: string; negocio: string | null }> | null>(null);
+  const [meses, setMeses] = useState(3);
+  const [recarga, setRecarga] = useState(0);
+  const [mensaje, setMensaje] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/plataforma/bitacora", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { registros: [] }))
       .then((d) => setRegistros(d.registros ?? []))
       .catch(() => setRegistros([]));
-  }, [version]);
+  }, [version, recarga]);
+
+  const purgar = async () => {
+    const clave = await pedirTexto({
+      titulo: `Purgar lo de hace más de ${meses} ${meses === 1 ? "mes" : "meses"}`,
+      mensaje: "Se descarga un respaldo en Excel y después se borran esos registros. No se puede deshacer.",
+      etiqueta: "Clave de plataforma para confirmar",
+      tipo: "password",
+      aceptar: "Purgar",
+      peligro: true,
+    });
+    if (!clave) return;
+    const r = await fetch("/api/plataforma/bitacora/purgar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clave, meses }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return setMensaje(d.error || "No se pudo purgar");
+    if (d.respaldoXlsx) descargarBase64(d.respaldoXlsx, d.archivo);
+    setMensaje(d.purgados ? `${d.purgados} registros purgados; el respaldo se descargó.` : "No hay registros tan antiguos.");
+    setRecarga((n) => n + 1);
+  };
+
   return (
     <section className="rounded-2xl border border-surface-600 bg-surface-800 p-5" data-testid="bitacora-plataforma">
-      <h3 className="mb-1 font-bold text-gray-100">Lo que se hizo desde la consola</h3>
-      <p className="mb-3 text-xs text-muted">Altas, suspensiones, contraseñas restablecidas, exportaciones e inicios de sesión.</p>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="mb-1 font-bold text-gray-100">Lo que se hizo desde la consola</h3>
+          <p className="text-xs text-muted">Altas, suspensiones, contraseñas restablecidas, exportaciones e inicios de sesión.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={meses}
+            onChange={(e) => setMeses(Number(e.target.value))}
+            aria-label="Antigüedad a purgar"
+            className="rounded-lg border border-surface-500 bg-surface-700 px-2 py-1.5 text-xs text-gray-100"
+          >
+            {[1, 3, 6, 12, 24].map((m) => (
+              <option key={m} value={m}>
+                Más de {m} {m === 1 ? "mes" : "meses"}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={purgar}
+            data-testid="purgar-consola"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Purgar
+          </button>
+        </div>
+      </div>
+      {mensaje && <p className="mb-3 text-xs text-gray-200">{mensaje}</p>}
       {!registros ? (
         <Loader2 className="h-5 w-5 animate-spin text-muted" />
       ) : registros.length === 0 ? (

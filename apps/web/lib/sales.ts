@@ -149,6 +149,8 @@ export interface SaleContext {
   ivaRate?: number;
   /** true = los precios de lista ya incluyen impuestos (se desglosan). */
   preciosIncluyenIva?: boolean;
+  /** false = el negocio no cobra impuestos (todas las líneas a tasa 0). */
+  cobraImpuestos?: boolean;
   /** Tasa del Puntos Monedero (`BusinessConfig.puntosConfig`). */
   puntos?: {
     pesosCompraPorPunto: number;
@@ -158,6 +160,8 @@ export interface SaleContext {
   };
   /** Rol de quien cobra: la CAJERA tiene tope de descuento manual. */
   rol?: string;
+  /** Cobro en línea: el efectivo exige capturar lo que entregó el cliente. */
+  exigirRecibido?: boolean;
   /** % máximo de descuento manual sin autorización (default 10). */
   descuentoMaxCajera?: number;
   /** idPersona de la ADMINISTRADORA que autorizó un descuento mayor. */
@@ -360,7 +364,7 @@ export async function executeSale(
           : producto.precioCompra != null
             ? Number(producto.precioCompra)
             : null,
-      ...tasasProducto(producto, ivaNegocio),
+      ...tasasProducto(producto, ivaNegocio, ctx.cobraImpuestos !== false),
       ivaLinea: 0,
       iepsLinea: 0,
     });
@@ -423,7 +427,8 @@ export async function executeSale(
         montoRecibido: input.montoRecibido,
         referenciaTransferencia: input.referenciaTransferencia,
       },
-      totalNeto
+      totalNeto,
+      { exigirRecibido: ctx.exigirRecibido === true }
     );
   } catch (e) {
     if (e instanceof PagoError) throw new SaleError(e.message);

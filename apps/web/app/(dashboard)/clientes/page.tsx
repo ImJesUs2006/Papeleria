@@ -29,6 +29,7 @@ import { validar } from "@/lib/validacion";
 import { REGIMENES_FISCALES } from "@/lib/sat-catalogos";
 import { clienteADatosFiscales, DatosFiscalesEditor, datosFiscalesACliente, erroresClienteAEditor } from "@/components/configuracion/datos-fiscales";
 import type { DatosFiscales } from "@/lib/business-types";
+import { confirmar } from "@/store/dialogo";
 
 interface ClienteFila {
   idCliente: string;
@@ -314,10 +315,7 @@ export default function ClientesPage() {
 
   const eliminar = async (c: ClienteFila) => {
     if (guardando) return;
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(`¿Eliminar a ${c.nombre}? Esta acción no se puede deshacer.`)
-    ) {
+    if (!(await confirmar({ titulo: `¿Eliminar a ${c.nombre}?`, mensaje: "Esta acción no se puede deshacer.", aceptar: "Eliminar", peligro: true }))) {
       return;
     }
     setGuardando(true);

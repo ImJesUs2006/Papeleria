@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Loader2, Plus, Tags, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { notificar } from "@/store/notificaciones";
+import { confirmar } from "@/store/dialogo";
 
 export interface Categoria {
   id: string;
@@ -92,9 +93,9 @@ export function GestorCategorias({
     }
   };
 
-  const borrar = (c: Categoria) => {
-    const aviso = c.productos ? ` Sus ${c.productos} producto(s) quedarán “sin categoría”.` : "";
-    if (!window.confirm(`¿Borrar la categoría “${c.nombre}”?${aviso}`)) return;
+  const borrar = async (c: Categoria) => {
+    const aviso = c.productos ? `Sus ${c.productos} producto(s) quedarán “sin categoría”.` : undefined;
+    if (!(await confirmar({ titulo: `¿Borrar la categoría “${c.nombre}”?`, mensaje: aviso, aceptar: "Borrar", peligro: true }))) return;
     llamar(`/api/categorias/${c.id}`, { method: "DELETE" }, `Categoría “${c.nombre}” borrada`);
   };
 

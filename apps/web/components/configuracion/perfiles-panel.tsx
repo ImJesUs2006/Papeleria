@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, Pencil, Plus, Trash2, UserCog } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { usePersonalizacion } from "@/store/config";
+import { confirmar } from "@/store/dialogo";
 
 // ============================================================
 // Perfiles: roles con nombre propio del negocio (Paso 4).
@@ -73,9 +74,12 @@ export function PerfilesPanel({
 
   const eliminar = async (p: Perfil) => {
     if (
-      !window.confirm(
-        `¿Eliminar el perfil "${p.nombre}"? Sus ${p.usuarios} usuario(s) conservan sus permisos actuales.`
-      )
+      !(await confirmar({
+        titulo: `¿Eliminar el perfil "${p.nombre}"?`,
+        mensaje: `Sus ${p.usuarios} usuario(s) conservan sus permisos actuales.`,
+        aceptar: "Eliminar",
+        peligro: true,
+      }))
     )
       return;
     const res = await fetch(`/api/perfiles/${p.idPerfil}`, { method: "DELETE" });

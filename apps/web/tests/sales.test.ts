@@ -65,7 +65,7 @@ describe("POST /api/ventas", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: [{ codigoItem: "PROD-001", cantidad: 2 }],
-          metodoPago: "EFECTIVO",
+          metodoPago: "EFECTIVO", montoRecibido: 100000,
         }),
       })
     );
@@ -154,7 +154,7 @@ describe("POST /api/ventas", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: [{ codigoItem: "PROD-001", cantidad: 1 }],
-          metodoPago: "EFECTIVO",
+          metodoPago: "EFECTIVO", montoRecibido: 100000,
           tipoVenta: "RECARGA",
         }),
       })
@@ -388,7 +388,7 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
     const res = await postVenta(
       tx,
       configPuntos,
-      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO", idCliente: "CLI-1" }
+      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO", montoRecibido: 100000, idCliente: "CLI-1" }
     );
     expect(res.status).toBe(201);
 
@@ -411,7 +411,7 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
     const res = await postVenta(
       tx,
       { ...configPuntos, metodosPago: ["EFECTIVO", "TARJETA_TERMINAL", "TRANSFERENCIA"] },
-      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO", idCliente: "CLI-1" }
+      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO", montoRecibido: 100000, idCliente: "CLI-1" }
     );
     expect(res.status).toBe(201);
     expect(tx.cliente.update).not.toHaveBeenCalled();
@@ -422,7 +422,7 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
     const res = await postVenta(
       tx,
       configPuntos,
-      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO" }
+      { items: [{ codigoItem: "PROD-001", cantidad: 9 }], metodoPago: "EFECTIVO", montoRecibido: 100000 }
     );
     expect(res.status).toBe(201);
     expect(tx.cliente.update).not.toHaveBeenCalled();
@@ -433,7 +433,7 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
       const tx = txConCliente(0, { precioMayoreo: 10 });
       const res = await postVenta(tx, configPuntos, {
         items: [{ codigoItem: "PROD-001", cantidad: 2 }],
-        metodoPago: "EFECTIVO",
+        metodoPago: "EFECTIVO", montoRecibido: 100000,
         esMayoreo: true,
       });
       expect(res.status).toBe(201);
@@ -454,7 +454,7 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
       const tx = txConCliente(0);
       const res = await postVenta(tx, configPuntos, {
         items: [{ codigoItem: "PROD-001", cantidad: 2 }],
-        metodoPago: "EFECTIVO",
+        metodoPago: "EFECTIVO", montoRecibido: 100000,
         esMayoreo: true,
       });
       expect(res.status).toBe(201);
@@ -470,7 +470,7 @@ describe("POST /api/ventas · Puntos Monedero (Fase 12)", () => {
       const tx = txConCliente(0);
       const res = await postVenta(tx, configPuntos, {
         items: [{ codigoItem: "PROD-001", cantidad: 2 }],
-        metodoPago: "EFECTIVO",
+        metodoPago: "EFECTIVO", montoRecibido: 100000,
         esMayoreo: "true",
       } as any);
       expect(res.status).toBe(201);

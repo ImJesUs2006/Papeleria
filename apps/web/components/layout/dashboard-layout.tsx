@@ -12,6 +12,7 @@ import { useConfigStore } from "@/store/config";
 import { useAuthStore } from "@/store/auth";
 import { MODULOS_INFO, type FeatureFlags } from "@/lib/business-types";
 import { NotificacionesHost } from "@/components/notificaciones";
+import { DialogoHost } from "@/components/dialogo-host";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const hydrateConfig = useConfigStore((s) => s.hydrate);
@@ -56,6 +57,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <NotificacionesHost />
+      <DialogoHost />
     </AuthGuard>
   );
 }

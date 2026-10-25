@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { hash } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
-import { actuaComoDueno, tieneOtroAdminActivo } from "@/lib/usuarios";
+import { actuaComoDueno, anonimizarUsuario, tieneOtroAdminActivo } from "@/lib/usuarios";
 import { RolError, validarGestion } from "@/lib/roles";
 import { datosPorPerfil, PerfilError } from "@/lib/perfiles";
 import { tenantDb } from "@/lib/tenant";
@@ -9,7 +11,8 @@ import { esObjetoJson } from "@/lib/validacion";
 // ============================================================
 // /api/usuarios/[id]  (solo ADMINISTRADORA)
 //   PATCH  → nombre, rol, activa.
-//   DELETE → elimina si no tiene historial; si lo tiene, 409.
+//   DELETE → elimina si no tiene historial; si lo tiene, lo anonimiza
+//            (sus ventas y bitácora quedan, ya sin sus datos personales).
 //
 // Regla anti-bloqueo: nunca se puede dejar el sistema sin al
 // menos una ADMINISTRADORA activa.
@@ -36,7 +39,7 @@ export async function PATCH(
   }
 
   const target = await prisma.usuario.findUnique({ where: { idPersona: id } });
-  if (!target) {
+  if (!target || target.eliminadoEn) {
     return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
   }
 
@@ -211,7 +214,7 @@ export async function DELETE(
       _count: { select: { ventas: true, sesionesCaja: true, bitacoraLogs: true } },
     },
   });
-  if (!target) {
+  if (!target || target.eliminadoEn) {
     return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
   }
   try {
@@ -231,16 +234,6 @@ export async function DELETE(
     target._count.sesionesCaja > 0 ||
     target._count.bitacoraLogs > 0;
 
-  if (tieneHistorial) {
-    return NextResponse.json(
-      {
-        error:
-          "El usuario tiene historial de ventas/bitácora: desactívalo en lugar de eliminarlo (auditoría)",
-      },
-      { status: 409 }
-    );
-  }
-
   if (target.rol === "ADMINISTRADORA" && target.activa) {
     if (!(await tieneOtroAdminActivo(prisma, target.idPersona))) {
       return NextResponse.json(
@@ -251,6 +244,22 @@ export async function DELETE(
   }
 
   try {
+    if (tieneHistorial) {
+      const inservible = await hash(randomUUID(), 10);
+      const r = await prisma.$transaction(async (tx) => {
+        const res = await anonimizarUsuario(tx, target, inservible);
+        await tx.bitacoraLog.create({
+          data: {
+            idUsuario: user.idPersona,
+            accion: `Usuario eliminado y anonimizado: ${res.alias} (${target.rol})`,
+            moduloSistema: "SEGURIDAD",
+            jsonPayload: { idEliminado: id, registrosAnonimizados: res.registrosAnonimizados },
+          },
+        });
+        return res;
+      });
+      return NextResponse.json({ ok: true, modo: "ANONIMIZADO", registrosAnonimizados: r.registrosAnonimizados });
+    }
     await prisma.$transaction(async (tx) => {
       await tx.usuario.delete({ where: { idPersona: id } });
       await tx.bitacoraLog.create({
@@ -262,7 +271,7 @@ export async function DELETE(
         },
       });
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, modo: "ELIMINADO" });
   } catch {
     return NextResponse.json({ error: "Error al eliminar usuario" }, { status: 500 });
   }

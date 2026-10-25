@@ -8,6 +8,7 @@ import { promocionVigente } from "@/lib/descuentos";
 import { cn } from "@/lib/utils";
 import { notificar } from "@/store/notificaciones";
 import { BuscadorProducto, type ProductoEncontrado } from "@/components/ui/buscador-producto";
+import { confirmar } from "@/store/dialogo";
 
 interface Promocion {
   idPromocion: string;
@@ -130,7 +131,7 @@ export default function PromocionesPage() {
   };
 
   const eliminar = async (p: Promocion) => {
-    if (!window.confirm(`¿Eliminar la promoción "${p.nombre}"? Las ventas pasadas no cambian.`)) return;
+    if (!(await confirmar({ titulo: `¿Eliminar la promoción "${p.nombre}"?`, mensaje: "Las ventas pasadas no cambian.", aceptar: "Eliminar", peligro: true }))) return;
     const res = await fetch(`/api/promociones/${p.idPromocion}`, { method: "DELETE" }).catch(() => null);
     if (res?.ok) notificar.exito("Promoción eliminada", p.nombre);
     else notificar.error("No se pudo eliminar la promoción", p.nombre);

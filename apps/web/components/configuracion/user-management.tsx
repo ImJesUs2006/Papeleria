@@ -20,6 +20,7 @@ import { PerfilesPanel, type Perfil } from "@/components/configuracion/perfiles-
 import { SucursalesPanel, type Sucursal } from "@/components/configuracion/sucursales-panel";
 import { usePersonalizacion } from "@/store/config";
 import { MATRIZ_PERMISOS, nivelDe, NIVELES, PLANTILLAS_USUARIO, type NivelUsuario } from "@/lib/roles";
+import { pedirTexto } from "@/store/dialogo";
 
 interface Usuario {
   idPersona: string;
@@ -133,9 +134,14 @@ export function UserManagement() {
 
   // Transferir la propiedad: confirma con la contraseña del dueño(a) actual.
   const transferir = async (u: Usuario) => {
-    const password = window.prompt(
-      `Vas a transferir la propiedad del negocio a ${u.nombre}. Tú seguirás como administrador(a).\n\nEscribe TU contraseña para confirmar:`
-    );
+    const password = await pedirTexto({
+      titulo: `Transferir la propiedad a ${u.nombre}`,
+      mensaje: "Tú seguirás como administrador(a).",
+      etiqueta: "Escribe TU contraseña para confirmar",
+      tipo: "password",
+      aceptar: "Transferir",
+      peligro: true,
+    });
     if (!password) return;
     setAccionando(u.idPersona);
     try {
@@ -167,7 +173,11 @@ export function UserManagement() {
       if (!res.ok) throw new Error(data.error || "Error al eliminar");
       setUsuarios((prev) => prev.filter((x) => x.idPersona !== u.idPersona));
       setModalEliminar(null);
-      aviso("Usuario eliminado");
+      aviso(
+        data.modo === "ANONIMIZADO"
+          ? `Usuario eliminado: sus datos personales se borraron de ${data.registrosAnonimizados ?? 0} registro(s); sus ventas y movimientos se conservan`
+          : "Usuario eliminado"
+      );
     } catch (e: any) {
       setError(e.message);
       setModalEliminar(null);
@@ -452,7 +462,8 @@ export function UserManagement() {
       >
         <p className="text-sm text-muted mb-5">
           ¿Eliminar a <span className="text-gray-100 font-bold">{modalEliminar?.nombre}</span>?
-          Si tiene historial de ventas o bitácora, el sistema pedirá desactivarlo en su lugar.
+          Si ya trabajó en el sistema, sus ventas, cortes y bitácora se conservan pero quedan a nombre de
+          «Usuario eliminado»: su nombre y usuario se borran y ya no podrá entrar.
         </p>
         <div className="flex gap-3">
           <button

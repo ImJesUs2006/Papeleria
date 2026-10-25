@@ -144,7 +144,7 @@ export function PagoDivididoModal({
     restante === 0 &&
     partes.every((p) => Number(p.monto) > 0) &&
     !faltaRef &&
-    (efectivo === 0 || recibido === "" || recibidoN >= efectivo);
+    (efectivo === 0 || (recibido !== "" && recibidoN >= efectivo));
 
   const actualizar = (i: number, cambio: Partial<Parte>) =>
     setPartes((ps) => ps.map((p, k) => (k === i ? { ...p, ...cambio } : p)));
@@ -230,7 +230,7 @@ export function PagoDivididoModal({
 
         {efectivo > 0 && (
           <label className="block">
-            <span className="mb-1 block text-xs text-muted">Efectivo recibido (para el cambio)</span>
+            <span className="mb-1 block text-xs text-muted">Efectivo que entregó el cliente</span>
             <input
               type="number"
               min={0}
@@ -243,6 +243,11 @@ export function PagoDivididoModal({
             {recibido !== "" && recibidoN >= efectivo && (
               <span className="mt-1 block text-sm font-bold text-emerald-400">
                 Cambio: ${(recibidoN - efectivo).toFixed(2)}
+              </span>
+            )}
+            {recibido !== "" && recibidoN < efectivo && (
+              <span className="mt-1 block text-sm font-bold text-rose-300">
+                Faltan ${(efectivo - recibidoN).toFixed(2)} de efectivo
               </span>
             )}
           </label>

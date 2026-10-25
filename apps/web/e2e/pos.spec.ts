@@ -33,6 +33,7 @@ test.describe.serial("POS — flujo crítico", () => {
     await expect(page.getByText(/1 (artículos?|productos?)/i)).toBeVisible();
 
     await page.getByRole("button", { name: "Efectivo" }).click();
+    await page.getByRole("button", { name: "Exacto" }).click();
     await page.getByRole("button", { name: /Cobrar \$/ }).click();
 
     await expect(page.getByText("¡Venta registrada!")).toBeVisible();
@@ -83,6 +84,7 @@ test.describe.serial("POS — flujo crítico", () => {
     await expect(page.getByText(/1 (artículos?|productos?)/i)).toBeVisible();
 
     await context.setOffline(true);
+    await page.getByRole("button", { name: "Exacto" }).click();
     await page.getByRole("button", { name: /Cobrar \$/ }).click();
     await expect(page.getByText("¡Venta guardada offline!")).toBeVisible();
     // El folio aparece dos veces en el modal (encabezado y vista previa del

@@ -49,7 +49,7 @@ export async function POST(
   }
 
   const target = await prisma.usuario.findUnique({ where: { idPersona: id } });
-  if (!target) {
+  if (!target || target.eliminadoEn) {
     return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
   }
 

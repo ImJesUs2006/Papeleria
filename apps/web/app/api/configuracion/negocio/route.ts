@@ -69,48 +69,49 @@ export async function PUT(request: Request) {
       (parsed.data.featureFlags ?? {}) as Record<string, unknown>
     );
 
-    await prisma.configuracionNegocio.update({
-      where: CONFIG_PROPIA,
-      data: {
-        nombreNegocio: parsed.data.nombreNegocio,
-        tipoNegocio: parsed.data.tipoNegocio,
-        moneda: parsed.data.moneda,
-        ivaRate: parsed.data.ivaRate,
-        ...(body?.preciosIncluyenIva !== undefined
-          ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
-          : {}),
-        ...(body?.descuentoMaxCajera !== undefined
-          ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
-          : {}),
-        ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
-        featureFlags: flagsMerged,
-        metodosPago: parsed.data.metodosPago,
-        politicaStockOffline: parsed.data.politicaStockOffline,
-        logo: parsed.data.logo ?? null,
-        temaBase: parsed.data.temaBase,
-        colorAcento: parsed.data.colorAcento,
-        datosBancarios: parsed.data.datosBancarios ?? Prisma.DbNull,
-        mensajeTicket: parsed.data.mensajeTicket ?? null,
-        anchoTicket: parsed.data.anchoTicket,
-        vistaDefectoPOS: parsed.data.vistaDefectoPOS,
-        datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
-        usarCaducidad: parsed.data.usarCaducidad,
-        usarUbicaciones: parsed.data.usarUbicaciones,
-        requerirFondoInicial: parsed.data.requerirFondoInicial,
-        diasApartado: parsed.data.diasApartado,
-        corteConReferencia: parsed.data.corteConReferencia,
-        imprimirCorteAuto: parsed.data.imprimirCorteAuto,
-        diasDevolucion: parsed.data.diasDevolucion,
-        montoAutorizarDevolucion:
-          parsed.data.montoAutorizarDevolucion && parsed.data.montoAutorizarDevolucion > 0
-            ? parsed.data.montoAutorizarDevolucion
-            : null,
-        puntosConfig: parsed.data.puntosConfig ?? Prisma.DbNull,
-        configVersion: proximaVersion,
-        setupPendiente: false,
-        updatedById: user.idPersona,
-      },
-    });
+    // upsert: un negocio que aún no pasó por el asistente no tiene fila propia
+    // (la lectura devuelve los valores por defecto) y antes el PUT tronaba.
+    const datos = {
+      nombreNegocio: parsed.data.nombreNegocio,
+      tipoNegocio: parsed.data.tipoNegocio,
+      moneda: parsed.data.moneda,
+      ivaRate: parsed.data.ivaRate,
+      ...(body?.preciosIncluyenIva !== undefined
+        ? { preciosIncluyenIva: parsed.data.preciosIncluyenIva }
+        : {}),
+      ...(body?.cobraImpuestos !== undefined ? { cobraImpuestos: parsed.data.cobraImpuestos } : {}),
+      ...(body?.descuentoMaxCajera !== undefined
+        ? { descuentoMaxCajera: parsed.data.descuentoMaxCajera }
+        : {}),
+      ...(personalizacionGuardar !== undefined ? { personalizacion: personalizacionGuardar } : {}),
+      featureFlags: flagsMerged,
+      metodosPago: parsed.data.metodosPago,
+      politicaStockOffline: parsed.data.politicaStockOffline,
+      logo: parsed.data.logo ?? null,
+      temaBase: parsed.data.temaBase,
+      colorAcento: parsed.data.colorAcento,
+      datosBancarios: parsed.data.datosBancarios ?? Prisma.DbNull,
+      mensajeTicket: parsed.data.mensajeTicket ?? null,
+      anchoTicket: parsed.data.anchoTicket,
+      vistaDefectoPOS: parsed.data.vistaDefectoPOS,
+      datosFiscales: parsed.data.datosFiscales ?? Prisma.DbNull,
+      usarCaducidad: parsed.data.usarCaducidad,
+      usarUbicaciones: parsed.data.usarUbicaciones,
+      requerirFondoInicial: parsed.data.requerirFondoInicial,
+      diasApartado: parsed.data.diasApartado,
+      corteConReferencia: parsed.data.corteConReferencia,
+      imprimirCorteAuto: parsed.data.imprimirCorteAuto,
+      diasDevolucion: parsed.data.diasDevolucion,
+      montoAutorizarDevolucion:
+        parsed.data.montoAutorizarDevolucion && parsed.data.montoAutorizarDevolucion > 0
+          ? parsed.data.montoAutorizarDevolucion
+          : null,
+      puntosConfig: parsed.data.puntosConfig ?? Prisma.DbNull,
+      configVersion: proximaVersion,
+      setupPendiente: false,
+      updatedById: user.idPersona,
+    };
+    await prisma.configuracionNegocio.upsert({ where: CONFIG_PROPIA, update: datos, create: datos as any });
 
     const [, config] = await Promise.all([
       prisma.bitacoraLog.create({

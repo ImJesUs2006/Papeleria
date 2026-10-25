@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
+import { actuaComoDueno } from "@/lib/usuarios";
 
 export async function GET() {
   try {
@@ -11,8 +12,7 @@ export async function GET() {
     }
     const prisma = tenantDb(session.idNegocio);
 
-    // canPurge: isRoot ⇒ sí; si no, ADMINISTRADORA con TODOS los permisos
-    // de módulo activos (autoritativo desde la base, no del token).
+    // canPurge: solo el dueño(a) (autoritativo desde la base, no del token).
     let canPurge = false;
     let isRoot = false;
     const user = await prisma.usuario.findUnique({
@@ -28,12 +28,7 @@ export async function GET() {
 
     if (user) {
       isRoot = user.isRoot === true;
-      canPurge =
-        isRoot ||
-        (user.rol === "ADMINISTRADORA" &&
-          user.permisoCobrar === true &&
-          user.permisoInventario === true &&
-          user.permisoReportes === true);
+      canPurge = await actuaComoDueno(prisma, user);
     }
 
     return NextResponse.json({

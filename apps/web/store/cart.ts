@@ -62,7 +62,7 @@ export function totalesCarrito(
   >,
   opciones: { promociones?: PromocionVigente[]; descuentoTicket?: DescuentoManual | null } = {}
 ): TotalesCarrito {
-  const { ivaNegocio, preciosIncluyenIva } = fiscalCliente();
+  const { ivaNegocio, preciosIncluyenIva, cobraImpuestos } = fiscalCliente();
   const precios = aplicarDescuentos(
     items.map((i) => {
       const cantidad = Number(i.cantidad) || 0;
@@ -81,7 +81,7 @@ export function totalesCarrito(
   const fiscal = calcularImpuestos(
     precios.lineas.map((pl, k) => ({
       importe: pl.importeNeto,
-      ...tasasProducto(items[k], ivaNegocio),
+      ...tasasProducto(items[k], ivaNegocio, cobraImpuestos),
     })),
     { preciosIncluyenIva }
   );

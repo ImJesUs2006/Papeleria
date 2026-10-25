@@ -182,10 +182,12 @@ export function ivaFraccionCliente(): number {
 }
 
 /** Parámetros fiscales del negocio (IVA base y si los precios lo incluyen). */
-export function fiscalCliente(): { ivaNegocio: number; preciosIncluyenIva: boolean } {
+export function fiscalCliente(): { ivaNegocio: number; preciosIncluyenIva: boolean; cobraImpuestos: boolean } {
+  const config = useConfigStore.getState().config;
   return {
     ivaNegocio: ivaFraccionCliente() * 100,
-    preciosIncluyenIva: useConfigStore.getState().config?.preciosIncluyenIva === true,
+    preciosIncluyenIva: config?.preciosIncluyenIva === true,
+    cobraImpuestos: config?.cobraImpuestos !== false,
   };
 }
 

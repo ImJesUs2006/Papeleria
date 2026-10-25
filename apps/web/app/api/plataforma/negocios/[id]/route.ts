@@ -44,7 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // Soporte a un usuario concreto del negocio (activar/desactivar, clave).
   if (body?.usuario && typeof body.usuario === "object") {
     const u = await prisma.usuario.findFirst({ where: { idNegocio: id, idPersona: String(body.usuario.idPersona ?? "") } });
-    if (!u) return NextResponse.json({ error: "Usuario no encontrado en ese negocio" }, { status: 404 });
+    if (!u || u.eliminadoEn) return NextResponse.json({ error: "Usuario no encontrado en ese negocio" }, { status: 404 });
     const data: Record<string, unknown> = {};
     if (typeof body.usuario.activa === "boolean") {
       if (!body.usuario.activa && u.isRoot) {
@@ -103,7 +103,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const hace30 = new Date(Date.now() - 30 * DIA);
   const [usuarios, ventas, bitacora] = await Promise.all([
     prisma.usuario.findMany({
-      where: { idNegocio: id },
+      where: { idNegocio: id, eliminadoEn: null },
       orderBy: [{ isRoot: "desc" }, { rol: "asc" }, { nombre: "asc" }],
       select: {
         idPersona: true,

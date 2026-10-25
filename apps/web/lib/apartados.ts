@@ -56,6 +56,7 @@ export interface ApartadoContext {
   ivaRate?: number;
   /** true = los precios de lista ya incluyen impuestos. */
   preciosIncluyenIva?: boolean;
+  cobraImpuestos?: boolean;
   /** Sucursal donde se reserva la mercancía. */
   idSucursal?: string | null;
 }
@@ -156,7 +157,7 @@ export async function crearApartado(
       precioUnitario: precio,
       subtotalLinea: round2(precio * cantidad),
       esServicio,
-      ...tasasProducto(producto, ivaNegocio),
+      ...tasasProducto(producto, ivaNegocio, ctx.cobraImpuestos !== false),
       ivaLinea: 0,
       iepsLinea: 0,
     });

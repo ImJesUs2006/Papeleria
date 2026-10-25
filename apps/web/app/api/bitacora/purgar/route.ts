@@ -3,18 +3,18 @@ import { compare } from "bcryptjs";
 import { requireAuth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenant";
 import { esObjetoJson } from "@/lib/validacion";
+import { actuaComoDueno } from "@/lib/usuarios";
+import { fechaCorte, libroRespaldo, mesesValidos } from "@/lib/bitacora-purga";
 
 // ============================================================
-// POST /api/bitacora/purgar
-// Purga registros de bitácora anteriores a N meses (por defecto 6).
-// Antes de borrar genera un respaldo JSON que se devuelve en la
-// respuesta para que el cliente lo descargue.
-// Exige ADMINISTRADORA + contraseña + isRoot (o ADMINISTRADORA con
-// TODOS los permisos de módulo activos). Lo exige el propio servidor.
+// POST /api/bitacora/purgar  { password, meses }
+// Purga los registros anteriores a N meses (1, 3, 6, 12 o 24).
+// Antes de borrar arma un respaldo en Excel que se devuelve en la
+// respuesta para descargarlo, y deja constancia de la purga.
+// Solo el Dueño(a), confirmando con su contraseña.
 // ============================================================
 
-const MESES_VALIDOS = [3, 6, 12, 24];
-const MAX_BACKUP = 20000;
+const MAX_BACKUP = 50000;
 
 export async function POST(request: Request) {
   const auth = await requireAuth(["ADMINISTRADORA"])();
@@ -36,10 +36,7 @@ export async function POST(request: Request) {
   if (typeof password !== "string" || !password) {
     return NextResponse.json({ error: "La contraseña es requerida" }, { status: 400 });
   }
-
-  const meses = MESES_VALIDOS.includes(Number(body?.meses))
-    ? Number(body.meses)
-    : 6;
+  const meses = mesesValidos(body?.meses);
 
   try {
     const user = await prisma.usuario.findUnique({
@@ -48,96 +45,57 @@ export async function POST(request: Request) {
     if (!user || !user.activa) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 401 });
     }
-
-    const valida = await compare(password, user.passwordHash);
-    if (!valida) {
+    if (!(await actuaComoDueno(prisma, session))) {
+      return NextResponse.json({ error: "Solo el dueño(a) del negocio puede purgar la bitácora" }, { status: 403 });
+    }
+    if (!(await compare(password, user.passwordHash))) {
       return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 401 });
     }
 
-    // Gate server-side: isRoot || (ADMIN + todos los permisos).
-    const cumplePermisos =
-      user.isRoot === true ||
-      (user.rol === "ADMINISTRADORA" &&
-        user.permisoCobrar === true &&
-        user.permisoInventario === true &&
-        user.permisoReportes === true);
-
-    if (!cumplePermisos) {
-      return NextResponse.json(
-        { error: "Solo la cuenta raíz o una administradora con todos los permisos puede purgar la bitácora" },
-        { status: 403 }
-      );
-    }
-
-    const corte = new Date();
-    corte.setMonth(corte.getMonth() - meses);
-
-    // 1) Respaldo JSON ANTES de borrar.
+    const corte = fechaCorte(meses);
     const antiguos = await prisma.bitacoraLog.findMany({
       where: { fechaHora: { lt: corte } },
       orderBy: { fechaHora: "asc" },
       take: MAX_BACKUP,
-      include: {
-        usuario: { select: { nombre: true, username: true, rol: true } },
-      },
+      include: { usuario: { select: { nombre: true, username: true } } },
     });
-
-    const backup = JSON.stringify(
-      {
-        sistema: "Papelería - Bitácora de Auditoría",
-        generado: new Date().toISOString(),
-        porQuien: { idPersona: user.idPersona, nombre: user.nombre },
-        mesesPurgados: meses,
-        corte: corte.toISOString(),
-        registros: antiguos.map((log) => ({
-          fechaHora: log.fechaHora.toISOString(),
-          moduloSistema: log.moduloSistema,
-          accion: log.accion,
-          usuario: log.usuario?.nombre ?? null,
-          username: log.usuario?.username ?? null,
-          rol: log.usuario?.rol ?? null,
-          jsonPayload: log.jsonPayload ?? null,
-          detallesError: log.detallesError ?? null,
-          ipOrigen: log.ipOrigen ?? null,
-        })),
-        totalRespaldados: antiguos.length,
-      },
-      null,
-      2
+    if (antiguos.length === 0) {
+      return NextResponse.json({ ok: true, purgados: 0, corte: corte.toISOString() });
+    }
+    // Respaldo ANTES de borrar; si hay más de lo que cabe, solo se purga lo respaldado.
+    const respaldo = await libroRespaldo(
+      `Bitácora del negocio · respaldo previo a la purga (${new Date().toLocaleDateString("es-MX")})`,
+      antiguos.map((l) => ({
+        fecha: l.fechaHora,
+        modulo: l.moduloSistema,
+        usuario: l.usuario ? `${l.usuario.nombre} (${l.usuario.username})` : null,
+        accion: l.accion,
+        detalle: l.detallesError ?? (l.jsonPayload ? JSON.stringify(l.jsonPayload).slice(0, 500) : null),
+      })),
+      corte
     );
 
-    // 2) Purga.
     const { count } = await prisma.bitacoraLog.deleteMany({
-      where: { fechaHora: { lt: corte } },
+      where: { idLog: { in: antiguos.map((l) => l.idLog) } },
     });
-
-    // 3) Deja evidencia de la purga (fuera del rango borrado).
     await prisma.bitacoraLog.create({
       data: {
         idUsuario: user.idPersona,
-        accion: `Purga de bitácora: ${count} registros previos a ${corte.toISOString()}`,
+        accion: `Purga de bitácora: ${count} registros de hace más de ${meses} ${meses === 1 ? "mes" : "meses"}`,
         moduloSistema: "SEGURIDAD",
-        jsonPayload: {
-          purgados: count,
-          meses,
-          corte: corte.toISOString(),
-          backup: antiguos.length,
-        },
+        jsonPayload: { purgados: count, meses, corte: corte.toISOString() },
       },
     });
 
     return NextResponse.json({
       ok: true,
       purgados: count,
-      backupRegistros: antiguos.length,
       corte: corte.toISOString(),
-      backup,
+      respaldoXlsx: respaldo.toString("base64"),
+      archivo: `respaldo-bitacora-${new Date().toISOString().slice(0, 10)}.xlsx`,
     });
   } catch (error) {
     console.error("[bitacora:purgar]", error);
-    return NextResponse.json(
-      { error: "No se pudo purgar la bitácora" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo purgar la bitácora" }, { status: 500 });
   }
 }

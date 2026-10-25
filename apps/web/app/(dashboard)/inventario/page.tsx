@@ -42,6 +42,7 @@ import { useLabelModal } from "@/components/inventario/label-modal";
 import { useConfigStore } from "@/store/config";
 import { cn } from "@/lib/utils";
 import { notificar } from "@/store/notificaciones";
+import { confirmar } from "@/store/dialogo";
 
 interface Product {
   codigoItem: string;
@@ -138,9 +139,12 @@ export default function InventarioPage() {
   // Sin historia se elimina; con ventas, pedidos o lotes se da de baja (oculto).
   const quitarProducto = async (codigo: string, descripcion: string) => {
     if (
-      !window.confirm(
-        `¿Quitar "${descripcion}" del catálogo?\n\nSi nunca se ha movido se elimina; si ya tiene ventas o compras se da de baja y deja de aparecer, pero su historial se conserva.`
-      )
+      !(await confirmar({
+        titulo: `¿Quitar "${descripcion}" del catálogo?`,
+        mensaje: "Si nunca se ha movido se elimina; si ya tiene ventas o compras se da de baja y deja de aparecer, pero su historial se conserva.",
+        aceptar: "Quitar",
+        peligro: true,
+      }))
     )
       return;
     try {
@@ -765,6 +769,15 @@ export default function InventarioPage() {
                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-500 text-muted hover:text-warning"
                           >
                             <Star className={cn("h-4 w-4", p.favorito && "fill-neon-yellow text-warning")} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quitarProducto(p.codigoItem, p.descripcion)}
+                            title="Quitar del catálogo"
+                            aria-label={`Quitar ${p.descripcion} del catálogo`}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-500 text-muted hover:text-neon-red"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>

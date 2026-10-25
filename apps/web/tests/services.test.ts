@@ -93,7 +93,7 @@ describe("Venta de servicios (esServicio) y granel (permiteDecimales) — C2", (
     );
     const res = await postVenta(tx, {
       items: [{ codigoItem: "GRANEL-1", cantidad: 1.5 }],
-      metodoPago: "EFECTIVO",
+      metodoPago: "EFECTIVO", montoRecibido: 100000,
     });
 
     expect(res.status).toBe(201);
@@ -116,7 +116,7 @@ describe("Venta de servicios (esServicio) y granel (permiteDecimales) — C2", (
     );
     const res = await postVenta(tx, {
       items: [{ codigoItem: "ENTERO-1", cantidad: 1.5 }],
-      metodoPago: "EFECTIVO",
+      metodoPago: "EFECTIVO", montoRecibido: 100000,
     });
 
     expect(res.status).toBe(400);
@@ -129,7 +129,7 @@ describe("Venta de servicios (esServicio) y granel (permiteDecimales) — C2", (
     const tx = crearTxMock(crearProducto({ esServicio: true, permiteDecimales: true }));
     const res = await postVenta(tx, {
       items: [{ codigoItem: "SERV-001", cantidad: 0.25 }],
-      metodoPago: "EFECTIVO",
+      metodoPago: "EFECTIVO", montoRecibido: 100000,
     });
 
     expect(res.status).toBe(201);

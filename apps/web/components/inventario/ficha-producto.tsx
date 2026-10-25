@@ -19,6 +19,7 @@ import { GeneradorVariantes } from "@/components/inventario/generador-variantes"
 import { describirUnidadCompra } from "@/lib/unidades";
 import { notificar } from "@/store/notificaciones";
 import { cn } from "@/lib/utils";
+import { confirmar } from "@/store/dialogo";
 
 interface Ficha {
   producto: {
@@ -378,7 +379,7 @@ function Lotes({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
   };
 
   const baja = async (idLote: string, numero: string) => {
-    if (!window.confirm(`¿Dar de baja como merma lo que queda del lote ${numero}?`)) return;
+    if (!(await confirmar({ titulo: `¿Dar de baja como merma lo que queda del lote ${numero}?`, aceptar: "Dar de baja", peligro: true }))) return;
     const res = await fetch(`/api/lotes/${idLote}/baja`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

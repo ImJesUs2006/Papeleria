@@ -12,16 +12,7 @@ async function main() {
   await prisma.negocio.upsert({
     where: { idNegocio: ID_NEGOCIO },
     update: {},
-    // Negocio de desarrollo con los términos ya aceptados (misma versión que
-    // VERSION_LEGAL en apps/web/lib/legal.ts): las pruebas no ven el aviso.
-    create: {
-      idNegocio: ID_NEGOCIO,
-      codigo: "default",
-      nombre: "Mi Negocio",
-      terminosVersion: "2026-10-26",
-      terminosAceptadosEn: new Date(),
-      terminosAceptadosPor: "Semilla de desarrollo",
-    },
+    create: { idNegocio: ID_NEGOCIO, codigo: "default", nombre: "Mi Negocio" },
   });
 
   // Create admin user
